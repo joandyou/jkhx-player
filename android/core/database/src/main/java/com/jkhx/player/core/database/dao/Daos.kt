@@ -51,13 +51,37 @@ interface PluginDao {
     @Query("SELECT * FROM plugins")
     fun getAllPlugins(): Flow<List<PluginEntity>>
 
+    @Query("SELECT * FROM plugins")
+    suspend fun getAllPluginsSync(): List<PluginEntity>
+
+    @Query("SELECT * FROM plugins WHERE id = :id")
+    suspend fun getPlugin(id: String): PluginEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(plugin: PluginEntity)
 
     @Query("UPDATE plugins SET isEnabled = :enabled WHERE id = :id")
     suspend fun setEnabled(id: String, enabled: Boolean)
 
+    @Query("UPDATE plugins SET customDomain = :customDomain WHERE id = :id")
+    suspend fun updateCustomDomain(id: String, customDomain: String?)
+
     @Query("DELETE FROM plugins WHERE id = :id")
     suspend fun delete(id: String)
+}
+
+@Dao
+interface RepositoryDao {
+    @Query("SELECT * FROM repositories ORDER BY addedAt DESC")
+    fun getAllRepositories(): Flow<List<com.jkhx.player.core.database.entity.RepositoryEntity>>
+
+    @Query("SELECT * FROM repositories ORDER BY addedAt DESC")
+    suspend fun getAllRepositoriesSync(): List<com.jkhx.player.core.database.entity.RepositoryEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(repository: com.jkhx.player.core.database.entity.RepositoryEntity)
+
+    @Query("DELETE FROM repositories WHERE url = :url")
+    suspend fun delete(url: String)
 }
 

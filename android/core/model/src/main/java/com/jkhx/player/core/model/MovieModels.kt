@@ -115,30 +115,33 @@ data class PluginManifest(
     val apiVersion: Int = 1,
     val id: String,
     val name: String,
-    val version: String,
-    val author: String = "JP",
+    val version: String = "1.0.0",
+    val author: String? = null,
     val description: String? = null,
     val entry: String = "plugin.js",
+    val filename: String = "plugin.js",
     val language: String = "vi",
     val isAdult: Boolean = false,
     val types: List<String> = listOf("movie", "tv"),
-    val capabilities: List<String> = listOf("home", "search", "detail", "stream")
+    val supportedTypes: List<String> = listOf("movie", "tv"),
+    val formats: List<String> = listOf("m3u8", "mp4"),
+    val logo: String? = null,
+    val contentLanguage: List<String> = listOf("vi"),
+    val defaultDomain: String? = null,
+    val customDomain: String? = null,
+    val repoUrl: String? = null,
+    val enabled: Boolean = true,
+    val hasSettings: Boolean = false
 )
 
 @Serializable
 data class RepositoryManifest(
-    val name: String = "JKHX Player Plugins",
-    val version: Int = 1,
-    val plugins: List<RepositoryPluginItem> = emptyList()
-)
-
-@Serializable
-data class RepositoryPluginItem(
-    val id: String,
-    val name: String,
-    val version: String,
-    val manifest: String,
-    val entry: String,
-    val isAdult: Boolean = false
-)
+    val name: String = "Plugins Repository",
+    val version: String = "1.0.0",
+    val scrapers: List<PluginManifest> = emptyList(),
+    val plugins: List<PluginManifest> = emptyList()
+) {
+    val allScrapers: List<PluginManifest>
+        get() = scrapers.ifEmpty { plugins }
+}
 

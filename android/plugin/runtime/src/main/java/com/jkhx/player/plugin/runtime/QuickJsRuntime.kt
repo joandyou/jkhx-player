@@ -199,13 +199,29 @@ class QuickJsRuntime(
     ): LoadedPlugin = withContext(Dispatchers.Default) {
         val pluginId = manifest.id
 
-        // Transform `export default` to `globalThis.__jkhx_plugins["<id>"] =`
+        val customDomainCode = if (!manifest.customDomain.isNullOrBlank()) {
+            """
+            globalThis.CUSTOM_DOMAIN = "${manifest.customDomain}";
+            globalThis.BASE_URL = "${manifest.customDomain}";
+            """.trimIndent()
+        } else ""
+
         val transformedScript = scriptContent
             .replaceFirst(Regex("""export\s+default\s+"""), "globalThis.__jkhx_plugins[\"$pluginId\"] = ")
 
         val wrapScript = """
-            globalThis.currentPluginId = "$pluginId";
-            $transformedScript
+            (() => {
+                globalThis.currentPluginId = "$pluginId";
+                $customDomainCode
+                const module = { exports: {} };
+                const exports = module.exports;
+                $transformedScript
+                if (module.exports && (module.exports.getStreams || module.exports.getHome || module.exports.getDetail)) {
+                    globalThis.__jkhx_plugins["$pluginId"] = module.exports;
+                } else if (globalThis.getStreams && !globalThis.__jkhx_plugins["$pluginId"]) {
+                    globalThis.__jkhx_plugins["$pluginId"] = { getStreams: globalThis.getStreams };
+                }
+            })();
         """.trimIndent()
 
         bridge.nativeSetTimeout(rtPtr, 15000L)
@@ -256,8 +272,31 @@ class LoadedPluginImpl(
                 globalThis.currentPluginId = "${manifest.id}";
                 const p = globalThis.__jkhx_plugins["${manifest.id}"];
                 if (!p) throw new Error("Plugin not registered");
-                if (typeof p["$methodName"] !== 'function') throw new Error("Method '$methodName' not found on plugin");
-                const res = await p["$methodName"](...$argsJson);
+                let res;
+                if (typeof p["$methodName"] === 'function') {
+                    res = await p["$methodName"](...$argsJson);
+                } else if ("$methodName" === "getStream" && typeof p["getStreams"] === 'function') {
+                    const ep = ($argsJson && $argsJson[0]) || {};
+                    const streams = await p["getStreams"](ep.slug || ep.id, "movie", ep.season || 1, ep.number || 1, {});
+                    if (Array.isArray(streams) && streams.length > 0) {
+                        const s = streams[0];
+                        res = {
+                            type: s.type || "m3u8",
+                            url: s.url,
+                            headers: s.headers || {},
+                            subtitles: (s.subtitles || []).map(sub => ({
+                                url: sub.url,
+                                label: sub.label || sub.language || "vi",
+                                language: sub.language || "vi",
+                                format: sub.format || "vtt"
+                            }))
+                        };
+                    } else {
+                        throw new Error("No playable streams found");
+                    }
+                } else {
+                    throw new Error("Method '$methodName' not found on plugin");
+                }
                 return JSON.stringify(res);
             })()
         """.trimIndent()

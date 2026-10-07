@@ -13,14 +13,18 @@ import com.jkhx.player.core.database.entity.HistoryEntity
 import com.jkhx.player.core.database.entity.PlaybackProgressEntity
 import com.jkhx.player.core.database.entity.PluginEntity
 
+import com.jkhx.player.core.database.dao.RepositoryDao
+import com.jkhx.player.core.database.entity.RepositoryEntity
+
 @Database(
     entities = [
         HistoryEntity::class,
         FavoriteEntity::class,
         PlaybackProgressEntity::class,
-        PluginEntity::class
+        PluginEntity::class,
+        RepositoryEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -28,6 +32,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun favoriteDao(): FavoriteDao
     abstract fun playbackProgressDao(): PlaybackProgressDao
     abstract fun pluginDao(): PluginDao
+    abstract fun repositoryDao(): RepositoryDao
 
     companion object {
         @Volatile
@@ -39,7 +44,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "jkhx_player.db"
-                ).build()
+                ).fallbackToDestructiveMigration().build()
                 INSTANCE = instance
                 instance
             }

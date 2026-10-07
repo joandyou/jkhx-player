@@ -43,8 +43,25 @@ data class PluginEntity(
     @PrimaryKey val id: String,
     val name: String,
     val version: String,
+    val author: String? = null,
+    val description: String? = null,
+    val logo: String? = null,
+    val filename: String? = null,
+    val defaultDomain: String? = null,
+    val customDomain: String? = null,
+    val repoUrl: String? = null,
+    val supportedTypes: String? = null,
     val isEnabled: Boolean = true,
     val isAdult: Boolean = false,
     val manifestJson: String
+)
+
+@Entity(tableName = "repositories")
+data class RepositoryEntity(
+    @PrimaryKey val url: String,
+    val name: String,
+    val version: String? = null,
+    val manifestJson: String,
+    val addedAt: Long = System.currentTimeMillis()
 )
 
