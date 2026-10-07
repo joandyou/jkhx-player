@@ -223,8 +223,15 @@ fun PluginsScreen() {
                     onSearchQueryChange = { searchQuery = it },
                     domainInputMap = domainInputMap,
                     onToggleEnabled = { id, enabled ->
+                        installedRecords = installedRecords.map {
+                            if (it.manifest.id == id) it.copy(isEnabled = enabled) else it
+                        }
                         coroutineScope.launch {
-                            if (enabled) pluginManager.enablePlugin(id) else pluginManager.disablePlugin(id)
+                            try {
+                                if (enabled) pluginManager.enablePlugin(id) else pluginManager.disablePlugin(id)
+                            } catch (e: Exception) {
+                                statusMessage = "Lỗi: ${e.message}"
+                            }
                             reloadData()
                         }
                     },
@@ -557,9 +564,13 @@ private fun InstalledPluginCard(
                 Spacer(modifier = Modifier.width(8.dp))
 
                 // Switch Toggle (Enabled / Disabled)
+                var isChecked by remember(record.manifest.id, record.isEnabled) { mutableStateOf(record.isEnabled) }
                 Switch(
-                    checked = record.isEnabled,
-                    onCheckedChange = onToggleEnabled,
+                    checked = isChecked,
+                    onCheckedChange = { newState ->
+                        isChecked = newState
+                        onToggleEnabled(newState)
+                    },
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = Color.White,
                         checkedTrackColor = AccentRed,

@@ -47,6 +47,8 @@ Java_com_jkhx_player_plugin_runtime_QuickJsBridge_nativeCreateRuntime(
     }
     if (stack_size > 0) {
         JS_SetMaxStackSize(rt, (size_t)stack_size);
+    } else {
+        JS_SetMaxStackSize(rt, 0); // 0 disables maximum stack size check
     }
 
     RuntimeUserData *data = (RuntimeUserData *)calloc(1, sizeof(RuntimeUserData));
@@ -142,6 +144,9 @@ Java_com_jkhx_player_plugin_runtime_QuickJsBridge_nativeEval(
     JSContext *ctx = (JSContext *)ctx_ptr;
     if (!ctx) return NULL;
 
+    JSRuntime *rt = JS_GetRuntime(ctx);
+    JS_UpdateStackTop(rt);
+
     const char *script = (*env)->GetStringUTFChars(env, script_str, NULL);
     const char *filename = (*env)->GetStringUTFChars(env, filename_str, NULL);
 
@@ -162,10 +167,41 @@ Java_com_jkhx_player_plugin_runtime_QuickJsBridge_nativeEval(
     // Run microtasks
     run_pending_jobs(ctx);
 
-    JSValue json_val = JS_JSONStringify(ctx, val, JS_UNDEFINED, JS_UNDEFINED);
-    JS_FreeValue(ctx, val);
+    JSValue final_val = val;
+    if (JS_IsPromise(val)) {
+        JSPromiseStateEnum state = JS_PromiseState(ctx, val);
+        if (state == JS_PROMISE_REJECTED) {
+            JSValue err_val = JS_PromiseResult(ctx, val);
+            const char *err_str = JS_ToCString(ctx, err_val);
+            jclass ex_cls = (*env)->FindClass(env, "com/jkhx/player/core/model/PluginExecutionError");
+            if (ex_cls) (*env)->ThrowNew(env, ex_cls, err_str ? err_str : "Promise rejected");
+            if (err_str) JS_FreeCString(ctx, err_str);
+            JS_FreeValue(ctx, err_val);
+            JS_FreeValue(ctx, val);
+            return NULL;
+        } else if (state == JS_PROMISE_FULFILLED) {
+            final_val = JS_PromiseResult(ctx, val);
+            JS_FreeValue(ctx, val);
+        } else {
+            jclass ex_cls = (*env)->FindClass(env, "com/jkhx/player/core/model/PluginExecutionError");
+            if (ex_cls) (*env)->ThrowNew(env, ex_cls, "Promise did not resolve");
+            JS_FreeValue(ctx, val);
+            return NULL;
+        }
+    }
 
-    if (JS_IsException(json_val)) {
+    if (JS_IsString(final_val)) {
+        const char *str = JS_ToCString(ctx, final_val);
+        jstring result = (*env)->NewStringUTF(env, str ? str : "null");
+        if (str) JS_FreeCString(ctx, str);
+        JS_FreeValue(ctx, final_val);
+        return result;
+    }
+
+    JSValue json_val = JS_JSONStringify(ctx, final_val, JS_UNDEFINED, JS_UNDEFINED);
+    JS_FreeValue(ctx, final_val);
+
+    if (JS_IsException(json_val) || JS_IsUndefined(json_val)) {
         JS_FreeValue(ctx, json_val);
         return (*env)->NewStringUTF(env, "null");
     }

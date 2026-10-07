@@ -10,6 +10,8 @@ import com.jkhx.player.plugin.api.PluginStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.*
 
 class QuickJsRuntime(
@@ -17,12 +19,13 @@ class QuickJsRuntime(
     private val storage: PluginStorage = DefaultPluginStorage(),
     private val logger: PluginLogger = DefaultPluginLogger(),
     private val memoryLimitBytes: Long = 64 * 1024 * 1024L,
-    private val stackSizeBytes: Long = 1024 * 1024L
+    private val stackSizeBytes: Long = 0L
 ) : PluginRuntime {
 
     private val bridge = QuickJsBridge()
     private val rtPtr = bridge.nativeCreateRuntime(memoryLimitBytes, stackSizeBytes)
     private val ctxPtr = if (rtPtr != 0L) bridge.nativeCreateContext(rtPtr) else 0L
+    private val runtimeMutex = Mutex()
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -224,13 +227,15 @@ class QuickJsRuntime(
             })();
         """.trimIndent()
 
-        bridge.nativeSetTimeout(rtPtr, 15000L)
-        try {
-            bridge.nativeEval(ctxPtr, wrapScript, "${manifest.id}.js")
-        } catch (e: Exception) {
-            throw PluginLoadError(manifest.id, e.message ?: "Failed to evaluate script", e)
-        } finally {
-            bridge.nativeSetTimeout(rtPtr, 0L)
+        runtimeMutex.withLock {
+            bridge.nativeSetTimeout(rtPtr, 15000L)
+            try {
+                bridge.nativeEval(ctxPtr, wrapScript, "${manifest.id}.js")
+            } catch (e: Exception) {
+                throw PluginLoadError(manifest.id, e.message ?: "Failed to evaluate script", e)
+            } finally {
+                bridge.nativeSetTimeout(rtPtr, 0L)
+            }
         }
 
         LoadedPluginImpl(
@@ -238,13 +243,18 @@ class QuickJsRuntime(
             json = json,
             bridge = bridge,
             rtPtr = rtPtr,
-            ctxPtr = ctxPtr
+            ctxPtr = ctxPtr,
+            runtimeMutex = runtimeMutex
         )
     }
 
     override fun close() {
-        if (ctxPtr != 0L) bridge.nativeDestroyContext(ctxPtr)
-        if (rtPtr != 0L) bridge.nativeDestroyRuntime(rtPtr)
+        runBlocking {
+            runtimeMutex.withLock {
+                if (ctxPtr != 0L) bridge.nativeDestroyContext(ctxPtr)
+                if (rtPtr != 0L) bridge.nativeDestroyRuntime(rtPtr)
+            }
+        }
     }
 }
 
@@ -253,7 +263,8 @@ class LoadedPluginImpl(
     private val json: Json,
     private val bridge: QuickJsBridge,
     private val rtPtr: Long,
-    private val ctxPtr: Long
+    private val ctxPtr: Long,
+    private val runtimeMutex: Mutex
 ) : LoadedPlugin {
 
     override val id: String = manifest.id
@@ -266,65 +277,76 @@ class LoadedPluginImpl(
         timeoutMs: Long = 15000L,
         deserializer: (String) -> T
     ): T = withContext(Dispatchers.Default) {
-        bridge.nativeSetTimeout(rtPtr, timeoutMs)
-        val script = """
-            (async () => {
-                globalThis.currentPluginId = "${manifest.id}";
-                const p = globalThis.__jkhx_plugins["${manifest.id}"];
-                if (!p) throw new Error("Plugin not registered");
-                let res;
-                if (typeof p["$methodName"] === 'function') {
-                    res = await p["$methodName"](...$argsJson);
-                } else if ("$methodName" === "getStream" && typeof p["getStreams"] === 'function') {
-                    const ep = ($argsJson && $argsJson[0]) || {};
-                    const streams = await p["getStreams"](ep.slug || ep.id, "movie", ep.season || 1, ep.number || 1, {});
-                    if (Array.isArray(streams) && streams.length > 0) {
-                        const s = streams[0];
-                        res = {
-                            type: s.type || "m3u8",
-                            url: s.url,
-                            headers: s.headers || {},
-                            subtitles: (s.subtitles || []).map(sub => ({
-                                url: sub.url,
-                                label: sub.label || sub.language || "vi",
-                                language: sub.language || "vi",
-                                format: sub.format || "vtt"
-                            }))
-                        };
+        runtimeMutex.withLock {
+            bridge.nativeSetTimeout(rtPtr, timeoutMs)
+            val script = """
+                (async () => {
+                    globalThis.currentPluginId = "${manifest.id}";
+                    const p = globalThis.__jkhx_plugins["${manifest.id}"];
+                    if (!p) throw new Error("Plugin not registered");
+                    let res;
+                    if (typeof p["$methodName"] === 'function') {
+                        res = await p["$methodName"](...$argsJson);
+                    } else if ("$methodName" === "getStream" && typeof p["getStreams"] === 'function') {
+                        const ep = ($argsJson && $argsJson[0]) || {};
+                        const streams = await p["getStreams"](ep.slug || ep.id, "movie", ep.season || 1, ep.number || 1, {});
+                        if (Array.isArray(streams) && streams.length > 0) {
+                            const s = streams[0];
+                            res = {
+                                type: s.type || "m3u8",
+                                url: s.url,
+                                headers: s.headers || {},
+                                subtitles: (s.subtitles || []).map(sub => ({
+                                    url: sub.url,
+                                    label: sub.label || sub.language || "vi",
+                                    language: sub.language || "vi",
+                                    format: sub.format || "vtt"
+                                }))
+                            };
+                        } else {
+                            throw new Error("No playable streams found");
+                        }
                     } else {
-                        throw new Error("No playable streams found");
+                        throw new Error("Method '$methodName' not found on plugin");
+                    }
+                    return JSON.stringify(res);
+                })()
+            """.trimIndent()
+
+            try {
+                val rawRes = bridge.nativeEval(ctxPtr, script, "${manifest.id}_$methodName.js")
+                    ?: throw PluginExecutionError(manifest.id, methodName, "Empty response from plugin")
+
+                val unquoted = if (rawRes.startsWith("\"") && rawRes.endsWith("\"") && rawRes.length >= 2) {
+                    try {
+                        json.parseToJsonElement(rawRes).jsonPrimitive.content
+                    } catch (e: Exception) {
+                        rawRes
                     }
                 } else {
-                    throw new Error("Method '$methodName' not found on plugin");
+                    rawRes
                 }
-                return JSON.stringify(res);
-            })()
-        """.trimIndent()
-
-        try {
-            val rawRes = bridge.nativeEval(ctxPtr, script, "${manifest.id}_$methodName.js")
-                ?: throw PluginExecutionError(manifest.id, methodName, "Empty response from plugin")
-
-            // The result from nativeEval is a JSON-stringified string if it was returned by JSON.stringify
-            val unquoted = if (rawRes.startsWith("\"") && rawRes.endsWith("\"")) {
-                json.parseToJsonElement(rawRes).jsonPrimitive.content
-            } else {
-                rawRes
+                deserializer(unquoted)
+            } catch (e: Exception) {
+                if (e.message?.contains("timeout", ignoreCase = true) == true) {
+                    throw PluginTimeout(manifest.id, methodName, timeoutMs)
+                }
+                throw PluginExecutionError(manifest.id, methodName, e.message ?: "Unknown error", e)
+            } finally {
+                bridge.nativeSetTimeout(rtPtr, 0L)
             }
-            deserializer(unquoted)
-        } catch (e: Exception) {
-            if (e.message?.contains("timeout", ignoreCase = true) == true) {
-                throw PluginTimeout(manifest.id, methodName, timeoutMs)
-            }
-            throw PluginExecutionError(manifest.id, methodName, e.message ?: "Unknown error", e)
-        } finally {
-            bridge.nativeSetTimeout(rtPtr, 0L)
         }
     }
 
     override suspend fun getHome(): HomeResult {
-        return invokeMethod("getHome") { raw ->
-            json.decodeFromString(HomeResult.serializer(), raw)
+        return invokeMethod("getHome", timeoutMs = 30000L) { raw ->
+            val trimmed = raw.trim()
+            if (trimmed.startsWith("[")) {
+                val sections = json.decodeFromString<List<HomeSection>>(trimmed)
+                HomeResult(sections = sections)
+            } else {
+                json.decodeFromString(HomeResult.serializer(), trimmed)
+            }
         }
     }
 
@@ -333,29 +355,39 @@ class LoadedPluginImpl(
             add(keyword)
             add(page)
         }.toString()
-        return invokeMethod("search", args) { raw ->
-            json.decodeFromString(SearchResult.serializer(), raw)
+        return invokeMethod("search", args, timeoutMs = 20000L) { raw ->
+            val trimmed = raw.trim()
+            if (trimmed.startsWith("[")) {
+                val items = json.decodeFromString<List<MovieItem>>(trimmed)
+                SearchResult(items = items, page = page, hasNext = false)
+            } else {
+                json.decodeFromString(SearchResult.serializer(), trimmed)
+            }
         }
     }
 
     override suspend fun getDetail(slug: String): MovieDetail {
         val args = buildJsonArray { add(slug) }.toString()
-        return invokeMethod("getDetail", args) { raw ->
-            json.decodeFromString(MovieDetail.serializer(), raw)
+        return invokeMethod("getDetail", args, timeoutMs = 20000L) { raw ->
+            json.decodeFromString(MovieDetail.serializer(), raw.trim())
         }
     }
 
     override suspend fun getStream(episodeData: EpisodeData): EpisodeStream {
         val epJson = json.encodeToString(EpisodeData.serializer(), episodeData)
         val args = "[$epJson]"
-        return invokeMethod("getStream", args) { raw ->
-            json.decodeFromString(EpisodeStream.serializer(), raw)
+        return invokeMethod("getStream", args, timeoutMs = 20000L) { raw ->
+            json.decodeFromString(EpisodeStream.serializer(), raw.trim())
         }
     }
 
     override fun close() {
         // Clear plugin reference
-        bridge.nativeEval(ctxPtr, "delete globalThis.__jkhx_plugins[\"${manifest.id}\"];", "cleanup.js")
+        runBlocking {
+            runtimeMutex.withLock {
+                bridge.nativeEval(ctxPtr, "delete globalThis.__jkhx_plugins[\"${manifest.id}\"];", "cleanup.js")
+            }
+        }
     }
 }
 

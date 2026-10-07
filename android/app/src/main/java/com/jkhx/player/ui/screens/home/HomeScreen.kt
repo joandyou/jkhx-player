@@ -7,6 +7,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,19 +34,28 @@ fun HomeScreen(
     val pluginManager = JkhxApplication.instance.pluginManager
     val sections = remember { mutableStateListOf<HomeSection>() }
     var isLoading by remember { mutableStateOf(true) }
+    val updateCount by pluginManager.pluginsUpdateCounter.collectAsState()
+    val coroutineScope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
+    fun loadFeed() {
         sections.clear()
         isLoading = true
-        launch {
-            pluginManager.getHomeFeed().collect { section ->
-                if (section.items.isNotEmpty()) {
-                    sections.add(section)
-                    isLoading = false
+        coroutineScope.launch {
+            try {
+                pluginManager.getHomeFeed().collect { section ->
+                    if (section.items.isNotEmpty()) {
+                        sections.add(section)
+                        isLoading = false
+                    }
                 }
+            } finally {
+                isLoading = false
             }
-            isLoading = false
         }
+    }
+
+    LaunchedEffect(updateCount) {
+        loadFeed()
     }
 
     Scaffold(
@@ -57,6 +68,15 @@ fun HomeScreen(
                         color = MaterialTheme.colorScheme.primary,
                         fontSize = 22.sp
                     )
+                },
+                actions = {
+                    IconButton(onClick = { loadFeed() }) {
+                        Icon(
+                            androidx.compose.material.icons.Icons.Default.Refresh,
+                            contentDescription = "Làm mới",
+                            tint = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background
@@ -83,6 +103,15 @@ fun HomeScreen(
                     Text("Chưa có phim hoặc chưa bật plugin nào", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(modifier = Modifier.height(8.dp))
                     Text("Vào tab Plugins để kiểm tra hoặc cài đặt", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = { loadFeed() },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        Icon(androidx.compose.material.icons.Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Tải lại")
+                    }
                 }
             } else {
                 LazyColumn(

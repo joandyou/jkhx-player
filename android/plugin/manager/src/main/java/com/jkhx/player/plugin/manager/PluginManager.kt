@@ -38,6 +38,9 @@ class PluginManager(
     private val installedPlugins = ConcurrentHashMap<String, InstalledPluginRecord>()
     private val loadedPlugins = ConcurrentHashMap<String, LoadedPlugin>()
 
+    private val _pluginsUpdateCounter = kotlinx.coroutines.flow.MutableStateFlow(0)
+    val pluginsUpdateCounter: kotlinx.coroutines.flow.StateFlow<Int> = _pluginsUpdateCounter
+
     private val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
@@ -89,6 +92,7 @@ class PluginManager(
                     }
                 }
             }
+            _pluginsUpdateCounter.value += 1
         }
     }
 
@@ -239,6 +243,7 @@ class PluginManager(
                 loadedPlugins.remove(activeManifest.id)?.close()
                 val loaded = runtime.loadPlugin(updatedManifest, scriptContent)
                 loadedPlugins[activeManifest.id] = loaded
+                _pluginsUpdateCounter.value += 1
                 true
             } catch (e: Exception) {
                 println("[PluginManager] Install scraper failed: ${e.message}")
@@ -253,7 +258,9 @@ class PluginManager(
             installedPlugins.remove(pluginId)
             pluginDao?.delete(pluginId)
             val dir = File(pluginsDir, pluginId)
-            if (dir.exists()) dir.deleteRecursively() else true
+            val deleted = if (dir.exists()) dir.deleteRecursively() else true
+            _pluginsUpdateCounter.value += 1
+            deleted
         }
     }
 
@@ -274,6 +281,7 @@ class PluginManager(
                     println("[PluginManager] Failed to reload plugin after domain change: ${e.message}")
                 }
             }
+            _pluginsUpdateCounter.value += 1
         }
     }
 
@@ -283,9 +291,14 @@ class PluginManager(
             record.isEnabled = true
             pluginDao?.setEnabled(pluginId, true)
             if (!loadedPlugins.containsKey(pluginId)) {
-                val loaded = runtime.loadPlugin(record.manifest, record.scriptFile.readText())
-                loadedPlugins[pluginId] = loaded
+                try {
+                    val loaded = runtime.loadPlugin(record.manifest, record.scriptFile.readText())
+                    loadedPlugins[pluginId] = loaded
+                } catch (e: Exception) {
+                    println("[PluginManager] Failed to load plugin on enable: ${e.message}")
+                }
             }
+            _pluginsUpdateCounter.value += 1
             true
         }
     }
@@ -296,6 +309,7 @@ class PluginManager(
             record.isEnabled = false
             pluginDao?.setEnabled(pluginId, false)
             loadedPlugins.remove(pluginId)?.close()
+            _pluginsUpdateCounter.value += 1
             true
         }
     }
@@ -358,8 +372,13 @@ class PluginManager(
             val deferreds = enabled.map { plugin ->
                 async {
                     try {
-                        withTimeout(15000L) {
-                            plugin.getHome().sections
+                        withTimeout(30000L) {
+                            val homeResult = plugin.getHome()
+                            homeResult.sections.map { sec ->
+                                sec.copy(items = sec.items.map { item ->
+                                    if (item.providerId.isNullOrBlank()) item.copy(providerId = plugin.id) else item
+                                })
+                            }
                         }
                     } catch (e: Exception) {
                         println("[HomeFeed] Plugin ${plugin.id} error: ${e.message}")
