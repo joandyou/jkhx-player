@@ -110,3 +110,4 @@ mkdir -p /media/jtmy/JDataL/J-Bot-Code/mint-project
 cd /media/jtmy/JDataL/J-Bot-Code/mint-project
 git clone /home/jtmy/jkhx-player jkhx-player
 ```
+

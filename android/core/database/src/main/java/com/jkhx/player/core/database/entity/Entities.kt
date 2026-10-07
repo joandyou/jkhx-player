@@ -47,3 +47,4 @@ data class PluginEntity(
     val isAdult: Boolean = false,
     val manifestJson: String
 )
+

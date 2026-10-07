@@ -31,3 +31,4 @@ interface PluginRuntime : AutoCloseable {
         scriptContent: String
     ): LoadedPlugin
 }
+

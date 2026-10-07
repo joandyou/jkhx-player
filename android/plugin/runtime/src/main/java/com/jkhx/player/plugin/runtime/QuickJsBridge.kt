@@ -19,3 +19,4 @@ class QuickJsBridge {
     external fun nativeEval(ctxPtr: Long, script: String, filename: String): String?
     external fun nativeRegisterBridge(ctxPtr: Long, bridgeHandler: Any)
 }
+

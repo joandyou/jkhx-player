@@ -60,3 +60,4 @@ interface PluginDao {
     @Query("DELETE FROM plugins WHERE id = :id")
     suspend fun delete(id: String)
 }
+

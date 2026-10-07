@@ -141,3 +141,4 @@ data class RepositoryPluginItem(
     val entry: String,
     val isAdult: Boolean = false
 )
+

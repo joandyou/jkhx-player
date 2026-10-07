@@ -11,3 +11,4 @@
   "types": ["movie"],
   "capabilities": ["home", "search", "detail", "stream"]
 }
+

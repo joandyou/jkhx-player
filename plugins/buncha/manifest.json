@@ -11,3 +11,4 @@
   "types": ["live"],
   "capabilities": ["home", "search", "detail", "stream"]
 }
+

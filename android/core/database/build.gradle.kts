@@ -29,3 +29,4 @@ dependencies {
     ksp(libs.androidx.room.compiler)
     implementation(libs.kotlinx.coroutines.core)
 }
+

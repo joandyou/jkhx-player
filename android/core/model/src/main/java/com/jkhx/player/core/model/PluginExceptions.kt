@@ -31,3 +31,4 @@ class EmbedResolutionError(embedUrl: String, message: String, cause: Throwable? 
 
 class PlayerError(message: String, cause: Throwable? = null) :
     PluginException("Player error: $message", cause)
+

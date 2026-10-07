@@ -237,3 +237,4 @@ Copy your plugin directory into `android/app/src/main/assets/plugins/<your-plugi
 
 ### Method 2: Remote Repository
 Host your plugin files on any static HTTP host (e.g., GitHub Pages) and register it in a remote `manifest.json`. Add the repository URL under **Settings > Repositories** in the app.
+

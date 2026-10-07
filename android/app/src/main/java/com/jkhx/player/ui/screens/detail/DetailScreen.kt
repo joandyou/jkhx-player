@@ -26,6 +26,7 @@ import com.jkhx.player.core.model.EpisodeData
 import com.jkhx.player.core.model.MovieDetail
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun DetailScreen(
     providerId: String,
@@ -56,14 +57,14 @@ fun DetailScreen(
 
     Scaffold(
         topBar = {
-            SmallTopAppBar(
+            TopAppBar(
                 title = { Text(movieDetail?.name ?: "Chi Tiết Phim", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Trở lại")
                     }
                 },
-                colors = TopAppBarDefaults.smallTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background
                 )
             )
@@ -224,3 +225,4 @@ fun DetailScreen(
         }
     }
 }
+

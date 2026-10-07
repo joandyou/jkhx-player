@@ -8,6 +8,7 @@ plugins {
 android {
     namespace = "com.jkhx.player"
     compileSdk = 35
+    ndkVersion = "26.1.10909125"
 
     defaultConfig {
         applicationId = "com.jkhx.player"
@@ -73,3 +74,4 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
 }
+

@@ -25,7 +25,7 @@ static int64_t get_time_ms(void) {
     return (int64_t)ts.tv_sec * 1000 + (ts.tv_nsec / 1000000);
 }
 
-static int js_interrupt_handler(JSRuntime *rt, void *opaque) {
+static int js_interrupt_handler(JSContext *ctx, void *opaque) {
     RuntimeUserData *data = (RuntimeUserData *)opaque;
     if (data && data->deadline_ms > 0) {
         if (get_time_ms() > data->deadline_ms) {
@@ -189,7 +189,7 @@ static JSValue js_native_dispatch(JSContext *ctx, JSValueConst this_val, int arg
     const char *payload = JS_ToCString(ctx, argv[1]);
 
     JNIEnv *env = NULL;
-    (*data->jvm)->AttachCurrentThread(data->jvm, (void **)&env, NULL);
+    (*data->jvm)->AttachCurrentThread(data->jvm, &env, NULL);
 
     jclass cls = (*env)->GetObjectClass(env, data->bridge_handler);
     jmethodID mid = (*env)->GetMethodID(env, cls, "onNativeCall", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
@@ -229,3 +229,4 @@ Java_com_jkhx_player_plugin_runtime_QuickJsBridge_nativeRegisterBridge(
     JS_SetPropertyStr(ctx, global_obj, "__native_dispatch", fn);
     JS_FreeValue(ctx, global_obj);
 }
+

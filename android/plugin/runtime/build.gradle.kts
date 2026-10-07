@@ -7,6 +7,7 @@ plugins {
 android {
     namespace = "com.jkhx.player.plugin.runtime"
     compileSdk = 35
+    ndkVersion = "26.1.10909125"
 
     defaultConfig {
         minSdk = 26
@@ -17,7 +18,7 @@ android {
 
         externalNativeBuild {
             cmake {
-                cFlags.addAll(listOf("-O2", "-DCONFIG_VERSION=\"2024-02-14\"", "-D_GNU_SOURCE"))
+                cFlags.addAll(listOf("-O2", "-D_GNU_SOURCE"))
             }
         }
     }
@@ -48,3 +49,4 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
 }
+

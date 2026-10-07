@@ -129,3 +129,4 @@ Run the automated test suite against the migrated plugin:
 node test-runner/test-plugin.js plugins/<provider-id>
 ```
 Verify that all 4 test stages (`getHome`, `search`, `getDetail`, `getStream`) report `PASS` with zero uncaught exceptions.
+

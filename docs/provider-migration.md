@@ -102,3 +102,4 @@ This report summarizes the migration of all content providers from the legacy `j
 - **Audit Findings**:
   - In legacy `jfilm/lib/providers/index.ts`, both providers were already commented out or inactive due to upstream domain expiration (`ophim1.com` returns 404, `bunchatv4.net` DNS NXDOMAIN).
   - Both plugins were migrated with resilient try/catch error handling. When active, they comply with the standard API contract without throwing fatal exceptions that would crash the host app.
+

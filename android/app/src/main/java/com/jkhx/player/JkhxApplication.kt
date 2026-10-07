@@ -82,3 +82,4 @@ class JkhxApplication : Application() {
             private set
     }
 }
+

@@ -149,3 +149,4 @@ Every plugin script executes inside an isolated `JSContext`. Before running, the
 4. **Lightweight HTML Parser (`plugins/common/cheerio.js`)**:
    - Zero-dependency DOM regex parser providing Cheerio-compatible selectors (`$(selector).find().attr().text()`).
    - Bundled directly inside QuickJS contexts for DOM scraper plugins.
+

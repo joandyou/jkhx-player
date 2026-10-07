@@ -57,3 +57,4 @@ class GenericHtml5EmbedResolver(
         }
     }
 }
+

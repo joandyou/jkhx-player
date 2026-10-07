@@ -19,6 +19,7 @@ import com.jkhx.player.JkhxApplication
 import com.jkhx.player.core.model.PluginManifest
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PluginsScreen() {
     val pluginManager = JkhxApplication.instance.pluginManager
@@ -35,14 +36,14 @@ fun PluginsScreen() {
 
     Scaffold(
         topBar = {
-            SmallTopAppBar(
+            TopAppBar(
                 title = { Text("Quản Lý Plugins", fontWeight = FontWeight.Bold) },
                 actions = {
                     IconButton(onClick = { reload() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Tải lại")
                     }
                 },
-                colors = TopAppBarDefaults.smallTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background
                 )
             )
@@ -158,3 +159,4 @@ fun PluginsScreen() {
         }
     }
 }
+

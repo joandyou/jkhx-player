@@ -22,6 +22,7 @@ import com.jkhx.player.ui.screens.home.HomeScreen
 import com.jkhx.player.ui.screens.player.PlayerScreen
 import com.jkhx.player.ui.screens.plugins.PluginsScreen
 import com.jkhx.player.ui.screens.search.SearchScreen
+import com.jkhx.player.ui.screens.settings.SettingsScreen
 import com.jkhx.player.ui.theme.JkhxTheme
 import kotlinx.serialization.json.Json
 import java.net.URLDecoder
@@ -159,3 +160,4 @@ fun MainAppNavigation() {
         }
     }
 }
+

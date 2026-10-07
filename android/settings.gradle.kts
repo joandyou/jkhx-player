@@ -29,3 +29,4 @@ include(":core:player")
 include(":plugin:api")
 include(":plugin:runtime")
 include(":plugin:manager")
+

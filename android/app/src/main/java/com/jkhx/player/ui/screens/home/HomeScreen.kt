@@ -24,6 +24,7 @@ import com.jkhx.player.core.model.MovieItem
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     onMovieClick: (providerId: String, slug: String) -> Unit
@@ -48,7 +49,7 @@ fun HomeScreen(
 
     Scaffold(
         topBar = {
-            SmallTopAppBar(
+            TopAppBar(
                 title = {
                     Text(
                         "JKHX Player",
@@ -57,7 +58,7 @@ fun HomeScreen(
                         fontSize = 22.sp
                     )
                 },
-                colors = TopAppBarDefaults.smallTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background
                 )
             )
@@ -186,3 +187,4 @@ fun MovieCard(
         }
     }
 }
+

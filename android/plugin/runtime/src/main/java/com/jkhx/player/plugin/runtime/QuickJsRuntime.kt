@@ -290,17 +290,17 @@ class LoadedPluginImpl(
     }
 
     override suspend fun search(keyword: String, page: Int): SearchResult {
-        val args = json.encodeToString(buildJsonArray {
+        val args = buildJsonArray {
             add(keyword)
             add(page)
-        })
+        }.toString()
         return invokeMethod("search", args) { raw ->
             json.decodeFromString(SearchResult.serializer(), raw)
         }
     }
 
     override suspend fun getDetail(slug: String): MovieDetail {
-        val args = json.encodeToString(buildJsonArray { add(slug) })
+        val args = buildJsonArray { add(slug) }.toString()
         return invokeMethod("getDetail", args) { raw ->
             json.decodeFromString(MovieDetail.serializer(), raw)
         }
@@ -333,3 +333,4 @@ class DefaultPluginLogger : PluginLogger {
     override fun error(pluginId: String, message: String, throwable: Throwable?) =
         println("[$pluginId ERROR] $message ${throwable?.message ?: ""}")
 }
+

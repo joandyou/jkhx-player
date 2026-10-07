@@ -25,3 +25,4 @@ target_link_libraries(quickjs-ng
     ${log-lib}
     m
 )
+

@@ -68,3 +68,4 @@ The Android manifest restricts cleartext HTTP traffic to permitted domains, whil
   1. Is excluded from the Home aggregated feed.
   2. Is excluded from multi-provider search results.
   3. Is disabled by default upon initial installation.
+
