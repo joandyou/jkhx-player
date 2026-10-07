@@ -1,0 +1,111 @@
+{
+  "name": "JKHX Player Official Repository",
+  "version": 1,
+  "description": "Kho plugin nguồn phim và giải trí đa dạng cho JKHX Player",
+  "plugins": [
+    {
+      "id": "mock",
+      "name": "Mock Provider (Test)",
+      "version": "1.0.0",
+      "manifest": "mock/manifest.json",
+      "entry": "mock/plugin.js",
+      "isAdult": false
+    },
+    {
+      "id": "kkphim",
+      "name": "KKPhim (PhimAPI)",
+      "version": "1.0.0",
+      "manifest": "kkphim/manifest.json",
+      "entry": "kkphim/plugin.js",
+      "isAdult": false
+    },
+    {
+      "id": "nguonc",
+      "name": "NguonC",
+      "version": "1.0.0",
+      "manifest": "nguonc/manifest.json",
+      "entry": "nguonc/plugin.js",
+      "isAdult": false
+    },
+    {
+      "id": "vsmov",
+      "name": "VSMov (HLS & WebVTT)",
+      "version": "1.0.0",
+      "manifest": "vsmov/manifest.json",
+      "entry": "vsmov/plugin.js",
+      "isAdult": false
+    },
+    {
+      "id": "vsnguon",
+      "name": "VSxF (VSPhim)",
+      "version": "1.0.0",
+      "manifest": "vsnguon/manifest.json",
+      "entry": "vsnguon/plugin.js",
+      "isAdult": false
+    },
+    {
+      "id": "ophim",
+      "name": "OPhim",
+      "version": "1.0.0",
+      "manifest": "ophim/manifest.json",
+      "entry": "ophim/plugin.js",
+      "isAdult": false
+    },
+    {
+      "id": "clbpx",
+      "name": "CLB Phim Xưa",
+      "version": "1.0.0",
+      "manifest": "clbpx/manifest.json",
+      "entry": "clbpx/plugin.js",
+      "isAdult": false
+    },
+    {
+      "id": "bunchatv",
+      "name": "Buncha TV (Thể Thao)",
+      "version": "1.0.0",
+      "manifest": "buncha/manifest.json",
+      "entry": "buncha/plugin.js",
+      "isAdult": false
+    },
+    {
+      "id": "missav",
+      "name": "MissAV",
+      "version": "1.0.0",
+      "manifest": "missav/manifest.json",
+      "entry": "missav/plugin.js",
+      "isAdult": true
+    },
+    {
+      "id": "vlxx",
+      "name": "VLXX",
+      "version": "1.0.0",
+      "manifest": "vlxx/manifest.json",
+      "entry": "vlxx/plugin.js",
+      "isAdult": true
+    },
+    {
+      "id": "xsub",
+      "name": "SexSub",
+      "version": "1.0.0",
+      "manifest": "xsub/manifest.json",
+      "entry": "xsub/plugin.js",
+      "isAdult": true
+    },
+    {
+      "id": "st1work",
+      "name": "SexTop1 Land",
+      "version": "1.0.0",
+      "manifest": "st1work/manifest.json",
+      "entry": "st1work/plugin.js",
+      "isAdult": true
+    },
+    {
+      "id": "vnst1com",
+      "name": "VN SexTop1",
+      "version": "1.0.0",
+      "manifest": "vnst1com/manifest.json",
+      "entry": "vnst1com/plugin.js",
+      "isAdult": true
+    }
+  ]
+}

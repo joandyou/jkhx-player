@@ -1,0 +1,13 @@
+*.iml
+.gradle
+/local.properties
+/.idea/
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

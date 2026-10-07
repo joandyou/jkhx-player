@@ -1,0 +1,13 @@
+{
+  "apiVersion": 1,
+  "id": "vsmov",
+  "name": "VSMov",
+  "version": "1.0.0",
+  "author": "JP",
+  "description": "Nguồn phim VSMov API (vsmov.com) với bóc tách M3U8 và phụ đề WebVTT",
+  "entry": "plugin.js",
+  "language": "vi",
+  "isAdult": false,
+  "types": ["movie", "tv"],
+  "capabilities": ["home", "search", "detail", "stream"]
+}

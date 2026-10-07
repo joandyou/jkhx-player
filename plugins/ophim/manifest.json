@@ -1,0 +1,13 @@
+{
+  "apiVersion": 1,
+  "id": "ophim",
+  "name": "OPhim",
+  "version": "1.0.0",
+  "author": "JP",
+  "description": "Nguồn phim Ổ Phim API (ophim1.com)",
+  "entry": "plugin.js",
+  "language": "vi",
+  "isAdult": false,
+  "types": ["movie", "tv"],
+  "capabilities": ["home", "search", "detail", "stream"]
+}

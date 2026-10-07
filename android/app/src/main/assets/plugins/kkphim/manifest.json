@@ -1,0 +1,13 @@
+{
+  "apiVersion": 1,
+  "id": "kkphim",
+  "name": "KKPhim",
+  "version": "1.0.0",
+  "author": "JP",
+  "description": "Nguồn phim KKPhim từ PhimAPI (phimapi.com)",
+  "entry": "plugin.js",
+  "language": "vi",
+  "isAdult": false,
+  "types": ["movie", "tv"],
+  "capabilities": ["home", "search", "detail", "stream"]
+}
