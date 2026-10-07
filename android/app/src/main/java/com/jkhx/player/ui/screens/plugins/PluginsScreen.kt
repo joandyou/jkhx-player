@@ -113,17 +113,19 @@ fun PluginsScreen() {
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = {
-                    newRepoUrl = ""
-                    addRepoError = null
-                    showAddRepoDialog = true
-                },
-                containerColor = AccentRed,
-                contentColor = Color.White,
-                shape = CircleShape
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Thêm nguồn Plugin")
+            if (selectedTabIndex == 1) {
+                FloatingActionButton(
+                    onClick = {
+                        newRepoUrl = ""
+                        addRepoError = null
+                        showAddRepoDialog = true
+                    },
+                    containerColor = AccentRed,
+                    contentColor = Color.White,
+                    shape = CircleShape
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Thêm nguồn Plugin")
+                }
             }
         }
     ) { padding ->
@@ -240,7 +242,7 @@ fun PluginsScreen() {
                             reloadData()
                         }
                     },
-                    onOpenAddRepo = { showAddRepoDialog = true }
+                    onOpenAddRepo = { selectedTabIndex = 1 }
                 )
             } else {
                 // TAB 2: KHO PLUGIN
@@ -451,7 +453,7 @@ private fun InstalledPluginsTab(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Chuyển sang tab 'Kho Plugin' hoặc nhấn '+' để thêm nguồn",
+                        "Chuyển sang tab 'Kho Plugin' để khám phá và cài đặt plugins.",
                         fontSize = 13.sp,
                         color = Color.Gray
                     )
@@ -460,9 +462,9 @@ private fun InstalledPluginsTab(
                         onClick = onOpenAddRepo,
                         colors = ButtonDefaults.buttonColors(containerColor = AccentRed)
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Storefront, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Thêm nguồn Plugin")
+                        Text("Đi đến Kho Plugin")
                     }
                 }
             }

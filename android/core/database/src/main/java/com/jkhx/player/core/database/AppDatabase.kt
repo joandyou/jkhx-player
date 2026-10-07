@@ -24,7 +24,7 @@ import com.jkhx.player.core.database.entity.RepositoryEntity
         PluginEntity::class,
         RepositoryEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

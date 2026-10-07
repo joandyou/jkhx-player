@@ -1,7 +1,15 @@
 package com.jkhx.player.core.model
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 
 @Serializable
 data class ContentId(
@@ -110,16 +118,33 @@ data class MovieDetail(
     val episodes: List<EpisodeServer> = emptyList()
 )
 
+object LenientStringSerializer : KSerializer<String> {
+    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("LenientString", PrimitiveKind.STRING)
+    override fun deserialize(decoder: Decoder): String {
+        return if (decoder is JsonDecoder) {
+            val element = decoder.decodeJsonElement()
+            if (element is JsonPrimitive) element.content else element.toString()
+        } else {
+            decoder.decodeString()
+        }
+    }
+    override fun serialize(encoder: Encoder, value: String) {
+        encoder.encodeString(value)
+    }
+}
+
 @Serializable
 data class PluginManifest(
     val apiVersion: Int = 1,
     val id: String,
     val name: String,
+    @Serializable(with = LenientStringSerializer::class)
     val version: String = "1.0.0",
     val author: String? = null,
     val description: String? = null,
-    val entry: String = "plugin.js",
-    val filename: String = "plugin.js",
+    val manifest: String? = null,
+    val entry: String? = null,
+    val filename: String? = null,
     val language: String = "vi",
     val isAdult: Boolean = false,
     val types: List<String> = listOf("movie", "tv"),
@@ -137,6 +162,8 @@ data class PluginManifest(
 @Serializable
 data class RepositoryManifest(
     val name: String = "Plugins Repository",
+    val description: String? = null,
+    @Serializable(with = LenientStringSerializer::class)
     val version: String = "1.0.0",
     val scrapers: List<PluginManifest> = emptyList(),
     val plugins: List<PluginManifest> = emptyList()
