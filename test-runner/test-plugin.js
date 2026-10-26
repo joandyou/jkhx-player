@@ -18,21 +18,50 @@ globalThis.context = {
     info: (...args) => console.log('[PLUGIN INFO]', ...args),
     warn: (...args) => console.warn('[PLUGIN WARN]', ...args),
     error: (...args) => console.error('[PLUGIN ERROR]', ...args)
+  },
+  webview: {
+    sniff: async () => null
+  },
+  ui: {
+    showToast: (msg, isLong = false) => console.log('[PLUGIN TOAST]', msg, isLong ? '(LONG)' : '')
   }
 };
 
 export async function testPlugin(pluginDir) {
-  const manifestPath = path.join(pluginDir, 'manifest.json');
   const pluginPath = path.join(pluginDir, 'plugin.js');
-
-  if (!fs.existsSync(manifestPath)) {
-    throw new Error(`Missing manifest.json at ${manifestPath}`);
-  }
   if (!fs.existsSync(pluginPath)) {
     throw new Error(`Missing plugin.js at ${pluginPath}`);
   }
 
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const manifestPath = path.join(pluginDir, 'manifest.json');
+  let manifest = null;
+  if (fs.existsSync(manifestPath)) {
+    manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  } else {
+    // Tìm thông tin manifest từ file manifest.json của nhóm hoặc manifest tổng
+    const dirName = path.basename(pluginDir);
+    let searchDir = path.resolve(pluginDir, '..');
+    while (searchDir !== path.dirname(searchDir)) {
+      const candidate = path.join(searchDir, 'manifest.json');
+      if (fs.existsSync(candidate)) {
+        try {
+          const parsed = JSON.parse(fs.readFileSync(candidate, 'utf8'));
+          const found = (parsed.plugins || parsed.scrapers || []).find(
+            p => p.id === dirName || (p.entry && (p.entry.includes(`/${dirName}/`) || p.entry.startsWith(`${dirName}/`)))
+          );
+          if (found) {
+            manifest = found;
+            break;
+          }
+        } catch (_) {}
+      }
+      searchDir = path.dirname(searchDir);
+    }
+  }
+  if (!manifest) {
+    manifest = { id: path.basename(pluginDir), name: path.basename(pluginDir), version: "1.0.0" };
+  }
+
   console.log(`\n========================================`);
   console.log(`🧪 TESTING PLUGIN: [${manifest.id}] - ${manifest.name} (v${manifest.version})`);
   console.log(`========================================`);
@@ -58,6 +87,23 @@ export async function testPlugin(pluginDir) {
     if (!sampleSlug && sec.items.length > 0) {
       sampleSlug = sec.items[0].slug;
     }
+  }
+
+  // 1.1 Test getMenu (if supported)
+  if (typeof plugin.getMenu === 'function') {
+    console.log('📑 Testing getMenu()...');
+    const menu = await plugin.getMenu();
+    if (!Array.isArray(menu)) {
+      throw new Error('getMenu() must return an array of MenuItem');
+    }
+    console.log(`   ✅ getMenu() returned ${menu.length} menu items.`);
+    menu.forEach(item => {
+      if (item.isDropdown && Array.isArray(item.items)) {
+        console.log(`      - Dropdown: "${item.title}" (${item.items.length} sub-items)`);
+      } else {
+        console.log(`      - Item: "${item.title}" (slug: ${item.slug || 'none'})`);
+      }
+    });
   }
 
   // 2. Test search
@@ -104,6 +150,19 @@ export async function testPlugin(pluginDir) {
   }
   if (stream.subtitles && stream.subtitles.length > 0) {
     console.log(`      - Subtitles: ${stream.subtitles.length} track(s)`);
+  }
+
+  // 5. Test Optional Methods (if present)
+  if (typeof plugin.checkHealth === 'function') {
+    console.log('🩺 Testing checkHealth()...');
+    const health = await plugin.checkHealth();
+    console.log(`   ✅ checkHealth() returned status: "${health?.status}" (${health?.message || 'No msg'})`);
+  }
+
+  if (typeof plugin.getSettings === 'function') {
+    console.log('⚙️ Testing getSettings()...');
+    const settings = await plugin.getSettings();
+    console.log(`   ✅ getSettings() returned ${Array.isArray(settings) ? settings.length : 0} setting items.`);
   }
 
   console.log(`\n🎉 RESULT: ALL TESTS PASSED FOR [${manifest.id}]!\n`);

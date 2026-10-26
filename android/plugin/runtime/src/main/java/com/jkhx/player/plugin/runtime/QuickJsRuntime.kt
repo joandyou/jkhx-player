@@ -12,15 +12,22 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import android.widget.Toast
 import kotlinx.serialization.json.*
 
 class QuickJsRuntime(
+    private val context: Context? = null,
     private val httpBridgeClient: HttpBridgeClient = HttpBridgeClient(),
-    private val storage: PluginStorage = DefaultPluginStorage(),
+    storage: PluginStorage? = null,
     private val logger: PluginLogger = DefaultPluginLogger(),
     private val memoryLimitBytes: Long = 64 * 1024 * 1024L,
     private val stackSizeBytes: Long = 0L
 ) : PluginRuntime {
+
+    val storage: PluginStorage = storage ?: (if (context != null) SharedPreferencesPluginStorage(context) else DefaultPluginStorage())
 
     private val bridge = QuickJsBridge()
     private val rtPtr = bridge.nativeCreateRuntime(memoryLimitBytes, stackSizeBytes)
@@ -47,12 +54,14 @@ class QuickJsRuntime(
                 return try {
                     when (action) {
                         "fetch" -> handleFetch(payloadJson)
+                        "webview_sniff" -> handleWebviewSniff(payloadJson)
                         "storage_get" -> handleStorageGet(payloadJson)
                         "storage_set" -> handleStorageSet(payloadJson)
                         "storage_remove" -> handleStorageRemove(payloadJson)
                         "log_info" -> handleLogInfo(payloadJson)
                         "log_warn" -> handleLogWarn(payloadJson)
                         "log_error" -> handleLogError(payloadJson)
+                        "ui_toast" -> handleUiToast(payloadJson)
                         else -> "null"
                     }
                 } catch (e: Exception) {
@@ -149,10 +158,97 @@ class QuickJsRuntime(
         return "true"
     }
 
+    private fun handleUiToast(payloadJson: String): String {
+        val root = json.parseToJsonElement(payloadJson).jsonObject
+        val msg = root["msg"]?.jsonPrimitive?.content ?: ""
+        val isLong = root["isLong"]?.jsonPrimitive?.booleanOrNull ?: false
+        if (msg.isNotBlank()) {
+            val appContext = context ?: runCatching {
+                val appClass = Class.forName("com.jkhx.player.JkhxApplication")
+                val field = appClass.getDeclaredField("instance")
+                field.isAccessible = true
+                field.get(null) as? Context
+            }.getOrNull()
+
+            if (appContext != null) {
+                Handler(Looper.getMainLooper()).post {
+                    Toast.makeText(appContext, msg, if (isLong) Toast.LENGTH_LONG else Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        return "true"
+    }
+
+    private fun handleWebviewSniff(payloadJson: String): String = runBlocking(Dispatchers.IO) {
+        val root = json.parseToJsonElement(payloadJson).jsonObject
+        val url = root["url"]?.jsonPrimitive?.content ?: ""
+        val injectJs = root["injectJs"]?.jsonPrimitive?.content ?: ""
+        val timeoutMs = root["timeoutMs"]?.jsonPrimitive?.longOrNull ?: 10000L
+
+        val headersMap = mutableMapOf<String, String>()
+        root["headers"]?.jsonObject?.forEach { (k, v) ->
+            headersMap[k] = v.jsonPrimitive.content
+        }
+
+        val appContext = context ?: runCatching {
+            val appClass = Class.forName("com.jkhx.player.JkhxApplication")
+            val field = appClass.getDeclaredField("instance")
+            field.isAccessible = true
+            field.get(null) as? Context
+        }.getOrNull()
+
+        if (appContext == null) {
+            return@runBlocking "null"
+        }
+
+        val sniffer = HeadlessWebviewSniffer(appContext)
+        val result = sniffer.sniff(url, injectJs, timeoutMs, headersMap)
+        result ?: "null"
+    }
+
     private fun injectPolyfills() {
         val polyfillScript = """
             globalThis.__jkhx_plugins = {};
+            globalThis.__jkhx_plugin_domains = {};
             globalThis.currentPluginId = "unknown";
+
+            Object.defineProperty(globalThis, 'CUSTOM_DOMAIN', {
+                get: function() {
+                    return (globalThis.__jkhx_plugin_domains && globalThis.currentPluginId)
+                        ? (globalThis.__jkhx_plugin_domains[globalThis.currentPluginId] || undefined)
+                        : undefined;
+                },
+                set: function(val) {
+                    if (globalThis.__jkhx_plugin_domains && globalThis.currentPluginId) {
+                        if (val) {
+                            globalThis.__jkhx_plugin_domains[globalThis.currentPluginId] = String(val);
+                        } else {
+                            delete globalThis.__jkhx_plugin_domains[globalThis.currentPluginId];
+                        }
+                    }
+                },
+                configurable: true,
+                enumerable: true
+            });
+
+            Object.defineProperty(globalThis, 'BASE_URL', {
+                get: function() {
+                    return (globalThis.__jkhx_plugin_domains && globalThis.currentPluginId)
+                        ? (globalThis.__jkhx_plugin_domains[globalThis.currentPluginId] || undefined)
+                        : undefined;
+                },
+                set: function(val) {
+                    if (globalThis.__jkhx_plugin_domains && globalThis.currentPluginId) {
+                        if (val) {
+                            globalThis.__jkhx_plugin_domains[globalThis.currentPluginId] = String(val);
+                        } else {
+                            delete globalThis.__jkhx_plugin_domains[globalThis.currentPluginId];
+                        }
+                    }
+                },
+                configurable: true,
+                enumerable: true
+            });
 
             globalThis.fetch = async function(url, options = {}) {
                 const payload = {
@@ -160,16 +256,20 @@ class QuickJsRuntime(
                     url: url,
                     options: options
                 };
-                const rawRes = globalThis.__native_dispatch("fetch", JSON.stringify(payload));
-                if (!rawRes) throw new Error("Network request failed");
+                const raw = globalThis.__native_dispatch("fetch", JSON.stringify(payload));
+                if (!raw) throw new Error("Network request failed");
+                const rawRes = typeof raw === "string" ? JSON.parse(raw) : raw;
+                if (rawRes.error) {
+                    throw new Error(rawRes.error);
+                }
                 return {
                     status: rawRes.status,
-                    ok: rawRes.ok,
-                    statusText: rawRes.statusText,
-                    text: async () => rawRes.body,
-                    json: async () => JSON.parse(rawRes.body),
+                    ok: Boolean(rawRes.ok),
+                    statusText: rawRes.statusText || "",
+                    text: async () => rawRes.body || "",
+                    json: async () => JSON.parse(rawRes.body || "{}"),
                     headers: {
-                        get: (name) => rawRes.headers ? rawRes.headers[name.toLowerCase()] : null
+                        get: (name) => (rawRes.headers && name) ? rawRes.headers[name.toLowerCase()] : null
                     }
                 };
             };
@@ -184,13 +284,154 @@ class QuickJsRuntime(
                     info: (...args) => globalThis.__native_dispatch("log_info", JSON.stringify({ pluginId: globalThis.currentPluginId, msg: args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ') })),
                     warn: (...args) => globalThis.__native_dispatch("log_warn", JSON.stringify({ pluginId: globalThis.currentPluginId, msg: args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ') })),
                     error: (...args) => globalThis.__native_dispatch("log_error", JSON.stringify({ pluginId: globalThis.currentPluginId, msg: args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ') }))
+                },
+                webview: {
+                    sniff: async (options = {}) => {
+                        const payload = {
+                            pluginId: globalThis.currentPluginId,
+                            url: options.url || "",
+                            injectJs: options.injectJs || "",
+                            timeoutMs: options.timeoutMs || 10000,
+                            headers: options.headers || {}
+                        };
+                        const raw = globalThis.__native_dispatch("webview_sniff", JSON.stringify(payload));
+                        if (!raw || raw === "null") return null;
+                        try {
+                            return JSON.parse(raw);
+                        } catch (e) {
+                            return raw;
+                        }
+                    }
+                },
+                ui: {
+                    showToast: (msg, isLong = false) => {
+                        if (!msg) return;
+                        globalThis.__native_dispatch("ui_toast", JSON.stringify({ msg: String(msg), isLong: Boolean(isLong) }));
+                    }
                 }
             };
+
+            if (typeof globalThis.btoa === 'undefined') {
+                const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+                globalThis.btoa = function(input) {
+                    const str = String(input);
+                    let output = '';
+                    for (let block = 0, charCode, i = 0, map = chars;
+                         str.charAt(i | 0) || (map = '=', i % 1);
+                         output += map.charAt(63 & block >> 8 - i % 1 * 8)) {
+                        charCode = str.charCodeAt(i += 3/4);
+                        if (charCode > 0xFF) {
+                            throw new Error("'btoa' failed: The string to be encoded contains characters outside of the Latin1 range.");
+                        }
+                        block = block << 8 | charCode;
+                    }
+                    return output;
+                };
+            }
+
+            if (typeof globalThis.atob === 'undefined') {
+                const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+                globalThis.atob = function(input) {
+                    const str = String(input).replace(/[=]+$/, '');
+                    if (str.length % 4 === 1) throw new Error("'atob' failed: The string to be decoded is not correctly encoded.");
+                    let output = '';
+                    for (let bc = 0, bs = 0, buffer, i = 0;
+                         buffer = str.charAt(i++);
+                         ~buffer && (bs = bc % 4 ? bs * 64 + buffer : buffer,
+                           bc++ % 4) ? output += String.fromCharCode(255 & bs >> (-2 * bc & 6)) : 0
+                    ) {
+                        buffer = chars.indexOf(buffer);
+                    }
+                    return output;
+                };
+            }
 
             globalThis.console = {
                 log: (...args) => globalThis.context.log.info(...args),
                 warn: (...args) => globalThis.context.log.warn(...args),
                 error: (...args) => globalThis.context.log.error(...args)
+            };
+
+            if (typeof globalThis.URLSearchParams === 'undefined') {
+                globalThis.URLSearchParams = class {
+                    constructor(init) {
+                        this.params = {};
+                        if (typeof init === 'string') {
+                            const str = init.startsWith('?') ? init.slice(1) : init;
+                            if (str) {
+                                for (const pair of str.split('&')) {
+                                    if (!pair) continue;
+                                    const idx = pair.indexOf('=');
+                                    const k = idx >= 0 ? decodeURIComponent(pair.substring(0, idx)) : decodeURIComponent(pair);
+                                    const v = idx >= 0 ? decodeURIComponent(pair.substring(idx + 1)) : '';
+                                    this.append(k, v);
+                                }
+                            }
+                        } else if (init && typeof init === 'object') {
+                            for (const [k, v] of Object.entries(init)) {
+                                if (v !== undefined && v !== null) {
+                                    this.append(k, String(v));
+                                }
+                            }
+                        }
+                    }
+                    append(name, value) {
+                        if (!this.params[name]) this.params[name] = [];
+                        this.params[name].push(String(value));
+                    }
+                    set(name, value) {
+                        this.params[name] = [String(value)];
+                    }
+                    get(name) {
+                        return this.params[name] ? this.params[name][0] : null;
+                    }
+                    getAll(name) {
+                        return this.params[name] || [];
+                    }
+                    has(name) {
+                        return Boolean(this.params[name]);
+                    }
+                    delete(name) {
+                        delete this.params[name];
+                    }
+                    toString() {
+                        const pairs = [];
+                        for (const [k, values] of Object.entries(this.params)) {
+                            for (const v of values) {
+                                pairs.push(encodeURIComponent(k) + '=' + encodeURIComponent(v));
+                            }
+                        }
+                        return pairs.join('&');
+                    }
+                };
+            }
+
+            // Thư viện Extractor trong QuickJS Sandbox dùng chung cho các plugins
+            globalThis.extractors = {
+                unpack: function(packedJs) {
+                    if (!packedJs || typeof packedJs !== 'string') return "";
+                    try {
+                        const regex = /eval\(function\(p,a,c,k,e,[rd]\)\{.*\}\('(.*)',(\d+),(\d+),'(.*)'\.split\('\|'\)/;
+                        const match = packedJs.match(regex);
+                        if (!match) return packedJs;
+                        let [, payload, radixStr, countStr, symsStr] = match;
+                        let radix = parseInt(radixStr, 10);
+                        let count = parseInt(countStr, 10);
+                        let syms = symsStr.split('|');
+                        function lookup(c) {
+                            return (c < radix ? '' : lookup(Math.floor(c / radix))) +
+                                ((c = c % radix) > 35 ? String.fromCharCode(c + 29) : c.toString(36));
+                        }
+                        while (count--) {
+                            if (syms[count]) {
+                                payload = payload.replace(new RegExp('\\b' + lookup(count) + '\\b', 'g'), syms[count]);
+                            }
+                        }
+                        return payload;
+                    } catch (e) {
+                        return packedJs;
+                    }
+                }
             };
         """.trimIndent()
         bridge.nativeEval(ctxPtr, polyfillScript, "polyfills.js")
@@ -202,12 +443,11 @@ class QuickJsRuntime(
     ): LoadedPlugin = withContext(Dispatchers.Default) {
         val pluginId = manifest.id
 
-        val customDomainCode = if (!manifest.customDomain.isNullOrBlank()) {
-            """
-            globalThis.CUSTOM_DOMAIN = "${manifest.customDomain}";
-            globalThis.BASE_URL = "${manifest.customDomain}";
-            """.trimIndent()
-        } else ""
+        val domainSetupCode = if (!manifest.customDomain.isNullOrBlank()) {
+            """globalThis.__jkhx_plugin_domains["$pluginId"] = "${manifest.customDomain}";"""
+        } else {
+            """delete globalThis.__jkhx_plugin_domains["$pluginId"];"""
+        }
 
         val transformedScript = scriptContent
             .replaceFirst(Regex("""export\s+default\s+"""), "globalThis.__jkhx_plugins[\"$pluginId\"] = ")
@@ -215,7 +455,7 @@ class QuickJsRuntime(
         val wrapScript = """
             (() => {
                 globalThis.currentPluginId = "$pluginId";
-                $customDomainCode
+                $domainSetupCode
                 const module = { exports: {} };
                 const exports = module.exports;
                 $transformedScript
@@ -244,7 +484,8 @@ class QuickJsRuntime(
             bridge = bridge,
             rtPtr = rtPtr,
             ctxPtr = ctxPtr,
-            runtimeMutex = runtimeMutex
+            runtimeMutex = runtimeMutex,
+            httpBridgeClient = httpBridgeClient
         )
     }
 
@@ -264,12 +505,17 @@ class LoadedPluginImpl(
     private val bridge: QuickJsBridge,
     private val rtPtr: Long,
     private val ctxPtr: Long,
-    private val runtimeMutex: Mutex
+    private val runtimeMutex: Mutex,
+    private val httpBridgeClient: HttpBridgeClient
 ) : LoadedPlugin {
 
     override val id: String = manifest.id
     override val name: String = manifest.name
     override val version: String = manifest.version
+
+    // Bộ nhớ đệm in-memory cho getMenu và getFilters
+    private var cachedMenu: List<MenuItem>? = null
+    private var cachedFilters: PluginFilterConfig? = null
 
     private suspend fun <T> invokeMethod(
         methodName: String,
@@ -277,11 +523,18 @@ class LoadedPluginImpl(
         timeoutMs: Long = 15000L,
         deserializer: (String) -> T
     ): T = withContext(Dispatchers.Default) {
+        val domainSetupCode = if (!manifest.customDomain.isNullOrBlank()) {
+            """globalThis.__jkhx_plugin_domains["${manifest.id}"] = "${manifest.customDomain}";"""
+        } else {
+            """delete globalThis.__jkhx_plugin_domains["${manifest.id}"];"""
+        }
+
         runtimeMutex.withLock {
             bridge.nativeSetTimeout(rtPtr, timeoutMs)
             val script = """
                 (async () => {
                     globalThis.currentPluginId = "${manifest.id}";
+                    $domainSetupCode
                     const p = globalThis.__jkhx_plugins["${manifest.id}"];
                     if (!p) throw new Error("Plugin not registered");
                     let res;
@@ -328,6 +581,10 @@ class LoadedPluginImpl(
                 }
                 deserializer(unquoted)
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) {
+                    cancelTasks()
+                    throw e
+                }
                 if (e.message?.contains("timeout", ignoreCase = true) == true) {
                     throw PluginTimeout(manifest.id, methodName, timeoutMs)
                 }
@@ -381,13 +638,152 @@ class LoadedPluginImpl(
         }
     }
 
-    override fun close() {
-        // Clear plugin reference
-        runBlocking {
-            runtimeMutex.withLock {
-                bridge.nativeEval(ctxPtr, "delete globalThis.__jkhx_plugins[\"${manifest.id}\"];", "cleanup.js")
+    override suspend fun getList(
+        type: String?,
+        slug: String?,
+        page: Int,
+        filters: Map<String, String>?
+    ): SearchResult {
+        val args = buildJsonArray {
+            add(type ?: "")
+            add(slug ?: "")
+            add(page)
+            if (filters != null) {
+                add(buildJsonObject {
+                    filters.forEach { (k, v) -> put(k, v) }
+                })
+            }
+        }.toString()
+        return try {
+            invokeMethod("getList", args, timeoutMs = 25000L) { raw ->
+                val trimmed = raw.trim()
+                if (trimmed.startsWith("[")) {
+                    val items = json.decodeFromString<List<MovieItem>>(trimmed)
+                    SearchResult(items = items, page = page, hasNext = items.isNotEmpty())
+                } else {
+                    json.decodeFromString(SearchResult.serializer(), trimmed)
+                }
+            }
+        } catch (e: Exception) {
+            val query = slug ?: type ?: ""
+            if (query.isNotBlank()) {
+                search(query, page)
+            } else {
+                SearchResult(items = emptyList(), page = page, hasNext = false)
             }
         }
+    }
+
+    override suspend fun getFilters(forceRefresh: Boolean): PluginFilterConfig? {
+        if (!forceRefresh && cachedFilters != null) {
+            return cachedFilters
+        }
+        return try {
+            val result = invokeMethod("getFilters", timeoutMs = 15000L) { raw ->
+                val trimmed = raw.trim()
+                if (trimmed.isEmpty() || trimmed == "null" || trimmed == "undefined") null
+                else json.decodeFromString(PluginFilterConfig.serializer(), trimmed)
+            }
+            if (result != null) cachedFilters = result
+            result
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            null
+        }
+    }
+
+    override suspend fun getMenu(forceRefresh: Boolean): List<MenuItem>? {
+        if (!forceRefresh && cachedMenu != null) {
+            return cachedMenu
+        }
+        return try {
+            val result = invokeMethod("getMenu", timeoutMs = 15000L) { raw ->
+                val trimmed = raw.trim()
+                if (trimmed.isEmpty() || trimmed == "null" || trimmed == "undefined") null
+                else if (trimmed.startsWith("[")) {
+                    json.decodeFromString<List<MenuItem>>(trimmed)
+                } else {
+                    null
+                }
+            }
+            if (result != null) cachedMenu = result
+            result
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            null
+        }
+    }
+
+    override suspend fun getSettings(): List<PluginSettingItem>? {
+        return try {
+            invokeMethod("getSettings", timeoutMs = 10000L) { raw ->
+                val trimmed = raw.trim()
+                if (trimmed.isEmpty() || trimmed == "null" || trimmed == "undefined") null
+                else json.decodeFromString<List<PluginSettingItem>>(trimmed)
+            }
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            null
+        }
+    }
+
+    override suspend fun checkHealth(): PluginHealthStatus? {
+        return try {
+            invokeMethod("checkHealth", timeoutMs = 10000L) { raw ->
+                val trimmed = raw.trim()
+                if (trimmed.isEmpty() || trimmed == "null" || trimmed == "undefined") null
+                else json.decodeFromString(PluginHealthStatus.serializer(), trimmed)
+            }
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            null
+        }
+    }
+
+    override fun clearCache() {
+        cachedMenu = null
+        cachedFilters = null
+    }
+
+    override fun cancelTasks() {
+        httpBridgeClient.cancelCalls(manifest.id)
+    }
+
+    override fun close() {
+        cancelTasks()
+        clearCache()
+        // Clear plugin reference & custom domain routing
+        runBlocking {
+            runtimeMutex.withLock {
+                bridge.nativeEval(
+                    ctxPtr,
+                    """
+                    delete globalThis.__jkhx_plugins["${manifest.id}"];
+                    if (globalThis.__jkhx_plugin_domains) {
+                        delete globalThis.__jkhx_plugin_domains["${manifest.id}"];
+                    }
+                    """.trimIndent(),
+                    "cleanup.js"
+                )
+            }
+        }
+    }
+}
+
+class SharedPreferencesPluginStorage(private val context: Context) : PluginStorage {
+    private val prefs = context.getSharedPreferences("jkhx_plugin_storage", Context.MODE_PRIVATE)
+    override fun get(pluginId: String, key: String): String? = prefs.getString("$pluginId:$key", null)
+    override fun set(pluginId: String, key: String, value: String) {
+        prefs.edit().putString("$pluginId:$key", value).apply()
+    }
+    override fun remove(pluginId: String, key: String) {
+        prefs.edit().remove("$pluginId:$key").apply()
+    }
+    override fun clear(pluginId: String) {
+        val prefix = "$pluginId:"
+        val editor = prefs.edit()
+        prefs.all.keys.filter { it.startsWith(prefix) }.forEach { editor.remove(it) }
+        editor.apply()
     }
 }
 
@@ -396,6 +792,11 @@ class DefaultPluginStorage : PluginStorage {
     override fun get(pluginId: String, key: String): String? = memory["$pluginId:$key"]
     override fun set(pluginId: String, key: String, value: String) { memory["$pluginId:$key"] = value }
     override fun remove(pluginId: String, key: String) { memory.remove("$pluginId:$key") }
+    override fun clear(pluginId: String) {
+        val prefix = "$pluginId:"
+        val keysToRemove = memory.keys.filter { it.startsWith(prefix) }
+        keysToRemove.forEach { memory.remove(it) }
+    }
 }
 
 class DefaultPluginLogger : PluginLogger {

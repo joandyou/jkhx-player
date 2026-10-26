@@ -14,8 +14,8 @@ android {
         applicationId = "com.jkhx.player"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 14
+        versionName = "1.0.13"
 
         ndk {
             abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a", "x86_64"))
@@ -25,6 +25,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -54,6 +55,7 @@ dependencies {
     implementation(project(":plugin:api"))
     implementation(project(":plugin:runtime"))
     implementation(project(":plugin:manager"))
+    implementation(libs.okhttp)
     implementation(libs.androidx.room.runtime)
 
     implementation(libs.androidx.core.ktx)
@@ -74,5 +76,6 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.play.services.auth)
 }
 

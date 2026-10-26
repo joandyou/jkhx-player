@@ -42,7 +42,8 @@ The manifest defines plugin identity, capabilities, and repository discovery met
 | `name` | `string` | Yes | Human-readable provider title displayed in UI. |
 | `version` | `string` | Yes | Semantic version string (e.g., `1.0.0`). |
 | `description` | `string` | No | Short summary of content catalog. |
-| `icon` | `string` | No | Direct URL or local relative path to icon image. |
+| `icon` / `iconUrl` / `logo` | `string` | No | URL ảnh biểu tượng đại diện của plugin (hiển thị trên thẻ plugin và kho nguồn). |
+| `defaultDomain` | `string` | No | Tên miền mặc định của nguồn dữ liệu (dùng hiển thị và kiểm tra kết nối máy chủ). |
 | `entry` | `string` | Yes | Path to JavaScript entry point, typically `plugin.js`. |
 | `types` | `string[]` | Yes | Supported content categories (`movies`, `tv`, `anime`, etc.). |
 | `isAdult` | `boolean` | Yes | `true` if provider serves 18+ adult content (hidden if Safe Mode is on). |
@@ -222,4 +223,15 @@ context.log.info("Loaded items: " + items.length);
 context.log.warn("Warning occurred");
 context.log.error("Failed to parse: " + err.message);
 ```
+
+### `context.ui.showToast(message, isLong)`
+Display a native Android Toast notification to the user from JavaScript Sandbox:
+```javascript
+// Short toast (default)
+context.ui?.showToast("SexTop1: Đã kết nối tên miền mới https://sextop1.land");
+
+// Long toast
+context.ui?.showToast("Máy chủ đang bảo trì, vui lòng quay lại sau!", true);
+```
+
 

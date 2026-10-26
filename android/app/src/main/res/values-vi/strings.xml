@@ -1,0 +1,672 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- App & Navigation -->
+    <string name="app_name">JKHX Player</string>
+    <string name="app_subtitle">Multi-stream Entertainment</string>
+    <string name="app_full_title">JKHX Player (Multi-stream)</string>
+    <string name="nav_home">Trang Chủ</string>
+    <string name="nav_search">Tìm Kiếm</string>
+    <string name="nav_plugins">Kho Nguồn</string>
+    <string name="nav_settings">Cài Đặt</string>
+
+    <!-- Common Actions & States -->
+    <string name="common_back">Quay Lại</string>
+    <string name="common_close">Đóng</string>
+    <string name="common_delete">Xóa</string>
+    <string name="common_cancel">Hủy</string>
+    <string name="common_save">Lưu</string>
+    <string name="common_refresh">Tải lại</string>
+    <string name="common_retry">Thử lại</string>
+    <string name="common_default">Mặc định</string>
+    <string name="common_loading">Đang tải…</string>
+    <string name="common_error">Lỗi tải dữ liệu</string>
+    <string name="common_error_prefix">Lỗi: %s</string>
+    <string name="common_warning">Cảnh báo</string>
+    <string name="common_status_active">Hoạt động</string>
+    <string name="common_status_inactive">Tắt</string>
+    <string name="common_status_error">Lỗi</string>
+
+    <!-- HomeScreen -->
+    <string name="home_empty_plugins_title">Chưa có plugin nào được cài đặt</string>
+    <string name="home_empty_plugins_desc">Vui lòng mở Kho Plugin để cài đặt nguồn xem phim</string>
+    <string name="home_open_plugins_btn">Mở Kho Plugin</string>
+    <string name="home_source_maintenance">Nguồn phim chưa có dữ liệu hoặc đang bảo trì</string>
+    <string name="home_manage_plugins_btn">Quản lý Plugins</string>
+    <string name="home_continue_watching">Xem tiếp</string>
+    <string name="home_view_more_watching">Xem danh sách đang xem</string>
+    <string name="home_view_more_section">Xem thêm %s</string>
+    <string name="home_select_provider">Chọn Nguồn</string>
+    <string name="home_no_providers">Chưa có provider nào</string>
+    <string name="home_tag_adult">18+</string>
+    <string name="home_search_btn">Tìm kiếm</string>
+    <string name="home_refresh_btn">Tải lại</string>
+    <string name="home_quick_categories_title">Hôm nay xem gì?</string>
+    <string name="home_refreshed_toast">Đã làm mới dữ liệu từ %s</string>
+    <string name="home_refresh_error">Lỗi làm mới: %s</string>
+    <string name="home_source_warning_blocked">Nguồn có thể bị nhà mạng chặn</string>
+    <string name="home_source_warning_degraded">Máy chủ phản hồi chậm hoặc suy giảm</string>
+    <string name="home_source_warning_toast">[%1$s] Cảnh báo: %2$s</string>
+    <string name="home_source_conn_error_toast">[%1$s] Cảnh báo: Lỗi kết nối (%2$s), có thể bị chặn mạng!</string>
+    <string name="home_provider_not_ready">Provider [%s] chưa sẵn sàng hoặc chưa được bật</string>
+    <string name="home_tag_series">Phim Bộ</string>
+    <string name="home_tag_movie">Phim Lẻ</string>
+    <string name="home_tag_hd">HD</string>
+    <string name="home_tag_vietsub">Vietsub</string>
+    <string name="home_tag_full">Full</string>
+    <string name="home_tag_completed">Hoàn Tất</string>
+    <string name="home_tag_completed_format">Hoàn Tất (%1$s/%2$s)</string>
+    <string name="home_tag_episode_format">Tập %s</string>
+    <string name="home_logo_desc">Logo JKHX</string>
+
+    <!-- MovieCard & History Card -->
+    <string name="movie_card_delete_history">Xóa</string>
+    <string name="movie_card_watching_now">Đang xem</string>
+
+    <!-- DetailScreen -->
+    <string name="detail_source_not_enabled">Nguồn [%s] chưa được bật hoặc chưa cài đặt</string>
+    <string name="detail_load_error">Lỗi khi tải chi tiết phim</string>
+    <string name="detail_watch_now">Xem Phim Ngay</string>
+    <string name="detail_read_now">Đọc Truyện Ngay</string>
+    <string name="detail_watch_short">Xem ngay</string>
+    <string name="detail_read_short">Đọc ngay</string>
+    <string name="detail_continue_watching">Xem tiếp tập: %s</string>
+    <string name="detail_continue_reading">Đọc tiếp: %s</string>
+    <string name="detail_status_watching">Đang xem</string>
+    <string name="detail_btn_favorite">Yêu thích</string>
+    <string name="detail_btn_download">Tải xuống</string>
+    <string name="detail_director">Đạo diễn:</string>
+    <string name="detail_actors">Diễn viên:</string>
+    <string name="detail_genres">Thể loại:</string>
+    <string name="detail_country">Quốc gia:</string>
+    <string name="detail_synopsis">Nội dung</string>
+    <string name="detail_read_more">Xem thêm</string>
+    <string name="detail_read_less">Thu gọn</string>
+    <string name="detail_favorite_added">Đã thêm vào danh sách yêu thích</string>
+    <string name="detail_favorite_removed">Đã xóa khỏi danh sách yêu thích</string>
+    <string name="detail_download_notice">Đang chuẩn bị phát tập %s</string>
+    <string name="detail_cast">DIỄN VIÊN</string>
+    <string name="detail_select_server">Nguồn phát</string>
+    <string name="detail_episode_list">DANH SÁCH TẬP (%d)</string>
+    <string name="detail_chapter_list">DANH SÁCH CHƯƠNG (%d)</string>
+    <string name="detail_back">Quay lại</string>
+    <string name="detail_share_stream_link">Chia sẻ liên kết luồng phát</string>
+    <string name="detail_copied_stream_link">Đã sao chép liên kết vào bộ nhớ tạm &amp; mở chia sẻ</string>
+    <string name="stream_copied_toast">Đã sao chép liên kết luồng phát vào bộ nhớ tạm</string>
+    <string name="home_resuming_episode">Đang mở: %s…</string>
+    <string name="badge_single_movie">Phim Lẻ</string>
+    <string name="home_resume_failed">Không thể mở tập phim, đang chuyển sang trang chi tiết</string>
+    <string name="home_cannot_resume_movie">Không thể phát tiếp phim này. Nguồn phim có thể đã bị xóa hoặc tạm ngưng.</string>
+    <string name="detail_downloading_resolving">Đang lấy liên kết tải tập %s…</string>
+    <string name="detail_download_dialog_title">Chọn tập để tải xuống</string>
+    <string name="detail_download_started">Bắt đầu tải %s vào thư mục Downloads</string>
+    <string name="detail_downloading_desc">Đang tải video…</string>
+    <string name="detail_download_failed">Không thể lấy liên kết tải</string>
+    <string name="reader_resume_toast">Đang tiếp tục đọc từ trang %d</string>
+    <string name="reader_resume_novel_toast">Đang tiếp tục đọc (%d%%)</string>
+
+    <!-- PlayerScreen -->
+    <string name="player_episode_default_name">Tập phim</string>
+    <string name="player_playing_default_title">Đang phát</string>
+    <string name="player_next_episode_toast">Hết tập. Đang chuyển sang tập tiếp theo…</string>
+    <string name="player_error_format">Lỗi phát video (%1$s): %2$s</string>
+    <string name="player_error_cannot_connect">Không thể kết nối luồng stream</string>
+    <string name="player_resume_toast">Tiếp tục xem từ %s</string>
+    <string name="player_load_stream_error">Lỗi tải luồng phát video</string>
+    <string name="player_plugin_unavailable">Plugin [%s] không khả dụng</string>
+    <string name="player_fast_forward_2x">TUA NHANH 2X &gt;&gt;</string>
+    <string name="player_fit_mode_fit">Vừa khung</string>
+    <string name="player_fit_mode_zoom">Phủ đầy</string>
+    <string name="player_fit_mode_stretch">Kéo giãn</string>
+    <string name="player_speed_title">Tốc độ phát</string>
+    <string name="player_quality_title">Chất lượng video</string>
+    <string name="player_subtitle_title">Phụ đề</string>
+    <string name="player_auto">Tự động</string>
+    <string name="player_off">Tắt</string>
+    <string name="player_episodes_sheet_title">Danh sách tập</string>
+    <string name="player_episodes_playing">Đang phát</string>
+    <string name="player_episodes_count">%d tập</string>
+    <string name="player_settings_title">Cài đặt phát</string>
+    <string name="player_switch_to_webview">Chuyển sang Web Player</string>
+    <string name="player_switch_to_native">Chuyển sang Native Player</string>
+    <string name="player_lock_controls">Khóa màn hình</string>
+    <string name="player_unlock_controls">Mở khóa màn hình</string>
+    <string name="player_rotate">Xoay màn hình</string>
+    <string name="player_pip">Thu nhỏ (PiP)</string>
+    <string name="player_aspect_ratio">Tỉ lệ khung hình</string>
+    <string name="player_prev_episode">Tập trước</string>
+    <string name="player_next_episode">Tập sau</string>
+    <string name="player_rewind_10s">Lùi 10s</string>
+    <string name="player_forward_10s">Tới 10s</string>
+    <string name="player_play">Phát</string>
+    <string name="player_pause">Tạm dừng</string>
+    <string name="player_speed_toast">Tốc độ: %s</string>
+    <string name="player_orientation_landscape">Màn hình ngang</string>
+    <string name="player_orientation_portrait">Màn hình dọc</string>
+    <string name="player_quality_auto">Tự động (Khuyên dùng)</string>
+    <string name="player_quality_auto_desc">Thích ứng linh hoạt theo tốc độ mạng</string>
+    <string name="player_subtitle_off">Tắt phụ đề</string>
+    <string name="player_subtitle_custom_title">Tùy chỉnh phụ đề</string>
+    <string name="player_subtitle_preview">Xem trước trực tiếp</string>
+    <string name="player_subtitle_sample">Đây là phụ đề mẫu</string>
+    <string name="player_subtitle_size_title">Cỡ chữ</string>
+    <string name="player_subtitle_size_small">Nhỏ (16)</string>
+    <string name="player_subtitle_size_medium">Vừa (20)</string>
+    <string name="player_subtitle_size_large">Lớn (24)</string>
+    <string name="player_subtitle_size_xlarge">Rất lớn (28)</string>
+    <string name="player_subtitle_style_title">Màu sắc &amp; Kiểu chữ</string>
+    <string name="player_subtitle_style_white_outline">Trắng viền đen</string>
+    <string name="player_subtitle_style_yellow_outline">Vàng viền đen</string>
+    <string name="player_subtitle_style_cyan_outline">Xanh viền đen</string>
+    <string name="player_subtitle_style_white_bg">Trắng nền mờ</string>
+    <string name="player_subtitle_style_yellow_bg">Vàng nền mờ</string>
+    <string name="player_sources_title">Nguồn phát &amp; Máy chủ</string>
+    <string name="player_sources_btn">Chọn nguồn</string>
+    <string name="player_sources_current_badge">Đang phát</string>
+    <string name="player_sources_tmdb_matched">Khớp TMDB</string>
+    <string name="player_sources_name_matched">Khớp tên</string>
+    <string name="player_sources_searching">Đang quét nguồn tương ứng từ các plugin khác…</string>
+    <string name="player_sources_no_other_found">Không tìm thấy nguồn phim khác phù hợp</string>
+    <string name="player_sources_switch_success">Đã chuyển sang: %1$s (%2$s)</string>
+    <string name="player_volume">Âm lượng</string>
+
+    <!-- PluginsScreen -->
+    <string name="plugins_title">Kho nguồn tiện ích</string>
+    <string name="plugins_refresh_all">Làm mới tất cả</string>
+    <string name="plugins_refresh_all_done">Đã làm mới tất cả kho nguồn và danh sách plugin</string>
+    <string name="plugins_tab_installed">Đã cài đặt</string>
+    <string name="plugins_tab_store">Plugins</string>
+    <string name="plugins_search_installed_placeholder">Tìm kiếm plugin đã cài đặt…</string>
+    <string name="plugins_search_store_placeholder">Tìm kiếm plugin trong kho…</string>
+    <string name="plugins_empty_installed">Chưa có plugin nào được cài đặt</string>
+    <string name="plugins_empty_installed_desc">Hãy chuyển sang tab Kho Plugin để khám phá và cài đặt nguồn phim.</string>
+    <string name="plugins_explore_store_btn">Khám phá Kho Plugin</string>
+    <string name="plugins_empty_store">Không tìm thấy plugin nào trong kho</string>
+    <string name="plugins_no_repos">Chưa có kho nguồn nào</string>
+    <string name="plugins_no_repos_desc">Bấm nút dấu cộng bên dưới để thêm kho nguồn plugin.</string>
+    <string name="plugins_add_repo_btn">Thêm nguồn Plugin</string>
+    <string name="plugins_add_repo_dialog_title">Thêm kho nguồn Plugin</string>
+    <string name="plugins_add_repo_dialog_desc">Nhập URL file manifest.json của kho nguồn để cài đặt các plugin mới.</string>
+    <string name="plugins_add_repo_input_placeholder">https://example.com/manifest.json</string>
+    <string name="plugins_add_repo_confirm">Thêm kho nguồn</string>
+    <string name="plugins_add_repo_success">Đã thêm kho nguồn thành công</string>
+    <string name="plugins_add_repo_error">Lỗi thêm kho nguồn: %s</string>
+    <string name="plugins_custom_domain_placeholder">Domain dự phòng (tuỳ chọn)…</string>
+    <string name="plugins_save_domain">Lưu Domain</string>
+    <string name="plugins_domain_updated">Đã cập nhật domain cho %s</string>
+    <string name="plugins_uninstall">Gỡ cài đặt</string>
+    <string name="plugins_uninstalled_toast">Đã gỡ cài đặt %s</string>
+    <string name="plugins_install">Cài đặt</string>
+    <string name="plugins_installing">Đang cài đặt…</string>
+    <string name="plugins_installed_badge">Đã cài đặt</string>
+    <string name="plugins_installed_success">Đã cài đặt thành công %s</string>
+    <string name="plugins_install_error">Lỗi cài đặt: %s</string>
+    <string name="plugins_delete_repo">Xóa kho nguồn</string>
+    <string name="plugins_delete_repo_toast">Đã xóa kho nguồn và các plugin liên quan</string>
+    <string name="plugins_refresh_repo">Cập nhật kho nguồn</string>
+    <string name="plugins_refresh_repo_toast">Đã cập nhật kho nguồn</string>
+    <string name="plugins_drag_reorder">Kéo để đổi thứ tự ưu tiên</string>
+    <string name="plugins_move_up">Di chuyển lên</string>
+    <string name="plugins_move_down">Di chuyển xuống</string>
+    <string name="plugins_version_format">Phiên bản: %s</string>
+    <string name="plugins_author_format">Tác giả: %s</string>
+    <string name="plugins_update_btn">Cập nhật</string>
+    <string name="plugins_uninstall_short">Gỡ</string>
+    <string name="plugins_uninstall_dialog_title">Gỡ cài đặt %s?</string>
+    <string name="plugins_uninstall_dialog_desc">Bạn có chắc chắn muốn gỡ cài đặt plugin này khỏi thiết bị?</string>
+    <string name="plugins_uninstall_confirm">Gỡ bỏ</string>
+    <string name="plugins_domain_label">Domain: %s</string>
+    <string name="plugins_check_health_desc">Kiểm tra nguồn plugin</string>
+    <string name="plugins_health_ok">Kết nối máy chủ ổn định</string>
+    <string name="plugins_health_status">Trạng thái: %s</string>
+    <string name="plugins_health_active">Hoạt động (%1$d - %2$dms)</string>
+    <string name="plugins_health_http_error">Lỗi HTTP %1$d (%2$dms)</string>
+    <string name="plugins_health_domain_empty">Domain không được để trống</string>
+    <string name="plugins_health_cannot_connect">Không thể kết nối (%dms)</string>
+    <string name="plugins_health_no_domain">Chưa cấu hình domain</string>
+    <string name="plugins_health_error">Lỗi kết nối máy chủ</string>
+    <string name="plugins_health_toast_format">[%1$s] %2$s</string>
+    <string name="plugins_no_scrapers">Không có scraper nào trong kho này</string>
+    <string name="plugins_no_scrapers_safe">Không có scraper phù hợp (Đang bật Safe Mode)</string>
+    <string name="plugins_tag_comic">TRUYỆN</string>
+    <string name="plugins_tag_movie">PHIM</string>
+    <string name="plugins_tag_live">LIVE</string>
+    <string name="plugins_settings_title">Cài đặt plugin</string>
+    <string name="plugins_settings_empty">Plugin này không có tùy chọn cài đặt nào</string>
+    <string name="plugins_settings_saved">Đã lưu cài đặt cho %s</string>
+    <string name="plugins_settings_save_btn">Lưu cài đặt</string>
+    <string name="plugins_settings_reset_domain">Mặc định</string>
+    <string name="plugins_settings_reset_success">Đã khôi phục tên miền mặc định cho %s</string>
+    <string name="plugins_tag_novel">TIỂU THUYẾT</string>
+    <string name="home_tag_novel_badge">Tiểu thuyết</string>
+    <string name="home_tag_comic">Truyện</string>
+    <string name="home_tag_movie_badge">Phim</string>
+    <string name="home_tag_live_badge">Live</string>
+
+    <!-- ReaderScreen (Comic & Novel) -->
+    <string name="reader_loading">Đang tải trang truyện…</string>
+    <string name="reader_loading_novel">Đang tải nội dung chương…</string>
+    <string name="reader_no_content">Không tìm thấy nội dung cho chương này</string>
+    <string name="reader_novel_font_size">Cỡ chữ: %d sp</string>
+    <string name="reader_novel_theme_dark">Nền tối</string>
+    <string name="reader_novel_theme_sepia">Nền vàng giấy</string>
+    <string name="reader_novel_theme_light">Nền sáng</string>
+    <string name="reader_novel_progress">Tiến độ đọc: %d%%</string>
+    <string name="reader_error">Lỗi khi tải trang truyện</string>
+    <string name="reader_no_images">Không tìm thấy trang truyện nào cho chương này</string>
+    <string name="reader_prev_chapter">Chap trước</string>
+    <string name="reader_next_chapter">Chap sau</string>
+    <string name="reader_page_indicator">Trang %1$d / %2$d</string>
+    <string name="reader_retry">Tải lại</string>
+    <string name="reader_chapters_title">Danh sách chương</string>
+    <string name="reader_chapters_count">Danh sách chương (%d)</string>
+    <string name="reader_search_chapter_placeholder">Tìm hoặc nhập số chương…</string>
+    <string name="reader_current_reading">Đang đọc</string>
+    <string name="reader_sort_asc">Cũ nhất trước</string>
+    <string name="reader_sort_desc">Mới nhất trước</string>
+    <string name="reader_no_matching_chapters">Không tìm thấy chương phù hợp</string>
+    <string name="reader_reset_zoom">Đặt lại thu phóng (%1$.1fx)</string>
+    <string name="detail_sort_chapters">Đổi thứ tự</string>
+    <string name="detail_sort_asc">Cũ nhất trước</string>
+    <string name="detail_sort_desc">Mới nhất trước</string>
+
+    <!-- SearchScreen -->
+    <string name="search_placeholder">Tìm kiếm phim, truyện trên toàn bộ plugins…</string>
+    <string name="search_clear">Xóa</string>
+    <string name="search_empty_result">Không tìm thấy kết quả nào cho \'%s\'</string>
+    <string name="search_history_title">Lịch sử tìm kiếm</string>
+    <string name="search_history_clear_all">Xóa tất cả</string>
+    <string name="search_filter_all">Tất cả</string>
+    <string name="search_results_count">%d kết quả</string>
+    <string name="search_refresh">Làm mới kết quả</string>
+
+    <!-- WatchHistoryScreen -->
+    <string name="history_title">Phim Đang Xem</string>
+    <string name="history_subtitle">%d phim đang xem dở</string>
+    <string name="history_clear_all">Xóa tất cả</string>
+    <string name="history_empty_title">Chưa có phim nào đang xem dở</string>
+    <string name="history_empty_desc">Khi bạn xem phim, tiến độ sẽ tự động được lưu lại tại đây.</string>
+    <string name="history_explore_now">Khám phá phim ngay</string>
+    <string name="history_dialog_clear_title">Xóa toàn bộ lịch sử xem?</string>
+    <string name="history_dialog_clear_desc">Thao tác này sẽ xóa tất cả các phim đang xem dở trong danh sách của bạn.</string>
+    <string name="history_dialog_confirm">Xóa hết</string>
+
+    <!-- MovieListScreen -->
+    <string name="movie_list_source_not_ready">Nguồn [%s] chưa sẵn sàng hoặc đã bị tắt.</string>
+    <string name="movie_list_load_error">Không thể tải danh sách phim</string>
+    <string name="movie_list_filter_genre">Thể loại</string>
+    <string name="movie_list_filter_country">Quốc gia</string>
+    <string name="movie_list_filter_year">Năm</string>
+    <string name="movie_list_filter_sort">Sắp xếp</string>
+    <string name="movie_list_filter_all">Tất cả</string>
+    <string name="movie_list_empty">Chưa có phim nào trong mục này</string>
+    <string name="movie_list_loading_more">Đang tải thêm phim…</string>
+    <string name="movie_list_server_label">MÁY CHỦ: %s</string>
+    <string name="movie_list_list_prefix">DANH SÁCH %s</string>
+    <string name="movie_list_filter_btn">LỌC</string>
+    <string name="movie_list_loading">Đang tải danh sách phim…</string>
+    <string name="movie_list_empty_filter">Không tìm thấy phim nào phù hợp với bộ lọc</string>
+    <string name="movie_list_all_displayed">Đã hiển thị tất cả phim</string>
+    <string name="movie_list_filter_genre_placeholder">- THỂ LOẠI -</string>
+    <string name="movie_list_filter_country_placeholder">- QUỐC GIA -</string>
+    <string name="movie_list_filter_year_placeholder">- NĂM -</string>
+
+    <!-- SettingsScreen -->
+    <string name="settings_title">Cài Đặt</string>
+    <string name="settings_theme_section">Giao diện</string>
+    <string name="settings_display_mode_section">Chế độ hiển thị</string>
+    <string name="settings_display_mode_desc">Chọn giao diện phù hợp với thiết bị của bạn</string>
+    <string name="settings_language_section">Ngôn ngữ</string>
+    <string name="settings_language_desc">Chọn ngôn ngữ hiển thị cho ứng dụng</string>
+    <string name="settings_adult_section">Nội Dung &amp; Bộ Lọc</string>
+    <string name="settings_adult_title">Chế độ 18+ (Nội dung người lớn)</string>
+    <string name="settings_adult_on">Đang BẬT: Hiển thị các plugin và nội dung người lớn (isAdult = true)</string>
+    <string name="settings_adult_off">Đang TẮT (Safe Mode): Ẩn tất cả các plugin và nội dung người lớn (isAdult = true)</string>
+    <string name="settings_comic_title">Chế độ đọc truyện tranh (Manga / Comic)</string>
+    <string name="settings_comic_on">Đang BẬT: Hiển thị các plugin và nội dung đọc truyện tranh (isComic = true)</string>
+    <string name="settings_comic_off">Đang TẮT: Ẩn tất cả các plugin và nội dung đọc truyện tranh (isComic = true)</string>
+    <string name="settings_novel_title">Chế độ đọc truyện chữ (Novel / Light Novel)</string>
+    <string name="settings_novel_on">Đang BẬT: Hiển thị các plugin và nội dung đọc truyện chữ (isNovel = true)</string>
+    <string name="settings_novel_off">Đang TẮT: Ẩn tất cả các plugin và nội dung đọc truyện chữ (isNovel = true)</string>
+    <string name="settings_tmdb_section">Siêu Dữ Liệu Phim (TMDB)</string>
+    <string name="settings_tmdb_desc">Khóa API The Movie Database dùng để làm giàu hình ảnh 4K/1080p, điểm đánh giá và dàn diễn viên qua Cloudflare Worker Proxy.</string>
+    <string name="settings_tmdb_label">TMDB API Key (v3)</string>
+    <string name="settings_tmdb_placeholder">Nhập API Key TMDB…</string>
+    <string name="settings_tmdb_save">Lưu API Key</string>
+    <string name="settings_tmdb_testing">Đang kiểm tra…</string>
+    <string name="settings_tmdb_test_btn">Kiểm tra Key</string>
+    <string name="settings_tmdb_default_btn">Mặc định</string>
+    <string name="settings_tmdb_custom_status">Trạng thái: Đang sử dụng API Key tùy chỉnh của bạn</string>
+    <string name="settings_tmdb_default_status">Trạng thái: Đang sử dụng API Key mặc định của hệ thống</string>
+    <string name="settings_tmdb_saved_toast">Đã lưu TMDB API Key thành công!</string>
+    <string name="settings_tmdb_reset_toast">Đã khôi phục TMDB API Key mặc định của hệ thống!</string>
+
+    <!-- Proxy Settings -->
+    <string name="settings_proxy_section">Mạng &amp; Proxy Tùy Chỉnh</string>
+    <string name="settings_proxy_desc">Định tuyến toàn bộ request của Plugin, luồng phát video và ảnh qua Proxy Server (hỗ trợ WARP proxy container, SOCKS5 hoặc HTTP) để vượt qua chặn mạng.</string>
+    <string name="settings_proxy_enable_title">Sử dụng Custom Proxy</string>
+    <string name="settings_proxy_enable_on">Đang BẬT: Toàn bộ lưu lượng mạng được định tuyến qua Proxy đã cấu hình.</string>
+    <string name="settings_proxy_enable_off">Đang TẮT: Kết nối trực tiếp qua mạng thông thường của thiết bị.</string>
+    <string name="settings_proxy_type_label">Giao thức Proxy</string>
+    <string name="settings_proxy_host_label">Địa chỉ Host / IP</string>
+    <string name="settings_proxy_host_placeholder">Ví dụ: 192.168.1.100 hoặc warp.local</string>
+    <string name="settings_proxy_port_label">Cổng (Port)</string>
+    <string name="settings_proxy_port_placeholder">Ví dụ: 1080</string>
+    <string name="settings_proxy_save_btn">Lưu cấu hình Proxy</string>
+    <string name="settings_proxy_saved_toast">Đã lưu cấu hình Proxy thành công!</string>
+    <string name="settings_proxy_test_btn">Kiểm tra kết nối</string>
+    <string name="settings_proxy_testing">Đang kiểm tra kết nối…</string>
+
+    <string name="settings_app_info_section">Thông Tin Ứng Dụng</string>
+    <string name="settings_app_name_info">Ứng dụng: JKHX Player (Multi-stream)</string>
+    <string name="settings_current_theme_info">Chủ đề hiện tại: %s</string>
+    <string name="settings_current_display_info">Chế độ hiển thị: %s</string>
+    <string name="settings_version_info">Phiên bản: %s (Native Android + QuickJS-NG)</string>
+    <string name="settings_arch_info">Kiến trúc: Media3 + ExoPlayer + Pure JS Plugins</string>
+
+    <!-- Theme Titles -->
+    <string name="theme_light">Sáng</string>
+    <string name="theme_dark">Tối</string>
+    <string name="theme_neon">Neon</string>
+    <string name="theme_cinema">Cinema</string>
+
+    <!-- Display Mode Titles -->
+    <string name="display_mobile">Điện thoại</string>
+    <string name="display_tablet">Máy tính bảng</string>
+
+    <!-- Language Titles -->
+    <string name="language_vietnamese">Tiếng Việt</string>
+    <string name="language_english">English</string>
+
+    <!-- Favorites & Live Strings -->
+    <string name="nav_favorites">Yêu thích</string>
+    <string name="favorites_title">Mục Yêu Thích</string>
+    <string name="favorites_subtitle">%d nội dung đã lưu</string>
+    <string name="favorites_empty_title">Chưa có mục yêu thích nào</string>
+    <string name="favorites_empty_desc">Nhấn vào biểu tượng trái tim trên phim hoặc truyện bất kỳ để lưu vào danh sách yêu thích</string>
+    <string name="favorites_clear_all">Xóa tất cả</string>
+    <string name="favorites_dialog_clear_title">Xóa danh sách yêu thích?</string>
+    <string name="favorites_dialog_clear_desc">Toàn bộ danh sách phim và truyện đã yêu thích sẽ bị xóa khỏi bộ nhớ.</string>
+    <string name="favorites_card_delete">Bỏ yêu thích</string>
+    <string name="settings_live_title">Chế độ phát trực tiếp (Live Sports / Stream)</string>
+    <string name="settings_live_on">Đang BẬT: Hiển thị các plugin và nội dung phát trực tiếp (isLive = true)</string>
+    <string name="settings_live_off">Đang TẮT: Ẩn tất cả các plugin và nội dung phát trực tiếp (isLive = true)</string>
+
+    <!-- Discover & Nuvio Strings -->
+    <string name="nav_discover">Khám Phá</string>
+    <string name="discover_title_main">Khám Phá</string>
+    <string name="discover_title_search">Tìm kiếm</string>
+    <string name="discover_title_discover">Khám phá</string>
+    <string name="search_placeholder_nuvio">Tìm kiếm các phim, chương trình…</string>
+    <string name="discover_type_all">Tất cả</string>
+    <string name="discover_type_movie">Phim</string>
+    <string name="discover_type_series">Phim bộ</string>
+    <string name="discover_empty">Không tìm thấy nội dung phù hợp</string>
+    <string name="tmdb_cat_popular">Phổ biến</string>
+    <string name="tmdb_cat_now_playing">Đang chiếu rạp</string>
+    <string name="tmdb_cat_upcoming">Sắp chiếu</string>
+    <string name="tmdb_cat_airing_today">Phát sóng hôm nay</string>
+    <string name="tmdb_cat_on_the_air">Đang phát sóng</string>
+    <string name="tmdb_cat_top_rated">Đánh giá cao nhất</string>
+
+    <!-- Google Account & Cloud Sync -->
+    <string name="settings_sync_section">Tài Khoản &amp; Đồng Bộ Đám Mây</string>
+    <string name="settings_sync_desc">Đồng bộ nguồn plugin, danh sách yêu thích và tiến trình xem qua Google Drive (AppData).</string>
+    <string name="settings_sync_sign_in_google">Đăng nhập bằng Google</string>
+    <string name="settings_sync_sign_out">Đăng xuất</string>
+    <string name="settings_sync_account_google">Tài khoản Google</string>
+    <string name="settings_sync_auto_title">Tự động đồng bộ hóa</string>
+    <string name="settings_sync_auto_desc">Tự động cập nhật tiến trình xem tức thì và đồng bộ khi mở ứng dụng.</string>
+    <string name="settings_sync_now_btn">Đồng bộ ngay</string>
+    <string name="settings_sync_syncing">Đang đồng bộ…</string>
+    <string name="settings_sync_last_time">Lần đồng bộ gần nhất: %s</string>
+    <string name="settings_sync_never">Chưa từng đồng bộ</string>
+    <string name="settings_sync_success_toast">Đồng bộ đám mây thành công!</string>
+    <string name="settings_sync_error_toast">Đồng bộ thất bại: %s</string>
+    <string name="settings_sync_sign_in_failed">Đăng nhập Google thất bại: %s</string>
+    <string name="settings_sync_sign_out_confirm_title">Đăng xuất tài khoản Google?</string>
+    <string name="settings_sync_sign_out_confirm_desc">Dữ liệu trên máy sẽ được giữ nguyên, nhưng sẽ ngừng đồng bộ với các thiết bị khác.</string>
+
+    <!-- Auxiliary Services & Advanced Customization -->
+    <string name="settings_aux_services_title">Tùy chỉnh nâng cao</string>
+    <string name="settings_aux_services_subtitle">Nhãn luồng Fusion, TMDB, Phụ đề, Dịch thuật &amp; Thuyết minh AI</string>
+    <string name="settings_aux_services_desc">Cấu hình nhãn luồng phim kiểu Fusion, API dịch vụ bổ trợ cho thông tin phim, phụ đề trực tuyến và dịch thuật AI.</string>
+    <string name="settings_aux_services_nav_title">Tùy chỉnh nâng cao</string>
+    <string name="settings_aux_services_nav_desc">Nhãn luồng Fusion, TMDB, Phụ đề, Dịch thuật &amp; Thuyết minh AI</string>
+    <string name="settings_stream_fusion_section">KIỂU FUSION</string>
+    <string name="settings_stream_size_badges_title">Nhãn dung lượng</string>
+    <string name="settings_stream_size_badges_desc">Hiển thị nhãn dung lượng tệp trong kết quả luồng và bảng chọn nguồn phát.</string>
+    <string name="settings_stream_badge_position_title">Vị trí nhãn</string>
+    <string name="settings_stream_badge_position_bottom">Phía dưới</string>
+    <string name="settings_stream_badge_position_top">Phía trên</string>
+    <string name="settings_stream_badge_urls_title">URL nhãn Fusion</string>
+    <string name="settings_stream_badge_urls_summary">%1$d/3 URL • %2$d nhãn Fusion đang hoạt động</string>
+    <string name="settings_stream_badge_urls_desc">Nhập tối đa 3 URL JSON nhãn luồng kiểu Fusion. Bạn có thể cập nhật hoặc xóa từng URL riêng lẻ.</string>
+    <string name="settings_stream_display_section">HIỂN THỊ</string>
+    <string name="settings_stream_background_title">Ảnh nền</string>
+    <string name="settings_stream_background_default">Mặc định</string>
+    <string name="settings_stream_addon_icon_title">Biểu tượng tiện ích</string>
+    <string name="settings_stream_addon_icon_desc">Hiển thị biểu tượng và tên tiện ích bên cạnh mỗi nguồn phát</string>
+    <string name="settings_fusion_badge_url_label">URL JSON nhãn Fusion</string>
+    <string name="settings_fusion_badge_urls_imported">Đã nhập %1$d/3 URL Fusion</string>
+    <string name="settings_fusion_badge_action_import">Nhập</string>
+    <string name="settings_fusion_badge_preview_action">Xem trước</string>
+    <string name="settings_fusion_badge_active_status">Đang bật, %1$d nhãn đang bật, %2$d nhóm</string>
+    <string name="settings_fusion_badge_inactive_status">Đã tắt, %1$d nhãn đang bật, %2$d nhóm</string>
+    <string name="settings_fusion_badge_preview_title">Xem trước nhãn Fusion</string>
+    <string name="settings_fusion_badge_preview_count">%1$d nhãn kiểu Fusion từ URL này</string>
+    <string name="settings_fusion_badge_preview_empty">Không có hình ảnh nhãn kiểu Fusion tại URL này.</string>
+    <string name="settings_fusion_badge_import_failed">Không thể tải hoặc phân tích file JSON nhãn Fusion: %s</string>
+    <string name="settings_fusion_badge_enter_url">Vui lòng nhập URL JSON nhãn Fusion</string>
+    <string name="settings_fusion_badge_url_invalid">URL phải bắt đầu bằng http:// hoặc https://</string>
+    <string name="settings_fusion_badge_limit_reached">Bạn chỉ có thể nhập tối đa 3 URL nhãn Fusion.</string>
+    <string name="settings_group_subtitles_metadata">Dịch Vụ Phụ Đề &amp; Siêu Dữ Liệu</string>
+    <string name="settings_group_ai_tts">Trí Tuệ Nhân Tạo &amp; Thuyết Minh AI</string>
+    <string name="settings_status_key_configured">Đã cấu hình API Key</string>
+    <string name="settings_status_key_not_set">Chưa cấu hình API Key</string>
+    <string name="settings_status_tmdb_default">Dùng Key mặc định của app</string>
+    <string name="settings_status_tmdb_custom">Đã cấu hình Key riêng</string>
+    <string name="settings_status_tts_default">Mặc định (Google TTS của máy)</string>
+    <string name="settings_status_tts_custom">Đã cấu hình Gateway riêng</string>
+    <string name="settings_dialog_test_connection">Kiểm tra kết nối</string>
+    <string name="settings_dialog_testing">Đang kiểm tra kết nối…</string>
+    <string name="settings_dialog_reset_default">Khôi phục mặc định</string>
+
+    <string name="settings_opensubtitles_title">Kho Phụ Đề OpenSubtitles.com</string>
+    <string name="settings_opensubtitles_desc">Kho phụ đề đa ngôn ngữ lớn nhất thế giới. Hỗ trợ tra cứu theo TMDB / IMDb và tải trực tiếp định dạng SRT UTF-8 chuẩn.</string>
+    <string name="settings_opensubtitles_key_label">OpenSubtitles API Key</string>
+    <string name="settings_opensubtitles_key_placeholder">Nhập API Key (hoặc để trống để dùng API Key cộng đồng)…</string>
+    <string name="settings_opensubtitles_saved_toast">Đã lưu OpenSubtitles API Key thành công!</string>
+
+    <string name="settings_subdl_title">Kho Phụ Đề SubDL.com</string>
+    <string name="settings_subdl_desc">Kho phụ đề điện ảnh và phim bộ phong phú, tập trung nhiều bản dịch Vietsub chất lượng từ các dịch giả cộng đồng.</string>
+    <string name="settings_subdl_key_label">SubDL API Key</string>
+    <string name="settings_subdl_key_placeholder">Nhập API Key SubDL…</string>
+    <string name="settings_subdl_saved_toast">Đã lưu SubDL API Key thành công!</string>
+
+    <string name="settings_subsource_title">Kho Phụ Đề Mở Subsource.net</string>
+    <string name="settings_subsource_desc">Kho phụ đề mở Subsource.net hỗ trợ tìm kiếm qua API. Cần API Key cá nhân từ trang subsource.net để tra cứu và tải phụ đề.</string>
+    <string name="settings_subsource_key_label">Subsource API Key</string>
+    <string name="settings_subsource_key_placeholder">Nhập API Key Subsource…</string>
+    <string name="settings_subsource_saved_toast">Đã lưu Subsource API Key thành công!</string>
+    <string name="settings_subsource_get_key_link">Lấy API Key Subsource tại subsource.net</string>
+
+    <string name="settings_gemini_title">Dịch Phụ Đề Bằng Google Gemini AI</string>
+    <string name="settings_gemini_desc">Trí tuệ nhân tạo Gemini tự động bóc tách và dịch phụ đề nước ngoài sang Tiếng Việt chuẩn xác từng câu, giữ nguyên 100% timecode mốc thời gian, triệt tiêu hoàn toàn hiện tượng lệch nhịp phụ đề.</string>
+    <string name="settings_gemini_key_label">Google Gemini API Key</string>
+    <string name="settings_gemini_key_placeholder">Nhập Gemini API Key từ Google AI Studio…</string>
+    <string name="settings_gemini_saved_toast">Đã lưu Gemini API Key thành công!</string>
+    <string name="settings_gemini_model_title">Mô hình AI (Model)</string>
+    <string name="settings_gemini_get_key_link">Lấy Google Gemini API Key miễn phí tại Google AI Studio</string>
+
+
+    <!-- Player Subtitle Sheet & Online Search -->
+    <string name="player_subtitles_btn">Phụ đề &amp; Tùy chỉnh</string>
+    <string name="player_subtitles_sheet_title">Cài Đặt &amp; Phụ Đề</string>
+    <string name="player_subtitles_track_section">Danh Sách Phụ Đề</string>
+    <string name="player_subtitles_search_online_btn">Tìm phụ đề trực tuyến (Online)</string>
+    <string name="player_subtitles_translate_gemini_btn">Dịch Tiếng Việt (Gemini AI)</string>
+    <string name="player_subtitles_sync_section">Đồng Bộ Thời Gian (Sync / Offset)</string>
+    <string name="player_subtitles_offset_format">Độ lệch: %s</string>
+    <string name="player_subtitles_offset_reset">Đặt lại (0.0s)</string>
+    <string name="player_subtitles_online_dialog_title">Tìm Kiếm Phụ Đề Trực Tuyến</string>
+    <string name="player_subtitles_searching">Đang tìm kiếm phụ đề từ OpenSubtitles, SubDL, Subsource…</string>
+    <string name="player_subtitles_no_results">Không tìm thấy phụ đề trực tuyến phù hợp</string>
+    <string name="player_subtitles_downloading">Đang tải và chuẩn hóa phụ đề…</string>
+    <string name="player_subtitles_translating_format">Đang dịch phụ đề bằng Gemini AI… (%d%%)</string>
+    <string name="player_subtitles_translation_success">Đã dịch và áp dụng phụ đề Tiếng Việt thành công!</string>
+    <string name="player_subtitles_translation_failed">Dịch phụ đề thất bại: %s</string>
+    <string name="player_subtitles_search_hint">Nhập tên phim hoặc tập để tìm kiếm…</string>
+    <string name="player_subtitles_source_label">Nguồn: %s</string>
+    <string name="player_subtitles_downloads_label">%d lượt tải</string>
+    <string name="player_subtitles_applied_toast">Đã chọn và áp dụng phụ đề: %s</string>
+    <string name="player_subtitles_identified_imdb">Đã nhận diện IMDb: %s</string>
+    <string name="player_subtitles_found_imdb_from_tmdb">Đã tìm thấy IMDb ID từ TMDB (%1$s -&gt; %2$s)</string>
+    <string name="player_subtitles_searching_title">Đang tìm thông tin phim qua tên: %s</string>
+    <string name="player_subtitles_matched_imdb">Đã khớp thông tin phim -&gt; IMDb %s</string>
+    <string name="player_subtitles_not_found_imdb">Không tìm thấy IMDb ID cho phim</string>
+    <string name="player_subtitles_loaded_addons">Đã tải xong phụ đề từ các Addon (%d bản phụ đề)</string>
+    <string name="player_subtitles_no_addons_subs">Không có phụ đề từ các Addon</string>
+    <string name="player_subtitles_selected_track">Đã chọn và áp dụng phụ đề: %1$s (%2$s - %3$s)</string>
+    <string name="player_subtitles_selected_stream_track">Đã chọn và áp dụng phụ đề: %s</string>
+    <string name="player_brightness_system_restored">Đã khôi phục độ sáng theo hệ thống</string>
+    <string name="player_subtitles_pill_label">Phụ đề</string>
+    <string name="player_audio_pill_label">Âm thanh</string>
+    <string name="player_source_pill_label">Nguồn</string>
+    <string name="player_subtitles_language_header">Ngôn ngữ</string>
+    <string name="player_subtitles_tracks_header">Phụ đề</string>
+    <string name="player_subtitles_style_header">Kiểu</string>
+    <string name="player_subtitles_none">Không có</string>
+    <string name="player_subtitles_delay_label">Độ trễ phụ đề</string>
+    <string name="player_subtitles_font_size_label">Cỡ chữ</string>
+    <string name="player_subtitles_bold_label">In đậm</string>
+    <string name="player_subtitles_color_label">Màu sắc</string>
+    <string name="player_subtitles_opacity_label">Độ mờ chữ</string>
+    <string name="player_subtitles_outline_label">Viền chữ</string>
+    <string name="player_subtitles_outline_color_label">Màu viền</string>
+    <string name="player_subtitles_bottom_margin_label">Khoảng cách lề dưới</string>
+    <string name="player_subtitles_bottom_margin_hint">Tăng giá trị để đẩy phụ đề lên cao hơn</string>
+    <string name="player_subtitles_reset_defaults">Đặt lại mặc định</string>
+    <string name="player_subtitles_btn_on">Bật</string>
+    <string name="player_subtitles_btn_off">Tắt</string>
+    <string name="player_subtitles_pick_english_title">Chọn phụ đề tiếng Anh để dịch sang Tiếng Việt</string>
+    <string name="player_subtitles_only_english_can_translate">Chỉ hỗ trợ dịch từ phụ đề tiếng Anh</string>
+    <string name="player_subtitles_searching_english">Đang tìm kiếm phụ đề tiếng Anh…</string>
+    <string name="player_subtitles_vi_header">Phụ đề Tiếng Việt</string>
+    <string name="player_subtitles_en_header">Phụ đề Tiếng Anh</string>
+    <string name="player_subtitles_stream_header">Phụ đề (%s)</string>
+    <string name="player_subtitles_loading_online">Đang tìm kiếm phụ đề trực tuyến…</string>
+    <string name="player_subtitles_translate_ai">Dịch AI</string>
+    <string name="player_subtitles_stream_badge">Gốc / Stream</string>
+    <string name="player_subtitles_edit_search_hint">Nhập tên phim để tìm…</string>
+    <string name="player_subtitles_refresh">Làm mới</string>
+    <string name="player_subtitles_edit_query">Sửa từ khóa</string>
+    <string name="player_subtitles_search_action">Tìm</string>
+    <string name="player_subtitles_auto_sync">Tự đồng bộ</string>
+    <string name="player_subtitles_reload_sync">Tải lại</string>
+    <string name="player_subtitles_capture_sync">Chụp</string>
+    <string name="player_subtitles_capture_toast">Đã đồng bộ phụ đề: lệch %s</string>
+    <string name="player_subtitles_no_cues_to_sync">Cần chọn phụ đề để thực hiện đồng bộ</string>
+    <string name="player_subtitles_ai_sync_btn">Dùng AI</string>
+    <string name="player_subtitles_ai_sync_desc">Dùng Gemini AI phân tích nhịp thoại &amp; khớp phụ đề</string>
+    <string name="player_subtitles_ai_sync_loading">AI đang phân tích &amp; căn chỉnh…</string>
+    <string name="player_subtitles_ai_sync_success">AI đã đồng bộ thành công: lệch %s</string>
+    <string name="player_resume_dialog_title">Tiếp tục xem phim?</string>
+    <string name="player_resume_dialog_msg">Bạn đang xem dở tại mốc %s. Bạn muốn xem tiếp từ đoạn này hay xem lại từ đầu?</string>
+    <string name="player_resume_restart">Xem lại từ đầu</string>
+    <string name="player_resume_continue">Xem tiếp (%s)</string>
+
+    <!-- AI Voiceover (TTS) -->
+    <string name="player_tts_pill_label">Thuyết minh</string>
+    <string name="player_tts_title">Thuyết Minh AI (TTS)</string>
+    <string name="player_tts_enable">Bật thuyết minh</string>
+    <string name="player_tts_engine_header">Mô hình AI đọc</string>
+    <string name="player_tts_voice_header">Giọng đọc</string>
+    <string name="player_tts_speech_rate_header">Tốc độ đọc</string>
+    <string name="player_tts_ducking_header">Âm lượng phim nền</string>
+    <string name="player_tts_active_toast">Thuyết minh AI: Đã bật</string>
+    <string name="player_tts_inactive_toast">Thuyết minh AI: Đã tắt</string>
+    <string name="player_tts_requires_gemini_key">Cần cấu hình Gemini API Key trong Cài đặt để sử dụng Thuyết minh AI</string>
+    <string name="player_tts_voice_bao_nam">Bảo Nam</string>
+    <string name="player_tts_voice_minh_quang">Minh Quang</string>
+    <string name="player_tts_voice_tuan_khang">Tuấn Khang</string>
+    <string name="player_tts_voice_phuong_vy">Phương Vy</string>
+    <string name="player_tts_voice_mai_chi">Mai Chi</string>
+    <string name="player_tts_voice_anh_duong">Ánh Dương</string>
+    <string name="player_tts_voice_alloy">Bảo Nam</string>
+    <string name="player_tts_voice_echo">Tuấn Khang</string>
+    <string name="player_tts_voice_fable">Phương Vy</string>
+    <string name="player_tts_voice_onyx">Minh Quang</string>
+    <string name="player_tts_voice_nova">Mai Chi</string>
+    <string name="player_tts_voice_shimmer">Ánh Dương</string>
+
+    <!-- TTS Gateway Settings -->
+    <string name="settings_tts_section_title">Thuyết Minh AI &amp; Gateway TTS</string>
+    <string name="settings_tts_desc">Hỗ trợ Gemini 3.8 Flash TTS, Gemini 3.1 Flash TTS, Lite TTS và Gemini 3.5 Live Translate qua OpenAI-compatible Gateway hoặc Google AI Studio.</string>
+    <string name="settings_tts_endpoint_label">API Gateway / Proxy URL (Tùy chọn)</string>
+    <string name="settings_tts_endpoint_hint">Ví dụ: https://my-proxy.com/v1</string>
+    <string name="settings_tts_key_label">API Key riêng cho TTS (Tùy chọn)</string>
+    <string name="settings_tts_key_hint">Để trống nếu máy chủ không yêu cầu mật khẩu</string>
+    <string name="settings_tts_test_btn">Kiểm tra TTS</string>
+    <string name="settings_tts_saved_toast">Đã lưu cài đặt Thuyết minh AI</string>
+
+    <!-- Cache Management -->
+    <string name="settings_cache_section_title">Bộ Nhớ Đệm (Cache)</string>
+    <string name="settings_cache_desc">Bao gồm phụ đề ngoại tuyến, danh sách tìm kiếm, âm thanh thuyết minh AI và dữ liệu tạm của ứng dụng.</string>
+    <string name="settings_cache_size_label">Dung lượng cache: %s</string>
+    <string name="settings_cache_clear_btn">Xóa cache</string>
+    <string name="settings_cache_cleared_toast">Đã xóa sạch bộ nhớ cache ứng dụng</string>
+
+    <!-- Stremio Addons Management -->
+    <string name="plugins_tab_stremio">Addons</string>
+    <string name="plugins_stremio_add_title">Thêm Addon Stremio / Nuvio</string>
+    <string name="plugins_stremio_add_desc">Nhập đường dẫn manifest.json (hoặc stremio://) của Addon Stremio hoặc Nuvio để tích hợp vào ứng dụng.</string>
+    <string name="plugins_stremio_url_placeholder">https://.../manifest.json hoặc stremio://...</string>
+    <string name="plugins_stremio_add_btn">Thêm Addon</string>
+    <string name="plugins_stremio_add_action_btn">Thêm nguồn Addon</string>
+    <string name="plugins_stremio_curated_title">Gợi ý cài nhanh:</string>
+    <string name="plugins_stremio_empty">Chưa có Addon Stremio nào</string>
+    <string name="plugins_stremio_empty_desc">Thêm các Addon như Cinemeta, Cyberflix, Torrentio hoặc kho nội bộ để mở rộng nguồn phim.</string>
+    <string name="plugins_stremio_badge">Addon</string>
+    <string name="plugins_quickjs_badge">JS</string>
+    <string name="plugins_stremio_delete_title">Xóa Addon %s?</string>
+    <string name="plugins_stremio_delete_desc">Bạn có chắc chắn muốn gỡ bỏ Addon Stremio này không?</string>
+    <string name="plugins_stremio_delete_confirm">Xóa Addon</string>
+    <string name="plugins_stremio_catalogs_count">%d Catalogs</string>
+    <string name="plugins_stremio_streams_support">Nguồn phát (Streams)</string>
+    <string name="plugins_stremio_ping_test">Kiểm tra</string>
+    <string name="plugins_addon_configure">Cài đặt</string>
+    <string name="settings_subtitle_languages_title">Ngôn ngữ tìm kiếm phụ đề</string>
+    <string name="settings_subtitle_languages_desc">Chọn các ngôn ngữ muốn tìm kiếm phụ đề trực tuyến. Tiếng Anh luôn được bật cố định để hỗ trợ tính năng dịch phụ đề bằng Gemini AI.</string>
+    <string name="settings_subtitle_languages_mandatory">Bắt buộc (Dùng cho dịch Gemini AI)</string>
+    <string name="settings_subtitle_languages_saved">Đã lưu cấu hình ngôn ngữ phụ đề thành công!</string>
+    <string name="plugins_stremio_added_success">Đã thêm Addon %s thành công</string>
+    <string name="plugins_stremio_add_error">Lỗi thêm Addon: %s</string>
+    <string name="plugins_stremio_deleted_toast">Đã xóa Addon %s</string>
+    <string name="player_stremio_drawer_title">Nguồn Stremio Addons</string>
+
+    <!-- Stream Selection Screen Strings -->
+    <string name="streams_screen_title">Chọn nguồn phát</string>
+    <string name="streams_all_filter">Tất cả</string>
+    <string name="streams_scanning">Đang quét nguồn phát từ các Plugin &amp; Addon...</string>
+    <string name="streams_empty">Không tìm thấy luồng phát nào cho tập phim này</string>
+    <string name="streams_reload">Quét lại</string>
+    <string name="plugins_stremio_subtitles_support">Hỗ trợ Phụ đề</string>
+    <string name="player_buffering_title">Đang tải bộ đệm…</string>
+    <string name="player_buffering_connecting">Đang kết nối luồng phát…</string>
+    <string name="player_buffering_hint">Đang tải trước nội dung để phát mượt mà</string>
+
+    <!-- In-App Updater Strings -->
+    <string name="settings_check_update_title">Kiểm tra bản cập nhật</string>
+    <string name="settings_check_update_desc">Kiểm tra phiên bản mới nhất từ kho lưu trữ GitHub</string>
+    <string name="settings_checking_update">Đang kiểm tra cập nhật…</string>
+    <string name="settings_update_available_title">Phát hiện bản cập nhật mới</string>
+    <string name="settings_update_available_msg">Phiên bản %1$s đã sẵn sàng (bạn đang dùng %2$s).</string>
+    <string name="settings_update_changelog_title">Nội dung cập nhật:</string>
+    <string name="settings_update_btn_download">Cập nhật ngay</string>
+    <string name="settings_update_btn_later">Để sau</string>
+    <string name="settings_update_downloading">Đang tải bản cập nhật: %d%%</string>
+    <string name="settings_update_install">Cài đặt ngay</string>
+    <string name="settings_update_already_latest">Bạn đang sử dụng phiên bản mới nhất (%s)</string>
+    <string name="settings_update_error">Lỗi kiểm tra cập nhật: %s</string>
+    <string name="settings_update_download_failed">Tải bản cập nhật thất bại: %s</string>
+</resources>

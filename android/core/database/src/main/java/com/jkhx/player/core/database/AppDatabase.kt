@@ -15,6 +15,29 @@ import com.jkhx.player.core.database.entity.PluginEntity
 
 import com.jkhx.player.core.database.dao.RepositoryDao
 import com.jkhx.player.core.database.entity.RepositoryEntity
+import com.jkhx.player.core.database.dao.StremioAddonDao
+import com.jkhx.player.core.database.entity.StremioAddonEntity
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
+
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `stremio_addons` (
+                `url` TEXT NOT NULL PRIMARY KEY,
+                `id` TEXT NOT NULL,
+                `name` TEXT NOT NULL,
+                `version` TEXT NOT NULL DEFAULT '1.0.0',
+                `description` TEXT,
+                `iconUrl` TEXT,
+                `manifestJson` TEXT NOT NULL,
+                `isEnabled` INTEGER NOT NULL DEFAULT 1,
+                `orderIndex` INTEGER NOT NULL DEFAULT 0,
+                `addedAt` INTEGER NOT NULL
+            )
+        """.trimIndent())
+    }
+}
 
 @Database(
     entities = [
@@ -22,9 +45,10 @@ import com.jkhx.player.core.database.entity.RepositoryEntity
         FavoriteEntity::class,
         PlaybackProgressEntity::class,
         PluginEntity::class,
-        RepositoryEntity::class
+        RepositoryEntity::class,
+        StremioAddonEntity::class
     ],
-    version = 3,
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -33,6 +57,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun playbackProgressDao(): PlaybackProgressDao
     abstract fun pluginDao(): PluginDao
     abstract fun repositoryDao(): RepositoryDao
+    abstract fun stremioAddonDao(): StremioAddonDao
 
     companion object {
         @Volatile
@@ -44,7 +69,10 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "jkhx_player.db"
-                ).fallbackToDestructiveMigration().build()
+                )
+                    .addMigrations(MIGRATION_5_6)
+                    .fallbackToDestructiveMigration()
+                    .build()
                 INSTANCE = instance
                 instance
             }

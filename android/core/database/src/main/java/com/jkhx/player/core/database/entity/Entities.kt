@@ -53,6 +53,8 @@ data class PluginEntity(
     val supportedTypes: String? = null,
     val isEnabled: Boolean = true,
     val isAdult: Boolean = false,
+    val isComic: Boolean = false,
+    val isNovel: Boolean = false,
     val manifestJson: String
 )
 
@@ -64,4 +66,19 @@ data class RepositoryEntity(
     val manifestJson: String,
     val addedAt: Long = System.currentTimeMillis()
 )
+
+@Entity(tableName = "stremio_addons")
+data class StremioAddonEntity(
+    @PrimaryKey val url: String,
+    val id: String,
+    val name: String,
+    val version: String = "1.0.0",
+    val description: String? = null,
+    val iconUrl: String? = null,
+    val manifestJson: String,
+    val isEnabled: Boolean = true,
+    val orderIndex: Int = 0,
+    val addedAt: Long = System.currentTimeMillis()
+)
+
 

@@ -1,0 +1,14 @@
+{
+  "id": "template-provider",
+  "name": "Template Provider",
+  "version": "1.0.0",
+  "description": "Mẫu plugin chuẩn mực (Reference Template) dành cho JKHX Player QuickJS-NG Sandbox",
+  "icon": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/images/BigBuckBunny.jpg",
+  "entry": "plugin.js",
+  "author": "JKHX Community",
+  "homepage": "https://github.com",
+  "types": ["movies", "tv"],
+  "isAdult": false,
+  "status": "active"
+}
+

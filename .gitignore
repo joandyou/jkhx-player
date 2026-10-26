@@ -1,9 +1,11 @@
 *.apk
+*.aab
 *.iml
 .gradle
 local.properties
 .idea/
 .DS_Store
+Thumbs.db
 build/
 **/build/
 captures/
@@ -14,4 +16,23 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+*.log
+*.tmp
+*.swp
 
+# Keystore & Signing secrets
+*.jks
+*.keystore
+keystore.properties
+
+# Backups & Local internal documentation
+backups/
+.backupignore
+PROJECT_RULES.md
+CHANGE.md
+README_DEV.md
+
+# Ignore actual scraper plugins and manifests, only expose template
+plugins/*
+!plugins/template/
+!plugins/README.md

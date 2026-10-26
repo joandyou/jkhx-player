@@ -1,33 +1,62 @@
 package com.jkhx.player.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.*
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
+import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
+import com.jkhx.player.settings.AppThemeMode
+import com.jkhx.player.settings.DeviceDisplayMode
 
-val RedPrimary = Color(0xFFE50914)
-val DarkBackground = Color(0xFF101012)
-val DarkSurface = Color(0xFF1A1A1E)
-val DarkSurfaceVariant = Color(0xFF282830)
-val TextPrimary = Color(0xFFEEEEEE)
-val TextSecondary = Color(0xFFAAAAAA)
+val LocalDisplayMode = staticCompositionLocalOf { DeviceDisplayMode.MOBILE }
 
-private val DarkColorScheme = darkColorScheme(
-    primary = RedPrimary,
-    onPrimary = Color.White,
-    background = DarkBackground,
-    onBackground = TextPrimary,
-    surface = DarkSurface,
-    onSurface = TextPrimary,
-    surfaceVariant = DarkSurfaceVariant,
-    onSurfaceVariant = TextSecondary
-)
+object AppTheme {
+    val colors: AppSemanticColors
+        @Composable
+        get() = LocalAppSemanticColors.current
 
-@Composable
-fun JkhxTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = DarkColorScheme,
-        content = content
-    )
+    val dimens: AppDimens
+        @Composable
+        get() = LocalAppDimens.current
+
+    val typography: Typography
+        @Composable
+        get() = MaterialTheme.typography
+
+    val shapes: Shapes
+        @Composable
+        get() = MaterialTheme.shapes
 }
 
+@Composable
+fun JkhxTheme(
+    themeMode: AppThemeMode = AppThemeMode.DARK,
+    content: @Composable () -> Unit
+) {
+    val colorScheme = when (themeMode) {
+        AppThemeMode.LIGHT -> LightColorScheme
+        AppThemeMode.DARK -> DarkColorScheme
+        AppThemeMode.NIGHT_BLUE -> NightBlueColorScheme
+        AppThemeMode.CINEMA_WARM -> CinemaWarmColorScheme
+    }
+
+    val semanticColors = when (themeMode) {
+        AppThemeMode.LIGHT -> LightSemanticColors
+        AppThemeMode.DARK -> DarkSemanticColors
+        AppThemeMode.NIGHT_BLUE -> NightBlueSemanticColors
+        AppThemeMode.CINEMA_WARM -> CinemaWarmSemanticColors
+    }
+
+    CompositionLocalProvider(
+        LocalAppSemanticColors provides semanticColors,
+        LocalAppDimens provides DefaultAppDimens
+    ) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = AppTypography,
+            shapes = AppShapes,
+            content = content
+        )
+    }
+}

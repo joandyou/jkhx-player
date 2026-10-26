@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand / Accent Colors -->
+    <color name="primary_red">#E50914</color>
+    <color name="primary_red_light">#DC2626</color>
+    <color name="neon_blue">#38BDF8</color>
+    <color name="cinema_amber">#F59E0B</color>
+
+    <!-- Dark Palette -->
+    <color name="dark_background">#101012</color>
+    <color name="dark_surface">#1A1A1E</color>
+    <color name="dark_surface_variant">#282830</color>
+    <color name="dark_text_primary">#EEEEEE</color>
+    <color name="dark_text_secondary">#AAAAAA</color>
+
+    <!-- Light Palette -->
+    <color name="light_background">#F8FAFC</color>
+    <color name="light_surface">#FFFFFF</color>
+    <color name="light_surface_variant">#F1F5F9</color>
+    <color name="light_text_primary">#0F172A</color>
+    <color name="light_text_secondary">#64748B</color>
+
+    <!-- UI Overlay / Utility -->
+    <color name="badge_dark">#B3141414</color>
+    <color name="rating_star">#FFD700</color>
+    <color name="transparent">#00000000</color>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+</resources>
+

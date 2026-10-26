@@ -13,5 +13,6 @@ dependencies {
     implementation(libs.okhttp.logging)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
+    testImplementation("junit:junit:4.13.2")
 }
 
