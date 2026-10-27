@@ -19,7 +19,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -39,12 +39,24 @@ jobs:
           ./gradlew assembleRelease --no-daemon
 
       - name: Prepare APK Artifacts
+        id: prepare_apk
         run: |
           APK_PATH=$(find android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
           if [ -f "$APK_PATH" ]; then
+            # Xác định tên phiên bản từ Git Tag (ví dụ: v1.0.15) hoặc fallback
+            VERSION_TAG="${GITHUB_REF#refs/tags/}"
+            if [ -z "$VERSION_TAG" ] || [ "$VERSION_TAG" = "refs/heads/main" ]; then
+              VERSION_TAG="v1.0.15"
+            fi
+            APK_NAME="jkhx-player-release-${VERSION_TAG}.apk"
+            echo "apk_name=${APK_NAME}" >> $GITHUB_OUTPUT
+
+            cp "$APK_PATH" "$APK_NAME"
+            # Tạo thêm bản symlink/copy chuẩn nếu cần
             cp "$APK_PATH" jkhx-player-release.apk
-            ls -lh jkhx-player-release.apk
-            sha256sum jkhx-player-release.apk
+
+            ls -lh "$APK_NAME"
+            sha256sum "$APK_NAME"
           else
             echo "Error: Release APK not found!"
             exit 1
@@ -53,14 +65,17 @@ jobs:
       - name: Upload APK to Workflow Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: jkhx-player-release-apk
-          path: jkhx-player-release.apk
+          name: ${{ steps.prepare_apk.outputs.apk_name }}
+          path: ${{ steps.prepare_apk.outputs.apk_name }}
           retention-days: 14
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: jkhx-player-release.apk
+          files: |
+            ${{ steps.prepare_apk.outputs.apk_name }}
+            jkhx-player-release.apk
+          name: JKHX Player ${{ github.ref_name }}
           generate_release_notes: true
 
