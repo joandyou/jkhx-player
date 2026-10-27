@@ -33,8 +33,11 @@ fun Modifier.tvFocusableItem(
     borderWidth: Dp = 2.5.dp,
     focusColor: Color? = null,
     fillTintAlpha: Float = 0.08f,
+    needsFocusable: Boolean = false,
     enabled: Boolean = true
 ): Modifier = composed {
+    if (!enabled) return@composed this
+
     var isFocused by remember { mutableStateOf(false) }
     val resolvedColor = focusColor ?: MaterialTheme.colorScheme.primary
     val scale by animateFloatAsState(
@@ -48,7 +51,7 @@ fun Modifier.tvFocusableItem(
         .onFocusChanged { state ->
             isFocused = state.isFocused
         }
-        .focusable(enabled = enabled)
+        .then(if (needsFocusable) Modifier.focusable() else Modifier)
         .graphicsLayer {
             scaleX = scale
             scaleY = scale

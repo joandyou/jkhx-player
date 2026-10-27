@@ -2656,18 +2656,18 @@ fun PlayerScreen(
     val audioSheetInitialFocusRequester = remember { FocusRequester() }
     val settingsDialogInitialFocusRequester = remember { FocusRequester() }
 
-    LaunchedEffect(showControls, isPlaybackStartedEffective, isAnyOverlayOpen) {
+    LaunchedEffect(showControls, isPlaybackStartedEffective, isAnyOverlayOpen, isLoading, isPlayerBuffering) {
         if (isAnyOverlayOpen) return@LaunchedEffect
-        if (showControls) {
-            delay(60) // Chờ layout AnimatedVisibility mount xong nodes
+        if (showControls && isPlaybackStartedEffective && !isLoading && !isPlayerBuffering) {
+            delay(100) // Chờ layout AnimatedVisibility mount xong controls
             try {
                 playPauseFocusRequester.requestFocus()
-            } catch (_: Exception) {}
+            } catch (_: Throwable) {}
         } else {
-            delay(30)
+            delay(50)
             try {
                 rootPlayerFocusRequester.requestFocus()
-            } catch (_: Exception) {}
+            } catch (_: Throwable) {}
         }
     }
 
