@@ -24,6 +24,7 @@ yarn-error.log*
 *.jks
 *.keystore
 keystore.properties
+!android/app/release.jks
 
 # Backups & Local internal documentation
 backups/
