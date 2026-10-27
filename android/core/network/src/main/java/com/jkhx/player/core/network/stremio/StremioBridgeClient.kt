@@ -2,7 +2,6 @@ package com.jkhx.player.core.network.stremio
 
 import com.jkhx.player.core.model.stremio.*
 import com.jkhx.player.core.network.HttpBridgeClient
-import com.jkhx.player.core.network.SslHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -17,18 +16,17 @@ import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
 
 class StremioBridgeClient(
-    private val client: OkHttpClient = SslHelper.configureSsl(
-        OkHttpClient.Builder()
-            .connectTimeout(20, TimeUnit.SECONDS)
-            .readTimeout(35, TimeUnit.SECONDS)
-            .proxySelector(object : ProxySelector() {
-                override fun select(uri: URI?): List<Proxy> {
-                    val proxy = HttpBridgeClient.globalProxyProvider?.invoke()
-                    return if (proxy != null) listOf(proxy) else listOf(Proxy.NO_PROXY)
-                }
-                override fun connectFailed(uri: URI?, sa: SocketAddress?, ioe: java.io.IOException?) {}
-            })
-    ).build()
+    private val client: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(35, TimeUnit.SECONDS)
+        .proxySelector(object : ProxySelector() {
+            override fun select(uri: URI?): List<Proxy> {
+                val proxy = HttpBridgeClient.globalProxyProvider?.invoke()
+                return if (proxy != null) listOf(proxy) else listOf(Proxy.NO_PROXY)
+            }
+            override fun connectFailed(uri: URI?, sa: SocketAddress?, ioe: java.io.IOException?) {}
+        })
+        .build()
 ) {
     private val json = Json {
         ignoreUnknownKeys = true

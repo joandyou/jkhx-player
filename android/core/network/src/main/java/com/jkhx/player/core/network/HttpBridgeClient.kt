@@ -30,26 +30,25 @@ data class FetchResponse(
 )
 
 class HttpBridgeClient(
-    private val defaultClient: OkHttpClient = SslHelper.configureSsl(
-        OkHttpClient.Builder()
-            .dns(object : Dns {
-                override fun lookup(hostname: String): List<java.net.InetAddress> =
-                    Dns.SYSTEM.lookup(hostname).sortedBy { it is java.net.Inet6Address }
-            })
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(20, TimeUnit.SECONDS)
-            .writeTimeout(15, TimeUnit.SECONDS)
-            .followRedirects(true)
-            .followSslRedirects(true)
-            .protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
-            .proxySelector(object : ProxySelector() {
-                override fun select(uri: URI?): List<Proxy> {
-                    val proxy = globalProxyProvider?.invoke()
-                    return if (proxy != null) listOf(proxy) else listOf(Proxy.NO_PROXY)
-                }
-                override fun connectFailed(uri: URI?, sa: SocketAddress?, ioe: IOException?) {}
-            })
-    ).build()
+    private val defaultClient: OkHttpClient = OkHttpClient.Builder()
+        .dns(object : Dns {
+            override fun lookup(hostname: String): List<java.net.InetAddress> =
+                Dns.SYSTEM.lookup(hostname).sortedBy { it is java.net.Inet6Address }
+        })
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
+        .writeTimeout(15, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
+        .proxySelector(object : ProxySelector() {
+            override fun select(uri: URI?): List<Proxy> {
+                val proxy = globalProxyProvider?.invoke()
+                return if (proxy != null) listOf(proxy) else listOf(Proxy.NO_PROXY)
+            }
+            override fun connectFailed(uri: URI?, sa: SocketAddress?, ioe: IOException?) {}
+        })
+        .build()
 ) {
     companion object {
         @Volatile

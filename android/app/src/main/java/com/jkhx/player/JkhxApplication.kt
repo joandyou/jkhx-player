@@ -157,18 +157,17 @@ class JkhxApplication : Application(), ImageLoaderFactory {
     }
 
     val okHttpClient: okhttp3.OkHttpClient by lazy {
-        com.jkhx.player.core.network.SslHelper.configureSsl(
-            okhttp3.OkHttpClient.Builder()
-                .proxySelector(object : java.net.ProxySelector() {
-                    override fun select(uri: java.net.URI?): List<java.net.Proxy> {
-                        val proxy = settingsManager.getProxy()
-                        return if (proxy != null) listOf(proxy) else listOf(java.net.Proxy.NO_PROXY)
-                    }
-                    override fun connectFailed(uri: java.net.URI?, sa: java.net.SocketAddress?, ioe: java.io.IOException?) {}
-                })
-                .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-                .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-        ).build()
+        okhttp3.OkHttpClient.Builder()
+            .proxySelector(object : java.net.ProxySelector() {
+                override fun select(uri: java.net.URI?): List<java.net.Proxy> {
+                    val proxy = settingsManager.getProxy()
+                    return if (proxy != null) listOf(proxy) else listOf(java.net.Proxy.NO_PROXY)
+                }
+                override fun connectFailed(uri: java.net.URI?, sa: java.net.SocketAddress?, ioe: java.io.IOException?) {}
+            })
+            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
     }
 
     val subtitleManager: com.jkhx.player.core.player.subtitle.SubtitleManager by lazy {
@@ -186,13 +185,6 @@ class JkhxApplication : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         instance = this
-
-        // Cài đặt Conscrypt làm Security Provider số 1 để hỗ trợ TLS 1.3 và cập nhật Trust Store cho Android 7.0/7.1 (API 24/25)
-        try {
-            java.security.Security.insertProviderAt(org.conscrypt.Conscrypt.newProvider(), 1)
-        } catch (e: Throwable) {
-            android.util.Log.w("JkhxApplication", "Không thể khởi tạo Conscrypt: ${e.message}")
-        }
 
         settingsManager = com.jkhx.player.settings.SettingsManager.getInstance(this)
         com.jkhx.player.core.network.HttpBridgeClient.globalProxyProvider = { settingsManager.getProxy() }

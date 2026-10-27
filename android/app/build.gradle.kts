@@ -12,7 +12,7 @@ android {
 
     defaultConfig {
         applicationId = "com.jkhx.player"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 35
         versionCode = 17
         versionName = "1.0.16"
@@ -86,6 +86,5 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.play.services.auth)
-    implementation(libs.conscrypt.android)
 }
 

@@ -11,7 +11,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
-import com.jkhx.player.core.network.SslHelper
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
@@ -62,13 +61,12 @@ class AppUpdateManager private constructor(private val appContext: Context) {
         }
     }
 
-    private val httpClient: OkHttpClient = SslHelper.configureSsl(
-        OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS)
-            .followRedirects(true)
-            .followSslRedirects(true)
-    ).build()
+    private val httpClient: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .build()
 
     private val _checkState = MutableStateFlow<UpdateCheckResult>(UpdateCheckResult.Idle)
     val checkState: StateFlow<UpdateCheckResult> = _checkState.asStateFlow()
