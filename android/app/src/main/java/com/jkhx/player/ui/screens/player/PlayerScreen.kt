@@ -45,6 +45,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -79,6 +80,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
@@ -435,21 +437,31 @@ private fun RepeatingIconButton(
     val currentOnClick by rememberUpdatedState(onClick)
     val coroutineScope = rememberCoroutineScope()
     Box(
-        modifier = modifier.pointerInput(Unit) {
-            awaitEachGesture {
-                awaitFirstDown(requireUnconsumed = false)
-                currentOnClick()
-                val job = coroutineScope.launch {
-                    delay(initialDelayMs)
-                    while (isActive) {
-                        currentOnClick()
-                        delay(repeatIntervalMs)
-                    }
-                }
-                waitForUpOrCancellation()
-                job.cancel()
+        modifier = modifier
+            .onKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyDown &&
+                    (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                     keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_ENTER ||
+                     keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                    currentOnClick()
+                    true
+                } else false
             }
-        },
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    currentOnClick()
+                    val job = coroutineScope.launch {
+                        delay(initialDelayMs)
+                        while (isActive) {
+                            currentOnClick()
+                            delay(repeatIntervalMs)
+                        }
+                    }
+                    waitForUpOrCancellation()
+                    job.cancel()
+                }
+            },
         contentAlignment = Alignment.Center
     ) {
         content()
@@ -2636,14 +2648,22 @@ fun PlayerScreen(
 
     val rootPlayerFocusRequester = remember { FocusRequester() }
     val playPauseFocusRequester = remember { FocusRequester() }
+    val capsulePillFocusRequester = remember { FocusRequester() }
+    val sourceSelectorInitialFocusRequester = remember { FocusRequester() }
+    val episodesDrawerInitialFocusRequester = remember { FocusRequester() }
+    val subtitleSheetInitialFocusRequester = remember { FocusRequester() }
+    val audioSheetInitialFocusRequester = remember { FocusRequester() }
+    val settingsDialogInitialFocusRequester = remember { FocusRequester() }
 
     LaunchedEffect(showControls, isPlaybackStartedEffective, isAnyOverlayOpen) {
         if (isAnyOverlayOpen) return@LaunchedEffect
-        if (showControls && isPlaybackStartedEffective && !isLoading && !isPlayerBuffering) {
+        if (showControls) {
+            delay(60) // Chờ layout AnimatedVisibility mount xong nodes
             try {
                 playPauseFocusRequester.requestFocus()
             } catch (_: Exception) {}
-        } else if (!showControls) {
+        } else {
+            delay(30)
             try {
                 rootPlayerFocusRequester.requestFocus()
             } catch (_: Exception) {}
@@ -3990,7 +4010,9 @@ fun PlayerScreen(
                             }
                         } else if (!isBufferingActive && !isCenterHudActive && !isDraggingGesture && !isDraggingSlider) {
                             Row(
-                                modifier = Modifier.align(Alignment.Center),
+                                modifier = Modifier
+                                    .align(Alignment.Center)
+                                    .focusGroup(),
                                 horizontalArrangement = Arrangement.spacedBy(20.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -4222,7 +4244,8 @@ fun PlayerScreen(
 
                                     Row(
                                         modifier = Modifier
-                                            .padding(horizontal = if (isLandscape) 8.dp else 6.dp, vertical = 4.dp),
+                                            .padding(horizontal = if (isLandscape) 8.dp else 6.dp, vertical = 4.dp)
+                                            .focusGroup(),
                                         horizontalArrangement = Arrangement.spacedBy(pillSpacing),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
@@ -4233,6 +4256,7 @@ fun PlayerScreen(
                                                 .size(btnSize)
                                                 .clip(CircleShape)
                                                 .background(if (isResizeCustom) MaterialTheme.colorScheme.primary.copy(alpha = 0.20f) else Color.Transparent)
+                                                .focusRequester(capsulePillFocusRequester)
                                                 .tvFocusableItem(cornerRadius = 20.dp, focusedScale = 1.15f)
                                                 .clickable {
                                                     lastInteractionTime = System.currentTimeMillis()
@@ -4426,6 +4450,15 @@ fun PlayerScreen(
                         }
                         .padding(20.dp)
                 ) {
+                    LaunchedEffect(showSettingsDialog) {
+                        if (showSettingsDialog) {
+                            delay(60)
+                            try {
+                                settingsDialogInitialFocusRequester.requestFocus()
+                            } catch (_: Exception) {}
+                        }
+                    }
+
                     Column(modifier = Modifier.fillMaxSize()) {
                         // Header
                         Row(
@@ -4443,7 +4476,12 @@ fun PlayerScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                             }
-                            IconButton(onClick = { showSettingsDialog = false }) {
+                            IconButton(
+                                onClick = { showSettingsDialog = false },
+                                modifier = Modifier
+                                    .focusRequester(settingsDialogInitialFocusRequester)
+                                    .tvFocusableItem(cornerRadius = 18.dp, focusedScale = 1.12f)
+                            ) {
                                 Icon(Icons.Default.Close, contentDescription = stringResource(R.string.common_close), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
                             }
                         }
@@ -4489,7 +4527,8 @@ fun PlayerScreen(
                                                 Surface(
                                                     modifier = Modifier
                                                         .weight(1f)
-                                                        .height(36.dp),
+                                                        .height(36.dp)
+                                                        .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.08f),
                                                     shape = ShapeTokens.Button,
                                                     color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
                                                     onClick = {
@@ -4633,6 +4672,15 @@ fun PlayerScreen(
                         )
                         .pointerInput(Unit) { detectTapGestures { } }
                 ) {
+                    LaunchedEffect(showSubtitleSheet) {
+                        if (showSubtitleSheet) {
+                            delay(60)
+                            try {
+                                subtitleSheetInitialFocusRequester.requestFocus()
+                            } catch (_: Exception) {}
+                        }
+                    }
+
                     Column(
                         modifier = Modifier.fillMaxSize()
                     ) {
@@ -4652,7 +4700,10 @@ fun PlayerScreen(
                             )
                             IconButton(
                                 onClick = { showSubtitleSheet = false },
-                                modifier = Modifier.size(36.dp)
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .focusRequester(subtitleSheetInitialFocusRequester)
+                                    .tvFocusableItem(cornerRadius = 18.dp, focusedScale = 1.12f)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Close,
@@ -4710,7 +4761,10 @@ fun PlayerScreen(
                                     item {
                                         val isNoneSelected = selectedLangGroup == "none" || selectedSubtitleTrackId == "off"
                                         Surface(
-                                            modifier = Modifier.fillMaxWidth().height(col1ItemHeight),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(col1ItemHeight)
+                                                .tvFocusableItem(cornerRadius = col1ItemHeight / 2, focusedScale = 1.05f),
                                             shape = RoundedCornerShape(col1ItemHeight / 2),
                                             color = if (isNoneSelected && selectedSubtitleTrackId == "off") MaterialTheme.colorScheme.primary else Color.Transparent,
                                             onClick = {
@@ -4757,7 +4811,10 @@ fun PlayerScreen(
                                         val displayName = com.jkhx.player.core.player.subtitle.model.SubtitleSupportedLanguages.getDisplayName(langCode)
 
                                         Surface(
-                                            modifier = Modifier.fillMaxWidth().height(col1ItemHeight),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(col1ItemHeight)
+                                                .tvFocusableItem(cornerRadius = col1ItemHeight / 2, focusedScale = 1.05f),
                                             shape = RoundedCornerShape(col1ItemHeight / 2),
                                             color = if (isLangSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
                                             onClick = {
@@ -4844,7 +4901,9 @@ fun PlayerScreen(
                                                         tempSubSearchQuery = customSubSearchQuery ?: ""
                                                     }
                                                 },
-                                                modifier = Modifier.size(30.dp)
+                                                modifier = Modifier
+                                                    .size(30.dp)
+                                                    .tvFocusableItem(cornerRadius = 15.dp, focusedScale = 1.15f)
                                             ) {
                                                 Icon(
                                                     imageVector = Icons.Default.Edit,
@@ -4866,7 +4925,9 @@ fun PlayerScreen(
                                                     }
                                                 },
                                                 enabled = !isLangLoading,
-                                                modifier = Modifier.size(30.dp)
+                                                modifier = Modifier
+                                                    .size(30.dp)
+                                                    .tvFocusableItem(cornerRadius = 15.dp, focusedScale = 1.15f)
                                             ) {
                                                 if (isLangLoading) {
                                                     CircularProgressIndicator(
@@ -4962,7 +5023,9 @@ fun PlayerScreen(
                                             shape = RoundedCornerShape(8.dp),
                                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-                                            modifier = Modifier.height(36.dp)
+                                            modifier = Modifier
+                                                .height(36.dp)
+                                                .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.06f)
                                         ) {
                                             Text(stringResource(R.string.player_subtitles_search_action), fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
                                         }
@@ -5040,7 +5103,9 @@ fun PlayerScreen(
                                         items(streamItems) { track ->
                                             val isSelected = selectedSubtitleTrackId == track.id
                                             Surface(
-                                                modifier = Modifier.fillMaxWidth(),
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .tvFocusableItem(cornerRadius = 10.dp, focusedScale = 1.03f),
                                                 shape = RoundedCornerShape(10.dp),
                                                 color = if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFF1E222B),
                                                 border = if (isSelected) null else BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
@@ -5132,7 +5197,9 @@ fun PlayerScreen(
                                             val isDownloadingThis = downloadingSubItemId == item.id
 
                                             Surface(
-                                                modifier = Modifier.fillMaxWidth(),
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .tvFocusableItem(cornerRadius = 10.dp, focusedScale = 1.03f),
                                                 shape = RoundedCornerShape(10.dp),
                                                 color = if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFF1E222B),
                                                 border = if (isSelected) null else BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
@@ -5195,6 +5262,7 @@ fun PlayerScreen(
                                                                 Surface(
                                                                     shape = RoundedCornerShape(6.dp),
                                                                     color = Color(0xFF2E7D32),
+                                                                    modifier = Modifier.tvFocusableItem(cornerRadius = 6.dp, focusedScale = 1.08f),
                                                                     onClick = {
                                                                         selectedLangGroup = "vi"
                                                                     }
@@ -5222,6 +5290,7 @@ fun PlayerScreen(
                                                                 Surface(
                                                                     shape = RoundedCornerShape(6.dp),
                                                                     color = Color(0xFF1565C0),
+                                                                    modifier = Modifier.tvFocusableItem(cornerRadius = 6.dp, focusedScale = 1.08f),
                                                                     onClick = {
                                                                         if (!isDownloadingThis && !isTranslatingWithGemini) {
                                                                             translateOnlineSubWithGemini(item)
@@ -5312,6 +5381,7 @@ fun PlayerScreen(
                                                 .size(34.dp)
                                                 .clip(RoundedCornerShape(8.dp))
                                                 .background(Color(0xFF262A34))
+                                                .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.12f)
                                         ) {
                                             Icon(Icons.Default.Remove, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                                         }
@@ -5339,6 +5409,7 @@ fun PlayerScreen(
                                                 .size(34.dp)
                                                 .clip(RoundedCornerShape(8.dp))
                                                 .background(Color(0xFF262A34))
+                                                .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.12f)
                                         ) {
                                             Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                                         }
@@ -5349,7 +5420,8 @@ fun PlayerScreen(
                                     Surface(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .height(30.dp),
+                                            .height(30.dp)
+                                            .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.04f),
                                         shape = RoundedCornerShape(8.dp),
                                         color = Color(0xFF262A34),
                                         onClick = { updateSubOffset(0L) }
@@ -5370,7 +5442,8 @@ fun PlayerScreen(
                                     Surface(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .height(38.dp),
+                                            .height(38.dp)
+                                            .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.04f),
                                         shape = RoundedCornerShape(8.dp),
                                         color = if (isAiSyncing) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else MaterialTheme.colorScheme.primary,
                                         onClick = {
@@ -5526,7 +5599,9 @@ fun PlayerScreen(
                                                 uncheckedThumbColor = Color.White.copy(alpha = 0.6f),
                                                 uncheckedTrackColor = Color(0xFF262A34)
                                             ),
-                                            modifier = Modifier.scale(0.8f)
+                                            modifier = Modifier
+                                                .scale(0.8f)
+                                                .tvFocusableItem(cornerRadius = 14.dp, focusedScale = 1.15f)
                                         )
                                     }
 
@@ -5551,7 +5626,10 @@ fun PlayerScreen(
                                             voiceOptions.take(3).forEach { opt ->
                                                 val isSelected = activeNormVoice == opt.id
                                                 Surface(
-                                                    modifier = Modifier.weight(1f).height(36.dp),
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .height(36.dp)
+                                                        .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.08f),
                                                     shape = RoundedCornerShape(8.dp),
                                                     color = if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFF262A34),
                                                     onClick = {
@@ -5582,7 +5660,10 @@ fun PlayerScreen(
                                             voiceOptions.drop(3).forEach { opt ->
                                                 val isSelected = activeNormVoice == opt.id
                                                 Surface(
-                                                    modifier = Modifier.weight(1f).height(36.dp),
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .height(36.dp)
+                                                        .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.08f),
                                                     shape = RoundedCornerShape(8.dp),
                                                     color = if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFF262A34),
                                                     onClick = {
@@ -5623,7 +5704,10 @@ fun PlayerScreen(
                                             listOf(0.20f to "20%", 0.35f to "35%", 0.50f to "50%").forEach { (vol, label) ->
                                                 val isSelected = kotlin.math.abs(ttsDuckingVolume - vol) < 0.05f
                                                 Surface(
-                                                    modifier = Modifier.weight(1f).height(28.dp),
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .height(28.dp)
+                                                        .tvFocusableItem(cornerRadius = 6.dp, focusedScale = 1.08f),
                                                     shape = RoundedCornerShape(6.dp),
                                                     color = if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFF262A34),
                                                     onClick = { settingsManager.setTtsDuckingVolume(vol) }
@@ -5657,7 +5741,10 @@ fun PlayerScreen(
                                             listOf(1.0f to "1.0x", 1.15f to "1.15x", 1.25f to "1.25x", 1.4f to "1.4x").forEach { (rate, label) ->
                                                 val isSelected = kotlin.math.abs(ttsSpeechRate - rate) < 0.05f
                                                 Surface(
-                                                    modifier = Modifier.weight(1f).height(28.dp),
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .height(28.dp)
+                                                        .tvFocusableItem(cornerRadius = 6.dp, focusedScale = 1.08f),
                                                     shape = RoundedCornerShape(6.dp),
                                                     color = if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFF262A34),
                                                     onClick = { settingsManager.setTtsSpeechRate(rate) }
@@ -5692,7 +5779,9 @@ fun PlayerScreen(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         Surface(
-                                            modifier = Modifier.size(36.dp),
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.12f),
                                             shape = RoundedCornerShape(8.dp),
                                             color = Color(0xFF262A34),
                                             onClick = {
@@ -5721,7 +5810,9 @@ fun PlayerScreen(
                                         }
 
                                         Surface(
-                                            modifier = Modifier.size(36.dp),
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.12f),
                                             shape = RoundedCornerShape(8.dp),
                                             color = Color(0xFF262A34),
                                             onClick = {
@@ -5746,7 +5837,9 @@ fun PlayerScreen(
                                     )
                                     Spacer(modifier = Modifier.height(6.dp))
                                     Surface(
-                                        modifier = Modifier.height(34.dp),
+                                        modifier = Modifier
+                                            .height(34.dp)
+                                            .tvFocusableItem(cornerRadius = 17.dp, focusedScale = 1.06f),
                                         shape = RoundedCornerShape(17.dp),
                                         color = if (subtitleIsBold) MaterialTheme.colorScheme.primary else Color(0xFF262A34),
                                         onClick = { settingsManager.setSubtitleIsBold(!subtitleIsBold) }
@@ -5795,9 +5888,8 @@ fun PlayerScreen(
                                                         color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.5f),
                                                         shape = CircleShape
                                                     )
-                                                    .pointerInput(Unit) {
-                                                        detectTapGestures { settingsManager.setSubtitleTextColor(col) }
-                                                    }
+                                                    .tvFocusableItem(cornerRadius = 13.dp, focusedScale = 1.25f)
+                                                    .clickable { settingsManager.setSubtitleTextColor(col) }
                                             )
                                         }
                                     }
@@ -5817,7 +5909,9 @@ fun PlayerScreen(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         Surface(
-                                            modifier = Modifier.size(36.dp),
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.12f),
                                             shape = RoundedCornerShape(8.dp),
                                             color = Color(0xFF262A34),
                                             onClick = {
@@ -5846,7 +5940,9 @@ fun PlayerScreen(
                                         }
 
                                         Surface(
-                                            modifier = Modifier.size(36.dp),
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.12f),
                                             shape = RoundedCornerShape(8.dp),
                                             color = Color(0xFF262A34),
                                             onClick = {
@@ -5871,7 +5967,9 @@ fun PlayerScreen(
                                     )
                                     Spacer(modifier = Modifier.height(6.dp))
                                     Surface(
-                                        modifier = Modifier.height(34.dp),
+                                        modifier = Modifier
+                                            .height(34.dp)
+                                            .tvFocusableItem(cornerRadius = 17.dp, focusedScale = 1.06f),
                                         shape = RoundedCornerShape(17.dp),
                                         color = if (subtitleIsOutline) MaterialTheme.colorScheme.primary else Color(0xFF262A34),
                                         onClick = { settingsManager.setSubtitleIsOutline(!subtitleIsOutline) }
@@ -5917,9 +6015,8 @@ fun PlayerScreen(
                                                         color = if (isSelected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.5f),
                                                         shape = CircleShape
                                                     )
-                                                    .pointerInput(Unit) {
-                                                        detectTapGestures { settingsManager.setSubtitleOutlineColor(col) }
-                                                    }
+                                                    .tvFocusableItem(cornerRadius = 13.dp, focusedScale = 1.25f)
+                                                    .clickable { settingsManager.setSubtitleOutlineColor(col) }
                                             )
                                         }
                                     }
@@ -5945,7 +6042,9 @@ fun PlayerScreen(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         Surface(
-                                            modifier = Modifier.size(36.dp),
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.12f),
                                             shape = RoundedCornerShape(8.dp),
                                             color = Color(0xFF262A34),
                                             onClick = {
@@ -5974,7 +6073,9 @@ fun PlayerScreen(
                                         }
 
                                         Surface(
-                                            modifier = Modifier.size(36.dp),
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.12f),
                                             shape = RoundedCornerShape(8.dp),
                                             color = Color(0xFF262A34),
                                             onClick = {
@@ -5999,7 +6100,10 @@ fun PlayerScreen(
                                             containerColor = Color(0xFF262A34),
                                             contentColor = Color.White
                                         ),
-                                        modifier = Modifier.fillMaxWidth().height(36.dp)
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(36.dp)
+                                            .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.04f)
                                     ) {
                                         Text(stringResource(R.string.player_subtitles_reset_defaults), fontSize = 12.sp)
                                     }
@@ -6050,6 +6154,15 @@ fun PlayerScreen(
                         )
                         .pointerInput(Unit) { detectTapGestures { } }
                 ) {
+                    LaunchedEffect(showAudioSheet) {
+                        if (showAudioSheet) {
+                            delay(60)
+                            try {
+                                audioSheetInitialFocusRequester.requestFocus()
+                            } catch (_: Exception) {}
+                        }
+                    }
+
                     Column(
                         modifier = Modifier.fillMaxSize()
                     ) {
@@ -6093,7 +6206,10 @@ fun PlayerScreen(
                             }
                             IconButton(
                                 onClick = { showAudioSheet = false },
-                                modifier = Modifier.size(36.dp)
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .focusRequester(audioSheetInitialFocusRequester)
+                                    .tvFocusableItem(cornerRadius = 18.dp, focusedScale = 1.12f)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Close,
@@ -6164,7 +6280,9 @@ fun PlayerScreen(
                                             width = 1.dp,
                                             color = if (isAutoSelected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.08f)
                                         ),
-                                        modifier = Modifier.fillMaxWidth()
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .tvFocusableItem(cornerRadius = 10.dp, focusedScale = 1.03f)
                                     ) {
                                         Row(
                                             modifier = Modifier
@@ -6223,7 +6341,9 @@ fun PlayerScreen(
                                             width = 1.dp,
                                             color = if (isTrackSelected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.08f)
                                         ),
-                                        modifier = Modifier.fillMaxWidth()
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .tvFocusableItem(cornerRadius = 10.dp, focusedScale = 1.03f)
                                     ) {
                                         Row(
                                             modifier = Modifier
@@ -6467,6 +6587,15 @@ fun PlayerScreen(
                         else orderedDrawerStreams.filter { it.groupName == selectedSourceFilter }
                     }
 
+                    LaunchedEffect(showSourceSelectorDrawer) {
+                        if (showSourceSelectorDrawer) {
+                            delay(60)
+                            try {
+                                sourceSelectorInitialFocusRequester.requestFocus()
+                            } catch (_: Exception) {}
+                        }
+                    }
+
                     Column(modifier = Modifier.fillMaxSize()) {
                         // 1. Header trên cùng: Tiêu đề "Nguồn phát & Máy chủ" & Nút "Đóng" (Hình 3)
                         Row(
@@ -6483,7 +6612,9 @@ fun PlayerScreen(
                             Surface(
                                 shape = RoundedCornerShape(16.dp),
                                 color = Color.White.copy(alpha = 0.12f),
-                                modifier = Modifier.tvFocusableItem(cornerRadius = 16.dp, focusedScale = 1.08f),
+                                modifier = Modifier
+                                    .focusRequester(sourceSelectorInitialFocusRequester)
+                                    .tvFocusableItem(cornerRadius = 16.dp, focusedScale = 1.08f),
                                 onClick = { showSourceSelectorDrawer = false }
                             ) {
                                 Text(
@@ -6543,6 +6674,7 @@ fun PlayerScreen(
                                 modifier = Modifier
                                     .padding(end = 8.dp)
                                     .size(36.dp)
+                                    .tvFocusableItem(cornerRadius = 18.dp, focusedScale = 1.15f)
                                     .clickable(enabled = !isScanningSources) { refreshSourcesKey++ }
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
@@ -6560,13 +6692,14 @@ fun PlayerScreen(
                             LazyRow(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(1f).focusGroup()
                             ) {
                                 // Chip "Tất cả"
                                 item {
                                     FilterChip(
                                         selected = selectedSourceFilter == null,
                                         onClick = { selectedSourceFilter = null },
+                                        modifier = Modifier.tvFocusableItem(cornerRadius = 16.dp, focusedScale = 1.08f),
                                         label = {
                                             Text(
                                                 stringResource(R.string.streams_all_filter),
@@ -6593,6 +6726,7 @@ fun PlayerScreen(
                                         onClick = {
                                             selectedSourceFilter = if (isSelected) null else groupName
                                         },
+                                        modifier = Modifier.tvFocusableItem(cornerRadius = 16.dp, focusedScale = 1.08f),
                                         label = {
                                             Text(
                                                 text = groupName,
@@ -6856,6 +6990,15 @@ fun PlayerScreen(
                         }
                         .padding(20.dp)
                 ) {
+                    LaunchedEffect(showEpisodesDrawer) {
+                        if (showEpisodesDrawer) {
+                            delay(60)
+                            try {
+                                episodesDrawerInitialFocusRequester.requestFocus()
+                            } catch (_: Exception) {}
+                        }
+                    }
+
                     Column(modifier = Modifier.fillMaxSize()) {
                         // Header: Title + Close Button
                         Row(
@@ -6873,7 +7016,12 @@ fun PlayerScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                             }
-                            IconButton(onClick = { showEpisodesDrawer = false }) {
+                            IconButton(
+                                onClick = { showEpisodesDrawer = false },
+                                modifier = Modifier
+                                    .focusRequester(episodesDrawerInitialFocusRequester)
+                                    .tvFocusableItem(cornerRadius = 18.dp, focusedScale = 1.12f)
+                            ) {
                                 Icon(Icons.Default.Close, contentDescription = stringResource(R.string.common_close), tint = Color.White.copy(alpha = 0.8f))
                             }
                         }
@@ -7091,7 +7239,8 @@ private fun SettingsOptionCard(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 3.dp),
+            .padding(vertical = 3.dp)
+            .tvFocusableItem(cornerRadius = 12.dp, focusedScale = 1.02f),
         shape = ShapeTokens.Card,
         color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
         border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,

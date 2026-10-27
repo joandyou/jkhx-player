@@ -7,6 +7,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.focusable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.drawWithContent
@@ -31,7 +32,8 @@ fun Modifier.tvFocusableItem(
     focusedScale: Float = 1.05f,
     borderWidth: Dp = 2.5.dp,
     focusColor: Color? = null,
-    fillTintAlpha: Float = 0.08f
+    fillTintAlpha: Float = 0.08f,
+    enabled: Boolean = true
 ): Modifier = composed {
     var isFocused by remember { mutableStateOf(false) }
     val resolvedColor = focusColor ?: MaterialTheme.colorScheme.primary
@@ -46,6 +48,7 @@ fun Modifier.tvFocusableItem(
         .onFocusChanged { state ->
             isFocused = state.isFocused
         }
+        .focusable(enabled = enabled)
         .graphicsLayer {
             scaleX = scale
             scaleY = scale
