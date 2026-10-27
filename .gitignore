@@ -31,6 +31,7 @@ backups/
 PROJECT_RULES.md
 CHANGE.md
 README_DEV.md
+GITHUB_WORKFLOW_GUIDE.md
 
 # Ignore actual scraper plugins and manifests, only expose template
 plugins/*
