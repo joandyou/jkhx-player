@@ -57,6 +57,20 @@ data class SubtitleTrackOption(
     val trackIndex: Int
 )
 
+data class AudioTrackOption(
+    val id: String,
+    val label: String,
+    val language: String?,
+    val channelCount: Int,
+    val sampleRate: Int,
+    val bitrate: Int,
+    val mimeType: String?,
+    val roleFlags: Int,
+    val isSelected: Boolean,
+    val groupIndex: Int,
+    val trackIndex: Int
+)
+
 class ExoPlayerManager(
     private val context: Context
 ) {
@@ -596,6 +610,137 @@ class ExoPlayerManager(
         if (foundOption != null) {
             setSubtitleTrack(foundOption)
         }
+    }
+
+    fun getAudioTracks(): List<AudioTrackOption> {
+        val currentTracks = exoPlayer?.currentTracks ?: return emptyList()
+        val list = mutableListOf<AudioTrackOption>()
+        var gIdx = 0
+        for (group in currentTracks.groups) {
+            if (group.type == C.TRACK_TYPE_AUDIO) {
+                for (tIdx in 0 until group.length) {
+                    val format = group.getTrackFormat(tIdx)
+                    val lang = format.language
+                    val langName = if (!lang.isNullOrBlank()) {
+                        when (lang.lowercase()) {
+                            "vi", "vie", "vietnamese" -> "Tiếng Việt"
+                            "en", "eng", "english" -> "Tiếng Anh"
+                            "zh", "chi", "zho", "chinese" -> "Tiếng Trung"
+                            "ko", "kor", "korean" -> "Tiếng Hàn"
+                            "ja", "jpn", "japanese" -> "Tiếng Nhật"
+                            "fr", "fra", "french" -> "Tiếng Pháp"
+                            "es", "spa", "spanish" -> "Tiếng Tây Ban Nha"
+                            "ru", "rus", "russian" -> "Tiếng Nga"
+                            "th", "tha", "thai" -> "Tiếng Thái"
+                            "de", "deu", "ger", "german" -> "Tiếng Đức"
+                            "it", "ita", "italian" -> "Tiếng Ý"
+                            "hi", "hin", "hindi" -> "Tiếng Hindi"
+                            "id", "ind", "indonesian" -> "Tiếng Indo"
+                            "pt", "por", "portuguese" -> "Tiếng Bồ Đào Nha"
+                            else -> lang.uppercase()
+                        }
+                    } else null
+
+                    val rawLabel = format.label
+                    val primaryLabel = when {
+                        !rawLabel.isNullOrBlank() -> rawLabel
+                        !langName.isNullOrBlank() -> langName
+                        else -> "Audio Track ${tIdx + 1}"
+                    }
+
+                    val isSelected = group.isTrackSelected(tIdx)
+                    list.add(
+                        AudioTrackOption(
+                            id = format.id ?: "$gIdx:$tIdx",
+                            label = primaryLabel,
+                            language = format.language,
+                            channelCount = format.channelCount,
+                            sampleRate = format.sampleRate,
+                            bitrate = format.bitrate,
+                            mimeType = format.sampleMimeType,
+                            roleFlags = format.roleFlags,
+                            isSelected = isSelected,
+                            groupIndex = gIdx,
+                            trackIndex = tIdx
+                        )
+                    )
+                }
+            }
+            gIdx++
+        }
+        return list
+    }
+
+    fun setAudioTrack(option: AudioTrackOption?) {
+        val player = exoPlayer ?: return
+        val currentTracks = player.currentTracks
+        if (option == null) {
+            // Auto / Mặc định: Xóa override audio track
+            player.trackSelectionParameters = player.trackSelectionParameters
+                .buildUpon()
+                .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                .build()
+        } else {
+            var gIdx = 0
+            for (group in currentTracks.groups) {
+                if (group.type == C.TRACK_TYPE_AUDIO && gIdx == option.groupIndex) {
+                    player.trackSelectionParameters = player.trackSelectionParameters
+                        .buildUpon()
+                        .setOverrideForType(
+                            TrackSelectionOverride(group.mediaTrackGroup, option.trackIndex)
+                        )
+                        .build()
+                    break
+                }
+                gIdx++
+            }
+        }
+    }
+
+    fun formatAudioSpecs(option: AudioTrackOption): String {
+        val parts = mutableListOf<String>()
+
+        // 1. Kênh âm thanh (Channels)
+        val channelStr = when (option.channelCount) {
+            1 -> "Mono (1.0)"
+            2 -> "Stereo (2.0)"
+            6 -> "5.1 Surround"
+            8 -> "7.1 Surround"
+            in 3..5 -> "${option.channelCount} Channels"
+            else -> if (option.channelCount > 8) "${option.channelCount} Channels" else ""
+        }
+        if (channelStr.isNotEmpty()) parts.add(channelStr)
+
+        // 2. Chuẩn nén codec (Codec / Mime)
+        val mime = option.mimeType?.lowercase() ?: ""
+        val codecStr = when {
+            mime.contains("ac3") || mime.contains("ac-3") -> "Dolby Digital"
+            mime.contains("eac3") || mime.contains("e-ac-3") -> "Dolby Digital Plus"
+            mime.contains("truehd") -> "Dolby TrueHD"
+            mime.contains("dts-hd") -> "DTS-HD"
+            mime.contains("dts") -> "DTS"
+            mime.contains("opus") -> "Opus"
+            mime.contains("flac") -> "FLAC"
+            mime.contains("mp4a") || mime.contains("aac") -> "AAC"
+            mime.contains("vorbis") -> "Vorbis"
+            mime.contains("mp3") || mime.contains("mpeg") -> "MP3"
+            else -> ""
+        }
+        if (codecStr.isNotEmpty()) parts.add(codecStr)
+
+        // 3. Bitrate (nếu có)
+        if (option.bitrate > 0) {
+            parts.add("${option.bitrate / 1000} kbps")
+        }
+
+        // 4. Role flags (Lồng tiếng, Thuyết minh, v.v.)
+        if (option.roleFlags and C.ROLE_FLAG_DUB != 0) {
+            parts.add("Lồng tiếng")
+        } else if (option.roleFlags and C.ROLE_FLAG_COMMENTARY != 0) {
+            parts.add("Bình luận")
+        }
+
+        return parts.joinToString(" • ")
     }
 
     fun pause() {

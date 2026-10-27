@@ -599,6 +599,19 @@
     <string name="player_tts_voice_nova">Mai Chi</string>
     <string name="player_tts_voice_shimmer">Ánh Dương</string>
 
+    <!-- Audio Tracks -->
+    <string name="player_audio_title">Luồng Âm Thanh</string>
+    <string name="player_audio_auto">Tự động / Mặc định</string>
+    <string name="player_audio_auto_desc">Tự động chọn theo luồng phát gốc</string>
+    <string name="player_audio_selected_toast">Đã chọn luồng âm thanh: %s</string>
+    <string name="player_audio_mono">Mono (1.0)</string>
+    <string name="player_audio_stereo">Stereo (2.0)</string>
+    <string name="player_audio_surround_51">5.1 Surround</string>
+    <string name="player_audio_surround_71">7.1 Surround</string>
+    <string name="player_audio_dubbed_badge">Lồng tiếng / Thuyết minh</string>
+    <string name="player_audio_original_badge">Âm thanh gốc</string>
+    <string name="player_audio_commentary_badge">Bình luận</string>
+
     <!-- TTS Gateway Settings -->
     <string name="settings_tts_section_title">Thuyết Minh AI &amp; Gateway TTS</string>
     <string name="settings_tts_desc">Hỗ trợ Gemini 3.8 Flash TTS, Gemini 3.1 Flash TTS, Lite TTS và Gemini 3.5 Live Translate qua OpenAI-compatible Gateway hoặc Google AI Studio.</string>

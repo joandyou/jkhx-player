@@ -599,6 +599,19 @@
     <string name="player_tts_voice_nova">Mai Chi</string>
     <string name="player_tts_voice_shimmer">Anh Duong</string>
 
+    <!-- Audio Tracks -->
+    <string name="player_audio_title">Audio Tracks</string>
+    <string name="player_audio_auto">Auto / Default</string>
+    <string name="player_audio_auto_desc">Automatically select default stream track</string>
+    <string name="player_audio_selected_toast">Audio track selected: %s</string>
+    <string name="player_audio_mono">Mono (1.0)</string>
+    <string name="player_audio_stereo">Stereo (2.0)</string>
+    <string name="player_audio_surround_51">5.1 Surround</string>
+    <string name="player_audio_surround_71">7.1 Surround</string>
+    <string name="player_audio_dubbed_badge">Dubbed</string>
+    <string name="player_audio_original_badge">Original Audio</string>
+    <string name="player_audio_commentary_badge">Commentary</string>
+
     <!-- TTS Gateway Settings -->
     <string name="settings_tts_section_title">AI Voiceover &amp; TTS Gateway</string>
     <string name="settings_tts_desc">Supports Gemini 3.8 Flash TTS, Gemini 3.1 Flash TTS, Lite TTS and Gemini 3.5 Live Translate via OpenAI-compatible Gateway or Google AI Studio.</string>
@@ -651,6 +664,9 @@
     <string name="streams_empty">No streams found for this episode</string>
     <string name="streams_reload">Rescan</string>
     <string name="plugins_stremio_subtitles_support">Subtitles Support</string>
+    <string name="player_buffering_title">Buffering…</string>
+    <string name="player_buffering_connecting">Connecting stream…</string>
+    <string name="player_buffering_hint">Preloading content for smooth playback</string>
 
     <!-- In-App Updater Strings -->
     <string name="settings_check_update_title">Check for Updates</string>

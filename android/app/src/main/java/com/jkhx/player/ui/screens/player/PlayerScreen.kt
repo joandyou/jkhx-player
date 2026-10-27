@@ -111,6 +111,7 @@ import com.jkhx.player.core.database.entity.HistoryEntity
 import com.jkhx.player.core.database.entity.PlaybackProgressEntity
 import com.jkhx.player.core.model.EpisodeData
 import com.jkhx.player.core.model.EpisodeStream
+import com.jkhx.player.core.player.AudioTrackOption
 import com.jkhx.player.core.player.ExoPlayerManager
 import com.jkhx.player.core.player.GenericHtml5EmbedResolver
 import com.jkhx.player.core.player.SubtitleTrackOption
@@ -567,6 +568,7 @@ fun PlayerScreen(
     val effectiveTotalDuration = if (totalDuration > 0L) totalDuration else fallbackDurationMs
     var bufferedPosition by remember { mutableStateOf(0L) }
     var isDraggingSlider by remember { mutableStateOf(false) }
+    var isDraggingGesture by remember { mutableStateOf(false) }
     var sliderDragRatio by remember { mutableFloatStateOf(0f) }
     var isSeeking by remember { mutableStateOf(false) }
     var exoPlayerRetryCount by remember { mutableIntStateOf(0) }
@@ -623,9 +625,12 @@ fun PlayerScreen(
     // Dialog chọn cài đặt: Tốc độ, Chất lượng HLS
     var showSettingsDialog by remember { mutableStateOf(false) }
     var videoTracks by remember { mutableStateOf<List<VideoTrackOption>>(emptyList()) }
+    var audioTracks by remember { mutableStateOf<List<AudioTrackOption>>(emptyList()) }
     var subtitleTracks by remember { mutableStateOf<List<SubtitleTrackOption>>(emptyList()) }
     var selectedVideoTrackId by remember { mutableStateOf<String?>("auto") }
+    var selectedAudioTrackId by remember { mutableStateOf<String?>("auto") }
     var selectedSubtitleTrackId by remember { mutableStateOf<String?>("off") }
+    var showAudioSheet by remember { mutableStateOf(false) }
 
     // Quản lý phụ đề & Dịch AI riêng biệt
     val subtitleManager = remember { JkhxApplication.instance.subtitleManager }
@@ -1510,6 +1515,7 @@ fun PlayerScreen(
 
             override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
                 videoTracks = exoPlayerManager.getVideoTracks()
+                audioTracks = exoPlayerManager.getAudioTracks()
                 val subs = exoPlayerManager.getSubtitleTracks()
                 subtitleTracks = mergeSubtitleTracks(customSubtitleTracks, subs)
 
@@ -2413,7 +2419,11 @@ fun PlayerScreen(
                         if (isLocked) {
                             showControls = !showControls
                         } else {
-                            showControls = !showControls
+                            if (hudType == HudIndicatorType.NONE && !isDraggingGesture) {
+                                showControls = !showControls
+                            } else {
+                                hudType = HudIndicatorType.NONE
+                            }
                             lastInteractionTime = System.currentTimeMillis()
                         }
                     },
@@ -2514,6 +2524,13 @@ fun PlayerScreen(
                                 if (hudType == HudIndicatorType.SEEK_GESTURE) {
                                     hudType = HudIndicatorType.NONE
                                 }
+                                isDraggingGesture = false
+                            }
+                        } else {
+                            dragDirection = 0
+                            coroutineScope.launch {
+                                delay(400)
+                                isDraggingGesture = false
                             }
                         }
                     },
@@ -2522,10 +2539,9 @@ fun PlayerScreen(
                             isLongPressing2x = false
                             exoPlayerManager.setPlaybackSpeed(currentSpeed)
                         }
-                        if (dragDirection == 1) {
-                            dragDirection = 0
-                            hudType = HudIndicatorType.NONE
-                        }
+                        dragDirection = 0
+                        hudType = HudIndicatorType.NONE
+                        isDraggingGesture = false
                     },
                     onDrag = { change, dragAmount ->
                         if (!isLocked) {
@@ -2542,6 +2558,8 @@ fun PlayerScreen(
                                 val slop = 16f
                                 if (absX > slop || absY > slop) {
                                     dragDirection = if (absX >= absY) 1 else 2
+                                    isDraggingGesture = true
+                                    showControls = false // Tự động ẩn controls khi người dùng bắt đầu thao tác cử chỉ
                                 }
                             }
 
@@ -3087,7 +3105,7 @@ fun PlayerScreen(
                     .fillMaxSize()
                     .background(Color.Black)
             ) {
-                // Dimmed backdrop image if available
+                // Dimmed backdrop image if available (Hiển thị poster sắc nét, điện ảnh)
                 if (!movieThumb.isNullOrBlank()) {
                     AsyncImage(
                         model = movieThumb,
@@ -3095,48 +3113,107 @@ fun PlayerScreen(
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .fillMaxSize()
-                            .blur(20.dp),
-                        alpha = 0.28f
+                            .blur(8.dp),
+                        alpha = 0.72f
                     )
                 }
 
-                // Scrim overlay
+                // Scrim overlay nhẹ nhàng, bảo toàn độ sáng và chi tiết của poster
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(
                             Brush.verticalGradient(
                                 colors = listOf(
-                                    Color.Black.copy(alpha = 0.65f),
-                                    Color.Black.copy(alpha = 0.88f)
+                                    Color.Black.copy(alpha = 0.30f),
+                                    Color.Black.copy(alpha = 0.20f),
+                                    Color.Black.copy(alpha = 0.58f)
                                 )
                             )
                         )
                 )
             }
-        } else if (!isWebViewMode && errorMessage == null && isPlaybackStartedEffective && (isLoading || isPlayerBuffering) && !showControls) {
-            // Buffer mid-stream sau khi phim đã bắt đầu phát (HUD compact nổi ở trung tâm khi controls đang ẩn)
-            Surface(
-                modifier = Modifier.align(Alignment.Center),
-                shape = RoundedCornerShape(16.dp),
-                color = Color.Black.copy(alpha = 0.8f),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f))
+        } else if (!isWebViewMode && errorMessage == null && isPlaybackStartedEffective && (isLoading || isPlayerBuffering)) {
+            // Buffer mid-stream sau khi phim đã bắt đầu phát: Hiển thị khối thông tin phim trang trọng đồng bộ màu Theme
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.42f)),
+                contentAlignment = Alignment.Center
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                    modifier = Modifier
+                        .fillMaxWidth(0.85f)
+                        .padding(24.dp)
                 ) {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.5.dp,
-                        color = Color(0xFF1E88E5)
+                        modifier = Modifier.size(46.dp),
+                        strokeWidth = 3.5.dp,
+                        color = MaterialTheme.colorScheme.primary
                     )
-                    Spacer(modifier = Modifier.width(10.dp))
+                    Spacer(modifier = Modifier.height(18.dp))
                     Text(
-                        text = stringResource(R.string.player_buffering_title),
+                        text = movieName,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = if (isLandscape) 18.sp else 16.sp
+                        ),
                         color = Color.White,
-                        fontSize = 12.5.sp,
-                        fontWeight = FontWeight.Medium
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    val epAndServer = buildString {
+                        append(currentEpisode.name)
+                        if (activeServerName.isNotBlank()) {
+                            append(" • ")
+                            append(activeServerName)
+                        }
+                    }
+                    Text(
+                        text = epAndServer,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = if (isLandscape) 13.sp else 12.sp
+                        ),
+                        color = Color.White.copy(alpha = 0.7f),
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = Color.Black.copy(alpha = 0.75f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+                        shadowElevation = 6.dp
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .background(MaterialTheme.colorScheme.primary, CircleShape)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = stringResource(R.string.player_buffering_title),
+                                color = MaterialTheme.colorScheme.primary,
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(R.string.player_buffering_hint),
+                        color = Color.White.copy(alpha = 0.55f),
+                        fontSize = 11.sp,
+                        textAlign = TextAlign.Center
                     )
                 }
             }
@@ -3170,7 +3247,7 @@ fun PlayerScreen(
                     .padding(top = if (isLandscape) 36.dp else 24.dp),
                 shape = RoundedCornerShape(20.dp),
                 color = Color.Black.copy(alpha = 0.85f),
-                border = BorderStroke(1.dp, Color(0xFF64B5F6).copy(alpha = 0.6f)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)),
                 shadowElevation = 8.dp
             ) {
                 Row(
@@ -3181,7 +3258,7 @@ fun PlayerScreen(
                         progress = { geminiTranslateProgress.coerceIn(0.05f, 1f) },
                         modifier = Modifier.size(17.dp),
                         strokeWidth = 2.dp,
-                        color = Color(0xFF64B5F6),
+                        color = MaterialTheme.colorScheme.primary,
                         trackColor = Color.White.copy(alpha = 0.2f)
                     )
                     Spacer(modifier = Modifier.width(9.dp))
@@ -3318,22 +3395,27 @@ fun PlayerScreen(
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.Center)
         ) {
-            Box(
-                modifier = Modifier
-                    .background(Color.Black.copy(alpha = 0.75f), ShapeTokens.Card)
-                    .padding(horizontal = 24.dp, vertical = 14.dp)
+            Surface(
+                shape = ShapeTokens.Card,
+                color = Color.Black.copy(alpha = 0.82f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)),
+                shadowElevation = 8.dp
             ) {
-                if (hudType == HudIndicatorType.SEEK_FORWARD) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Forward10, contentDescription = null, tint = Color.White, modifier = Modifier.size(32.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("+10s", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    }
-                } else {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Replay10, contentDescription = null, tint = Color.White, modifier = Modifier.size(32.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("-10s", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Box(
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 14.dp)
+                ) {
+                    if (hudType == HudIndicatorType.SEEK_FORWARD) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Forward10, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("+10s", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        }
+                    } else {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Replay10, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("-10s", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        }
                     }
                 }
             }
@@ -3649,6 +3731,7 @@ fun PlayerScreen(
                             IconButton(
                                 onClick = {
                                     videoTracks = exoPlayerManager.getVideoTracks()
+                                    audioTracks = exoPlayerManager.getAudioTracks()
                                     showSettingsDialog = true
                                 }
                             ) {
@@ -3685,8 +3768,13 @@ fun PlayerScreen(
 
                     // --- CENTER CONTROLS: Buffering HUD khi chưa phát, hoặc [Tua lùi 10s, Tập trước, Play/Pause/Buffer, Tập sau, Tua tới 10s] ---
                     if (!isWebViewMode && errorMessage == null) {
+                        val isCenterHudActive = hudType == HudIndicatorType.SEEK_FORWARD ||
+                                hudType == HudIndicatorType.SEEK_REWIND ||
+                                hudType == HudIndicatorType.SEEK_GESTURE
+                        val isBufferingActive = isLoading || isPlayerBuffering
+
                         if (!isPlaybackStartedEffective) {
-                            // Tích hợp Buffering HUD vào chính giữa vùng điều khiển, không bị đè lên các nút
+                            // Tích hợp Buffering HUD vào chính giữa vùng điều khiển theo Theme
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.Center,
@@ -3698,7 +3786,7 @@ fun PlayerScreen(
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(46.dp),
                                     strokeWidth = 3.5.dp,
-                                    color = Color(0xFF1E88E5)
+                                    color = MaterialTheme.colorScheme.primary
                                 )
                                 Spacer(modifier = Modifier.height(18.dp))
                                 Text(
@@ -3733,8 +3821,9 @@ fun PlayerScreen(
                                 Spacer(modifier = Modifier.height(14.dp))
                                 Surface(
                                     shape = RoundedCornerShape(20.dp),
-                                    color = Color(0xFF1E222B).copy(alpha = 0.85f),
-                                    border = BorderStroke(1.dp, Color(0xFF1E88E5).copy(alpha = 0.45f))
+                                    color = Color.Black.copy(alpha = 0.75f),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+                                    shadowElevation = 6.dp
                                 ) {
                                     Row(
                                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
@@ -3743,12 +3832,12 @@ fun PlayerScreen(
                                         Box(
                                             modifier = Modifier
                                                 .size(8.dp)
-                                                .background(Color(0xFF64B5F6), CircleShape)
+                                                .background(MaterialTheme.colorScheme.primary, CircleShape)
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text(
                                             text = if (isLoading) stringResource(R.string.player_buffering_connecting) else stringResource(R.string.player_buffering_title),
-                                            color = Color(0xFF64B5F6),
+                                            color = MaterialTheme.colorScheme.primary,
                                             fontSize = 12.5.sp,
                                             fontWeight = FontWeight.SemiBold
                                         )
@@ -3762,7 +3851,7 @@ fun PlayerScreen(
                                     textAlign = TextAlign.Center
                                 )
                             }
-                        } else {
+                        } else if (!isBufferingActive && !isCenterHudActive && !isDraggingGesture && !isDraggingSlider) {
                             Row(
                                 modifier = Modifier.align(Alignment.Center),
                                 horizontalArrangement = Arrangement.spacedBy(20.dp),
@@ -3800,36 +3889,21 @@ fun PlayerScreen(
                                     Icon(Icons.Default.Replay10, contentDescription = stringResource(R.string.player_rewind_10s), tint = Color.White, modifier = Modifier.size(38.dp))
                                 }
 
-                                // Play / Pause (nếu đang buffer mid-stream thì hiển thị loading indicator xoay tròn)
-                                if (isLoading || isPlayerBuffering) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(64.dp)
-                                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.65f), CircleShape),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(34.dp),
-                                            strokeWidth = 3.dp,
-                                            color = MaterialTheme.colorScheme.onPrimary
-                                        )
-                                    }
-                                } else {
-                                    IconButton(
-                                        onClick = {
-                                            if (isPlaying) exoPlayerManager.pause() else exoPlayerManager.play()
-                                        },
-                                        modifier = Modifier
-                                            .size(64.dp)
-                                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.65f), CircleShape)
-                                    ) {
-                                        Icon(
-                                            if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                            contentDescription = if (isPlaying) stringResource(R.string.player_pause) else stringResource(R.string.player_play),
-                                            tint = MaterialTheme.colorScheme.onPrimary,
-                                            modifier = Modifier.size(40.dp)
-                                        )
-                                    }
+                                // Play / Pause
+                                IconButton(
+                                    onClick = {
+                                        if (isPlaying) exoPlayerManager.pause() else exoPlayerManager.play()
+                                    },
+                                    modifier = Modifier
+                                        .size(64.dp)
+                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.85f), CircleShape)
+                                ) {
+                                    Icon(
+                                        if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                        contentDescription = if (isPlaying) stringResource(R.string.player_pause) else stringResource(R.string.player_play),
+                                        tint = MaterialTheme.colorScheme.onPrimary,
+                                        modifier = Modifier.size(40.dp)
+                                    )
                                 }
 
                                 // Tua tới 10s
@@ -3999,83 +4073,104 @@ fun PlayerScreen(
                                     border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
                                     shadowElevation = 6.dp
                                 ) {
-                                    val pillPaddingH = if (isLandscape) 10.dp else 6.dp
-                                    val pillPaddingV = if (isLandscape) 6.dp else 5.dp
-                                    val pillSpacing = if (isLandscape) 6.dp else 3.dp
-                                    val pillTextSize = if (isLandscape) 12.sp else 11.sp
-                                    val pillIconSize = if (isLandscape) 15.dp else 13.5.dp
-                                    val pillSpacerW = if (isLandscape) 5.dp else 3.5.dp
+                                    val btnSize = if (isLandscape) 40.dp else 36.dp
+                                    val iconSize = if (isLandscape) 20.dp else 18.dp
+                                    val pillSpacing = if (isLandscape) 6.dp else 4.dp
 
                                     Row(
                                         modifier = Modifier
-                                            .padding(horizontal = if (isLandscape) 8.dp else 4.dp, vertical = 3.dp)
-                                            .horizontalScroll(rememberScrollState()),
+                                            .padding(horizontal = if (isLandscape) 8.dp else 6.dp, vertical = 4.dp),
                                         horizontalArrangement = Arrangement.spacedBy(pillSpacing),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         // 3.1. Lắp đầy (Resize Mode)
-                                        Row(
+                                        val isResizeCustom = resizeModeIndex != 0
+                                        Box(
                                             modifier = Modifier
-                                                .clip(RoundedCornerShape(16.dp))
+                                                .size(btnSize)
+                                                .clip(CircleShape)
+                                                .background(if (isResizeCustom) MaterialTheme.colorScheme.primary.copy(alpha = 0.20f) else Color.Transparent)
                                                 .clickable {
                                                     lastInteractionTime = System.currentTimeMillis()
                                                     resizeModeIndex = (resizeModeIndex + 1) % resizeModes.size
                                                     val (mode, label) = resizeModes[resizeModeIndex]
                                                     activePlayerView?.resizeMode = mode
                                                     Toast.makeText(context, label, Toast.LENGTH_SHORT).show()
-                                                }
-                                                .padding(horizontal = pillPaddingH, vertical = pillPaddingV),
-                                            verticalAlignment = Alignment.CenterVertically
+                                                },
+                                            contentAlignment = Alignment.Center
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Default.AspectRatio,
-                                                contentDescription = null,
-                                                tint = Color.White,
-                                                modifier = Modifier.size(pillIconSize)
-                                            )
-                                            Spacer(modifier = Modifier.width(pillSpacerW))
-                                            Text(
-                                                text = resizeModes[resizeModeIndex].second,
-                                                color = Color.White,
-                                                fontSize = pillTextSize,
-                                                fontWeight = FontWeight.Medium
+                                                contentDescription = resizeModes[resizeModeIndex].second,
+                                                tint = if (isResizeCustom) MaterialTheme.colorScheme.primary else Color.White,
+                                                modifier = Modifier.size(iconSize)
                                             )
                                         }
 
                                         // 3.2. Tốc độ (Speed)
-                                        Row(
+                                        val isSpeedCustom = currentSpeed != 1.0f
+                                        Box(
                                             modifier = Modifier
-                                                .clip(RoundedCornerShape(16.dp))
+                                                .size(btnSize)
+                                                .clip(CircleShape)
+                                                .background(if (isSpeedCustom) MaterialTheme.colorScheme.primary.copy(alpha = 0.20f) else Color.Transparent)
                                                 .clickable {
                                                     lastInteractionTime = System.currentTimeMillis()
                                                     val nextIdx = (speeds.indexOf(currentSpeed) + 1) % speeds.size
                                                     currentSpeed = speeds[nextIdx]
                                                     exoPlayerManager.setPlaybackSpeed(currentSpeed)
                                                     Toast.makeText(context, context.getString(R.string.player_speed_toast, "${currentSpeed}x"), Toast.LENGTH_SHORT).show()
-                                                }
-                                                .padding(horizontal = pillPaddingH, vertical = pillPaddingV),
-                                            verticalAlignment = Alignment.CenterVertically
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (isSpeedCustom) {
+                                                Text(
+                                                    text = "${currentSpeed}x",
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    fontSize = if (isLandscape) 12.sp else 11.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            } else {
+                                                Icon(
+                                                    imageVector = Icons.Default.Speed,
+                                                    contentDescription = stringResource(R.string.player_speed_title),
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(iconSize)
+                                                )
+                                            }
+                                        }
+
+                                        // 3.2.1. Âm thanh (Audio Tracks - Nuvio Style)
+                                        val hasMultiAudio = audioTracks.size > 1
+                                        val isCustomAudio = selectedAudioTrackId != "auto"
+                                        val isAudioActive = hasMultiAudio || isCustomAudio
+                                        Box(
+                                            modifier = Modifier
+                                                .size(btnSize)
+                                                .clip(CircleShape)
+                                                .background(if (isAudioActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.20f) else Color.Transparent)
+                                                .clickable {
+                                                    lastInteractionTime = System.currentTimeMillis()
+                                                    audioTracks = exoPlayerManager.getAudioTracks()
+                                                    showAudioSheet = true
+                                                },
+                                            contentAlignment = Alignment.Center
                                         ) {
                                             Icon(
-                                                imageVector = Icons.Default.Speed,
-                                                contentDescription = null,
-                                                tint = Color.White,
-                                                modifier = Modifier.size(pillIconSize)
-                                            )
-                                            Spacer(modifier = Modifier.width(pillSpacerW))
-                                            Text(
-                                                text = "${currentSpeed}x",
-                                                color = Color.White,
-                                                fontSize = pillTextSize,
-                                                fontWeight = FontWeight.Medium
+                                                imageVector = Icons.Default.Audiotrack,
+                                                contentDescription = stringResource(R.string.player_audio_pill_label),
+                                                tint = if (isAudioActive) MaterialTheme.colorScheme.primary else Color.White,
+                                                modifier = Modifier.size(iconSize)
                                             )
                                         }
 
                                         // 3.3. Phụ đề (Nuvio Subtitles Panel)
                                         val hasActiveSub = selectedSubtitleTrackId != "off" && selectedSubtitleTrackId != null
-                                        Row(
+                                        Box(
                                             modifier = Modifier
-                                                .clip(RoundedCornerShape(16.dp))
+                                                .size(btnSize)
+                                                .clip(CircleShape)
+                                                .background(if (hasActiveSub) MaterialTheme.colorScheme.primary.copy(alpha = 0.20f) else Color.Transparent)
                                                 .clickable {
                                                     lastInteractionTime = System.currentTimeMillis()
                                                     subtitleTracks = mergeSubtitleTracks(customSubtitleTracks, exoPlayerManager.getSubtitleTracks())
@@ -4083,87 +4178,64 @@ fun PlayerScreen(
                                                         selectedLangGroup = "none"
                                                     }
                                                     showSubtitleSheet = true
-                                                }
-                                                .padding(horizontal = pillPaddingH, vertical = pillPaddingV),
-                                            verticalAlignment = Alignment.CenterVertically
+                                                },
+                                            contentAlignment = Alignment.Center
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Default.Subtitles,
-                                                contentDescription = null,
-                                                tint = if (hasActiveSub) MaterialTheme.colorScheme.primary.copy(alpha = 0.65f) else Color.White,
-                                                modifier = Modifier.size(pillIconSize)
-                                            )
-                                            Spacer(modifier = Modifier.width(pillSpacerW))
-                                            Text(
-                                                text = stringResource(R.string.player_subtitles_pill_label),
-                                                color = if (hasActiveSub) MaterialTheme.colorScheme.primary.copy(alpha = 0.65f) else Color.White,
-                                                fontSize = pillTextSize,
-                                                fontWeight = if (hasActiveSub) FontWeight.Bold else FontWeight.Medium
+                                                contentDescription = stringResource(R.string.player_subtitles_pill_label),
+                                                tint = if (hasActiveSub) MaterialTheme.colorScheme.primary else Color.White,
+                                                modifier = Modifier.size(iconSize)
                                             )
                                         }
 
                                         // 3.3.1. Thuyết minh AI (TTS)
-                                        Row(
+                                        Box(
                                             modifier = Modifier
-                                                .clip(RoundedCornerShape(16.dp))
+                                                .size(btnSize)
+                                                .clip(CircleShape)
                                                 .background(if (isTtsEnabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.20f) else Color.Transparent)
                                                 .clickable {
                                                     lastInteractionTime = System.currentTimeMillis()
                                                     val newState = !isTtsEnabled
-                                                    if (newState) {
-                                                        if (currentSubCues.isEmpty()) {
-                                                            Toast.makeText(context, context.getString(R.string.player_subtitles_no_cues_to_sync), Toast.LENGTH_SHORT).show()
-                                                        }
+                                                    if (newState && currentSubCues.isEmpty()) {
+                                                        Toast.makeText(context, context.getString(R.string.player_subtitles_no_cues_to_sync), Toast.LENGTH_SHORT).show()
                                                     }
                                                     settingsManager.setTtsEnabled(newState)
                                                     val toast = if (newState) {
                                                         context.getString(R.string.player_tts_active_toast)
                                                     } else {
                                                         context.getString(R.string.player_tts_inactive_toast)
-                                                     }
+                                                    }
                                                     Toast.makeText(context, toast, Toast.LENGTH_SHORT).show()
-                                                }
-                                                .padding(horizontal = pillPaddingH, vertical = pillPaddingV),
-                                            verticalAlignment = Alignment.CenterVertically
+                                                },
+                                            contentAlignment = Alignment.Center
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Default.RecordVoiceOver,
-                                                contentDescription = null,
-                                                tint = if (isTtsEnabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.65f) else Color.White,
-                                                modifier = Modifier.size(pillIconSize)
-                                            )
-                                            Spacer(modifier = Modifier.width(pillSpacerW))
-                                            Text(
-                                                text = stringResource(R.string.player_tts_pill_label),
-                                                color = if (isTtsEnabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.65f) else Color.White,
-                                                fontSize = pillTextSize,
-                                                fontWeight = if (isTtsEnabled) FontWeight.Bold else FontWeight.Medium
+                                                contentDescription = stringResource(R.string.player_tts_pill_label),
+                                                tint = if (isTtsEnabled) MaterialTheme.colorScheme.primary else Color.White,
+                                                modifier = Modifier.size(iconSize)
                                             )
                                         }
 
                                         // 3.4. Nguồn (Sources / Server)
-                                        Row(
+                                        Box(
                                             modifier = Modifier
-                                                .clip(RoundedCornerShape(16.dp))
+                                                .size(btnSize)
+                                                .clip(CircleShape)
+                                                .background(Color.Transparent)
                                                 .clickable {
                                                     lastInteractionTime = System.currentTimeMillis()
                                                     showSourceSelectorDrawer = true
-                                                }
-                                                .padding(horizontal = pillPaddingH, vertical = pillPaddingV),
-                                            verticalAlignment = Alignment.CenterVertically
+                                                },
+                                            contentAlignment = Alignment.Center
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Default.Cloud,
-                                                contentDescription = null,
+                                                contentDescription = stringResource(R.string.player_source_pill_label),
                                                 tint = Color.White,
-                                                modifier = Modifier.size(pillIconSize)
-                                            )
-                                            Spacer(modifier = Modifier.width(pillSpacerW))
-                                            Text(
-                                                text = stringResource(R.string.player_source_pill_label),
-                                                color = Color.White,
-                                                fontSize = pillTextSize,
-                                                fontWeight = FontWeight.Medium
+                                                modifier = Modifier.size(iconSize)
                                             )
                                         }
                                     }
@@ -4327,6 +4399,47 @@ fun PlayerScreen(
                                 )
                             }
 
+                            // Mục 3: Luồng âm thanh (Audio Tracks)
+                            if (audioTracks.isNotEmpty()) {
+                                item {
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 4.dp))
+                                    Text(
+                                        text = stringResource(R.string.player_audio_title).uppercase(),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        letterSpacing = 1.sp
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    SettingsOptionCard(
+                                        title = stringResource(R.string.player_audio_auto),
+                                        subtitle = stringResource(R.string.player_audio_auto_desc),
+                                        isSelected = selectedAudioTrackId == "auto",
+                                        onClick = {
+                                            selectedAudioTrackId = "auto"
+                                            exoPlayerManager.setAudioTrack(null)
+                                            Toast.makeText(context, context.getString(R.string.player_audio_selected_toast, context.getString(R.string.player_audio_auto)), Toast.LENGTH_SHORT).show()
+                                        }
+                                    )
+                                }
+
+                                items(audioTracks) { track ->
+                                    val specs = exoPlayerManager.formatAudioSpecs(track)
+                                    val isSelected = if (selectedAudioTrackId == "auto") track.isSelected else selectedAudioTrackId == track.id
+                                    SettingsOptionCard(
+                                        title = track.label,
+                                        subtitle = specs.ifBlank { null },
+                                        isSelected = isSelected,
+                                        onClick = {
+                                            selectedAudioTrackId = track.id
+                                            exoPlayerManager.setAudioTrack(track)
+                                            Toast.makeText(context, context.getString(R.string.player_audio_selected_toast, track.label), Toast.LENGTH_SHORT).show()
+                                        }
+                                    )
+                                }
+                            }
+
                             item {
                                 Spacer(modifier = Modifier.height(20.dp))
                             }
@@ -4450,7 +4563,7 @@ fun PlayerScreen(
                                         Surface(
                                             modifier = Modifier.fillMaxWidth().height(col1ItemHeight),
                                             shape = RoundedCornerShape(col1ItemHeight / 2),
-                                            color = if (isNoneSelected && selectedSubtitleTrackId == "off") Color(0xFF1E88E5) else Color.Transparent,
+                                            color = if (isNoneSelected && selectedSubtitleTrackId == "off") MaterialTheme.colorScheme.primary else Color.Transparent,
                                             onClick = {
                                                 selectedLangGroup = "none"
                                                 selectedSubtitleTrackId = "off"
@@ -4497,7 +4610,7 @@ fun PlayerScreen(
                                         Surface(
                                             modifier = Modifier.fillMaxWidth().height(col1ItemHeight),
                                             shape = RoundedCornerShape(col1ItemHeight / 2),
-                                            color = if (isLangSelected) Color(0xFF1E88E5) else Color.Transparent,
+                                            color = if (isLangSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
                                             onClick = {
                                                 selectedLangGroup = langCode
                                                 if (onlineSubsMap[langCode] == null && loadingSubsMap[langCode] != true) {
@@ -4523,7 +4636,7 @@ fun PlayerScreen(
                                                     Box(
                                                         modifier = Modifier
                                                             .size(col1BadgeSize)
-                                                            .background(if (isLangSelected) Color.White.copy(alpha = 0.25f) else Color(0xFF1E88E5), CircleShape),
+                                                            .background(if (isLangSelected) Color.White.copy(alpha = 0.25f) else MaterialTheme.colorScheme.primary, CircleShape),
                                                         contentAlignment = Alignment.Center
                                                     ) {
                                                         Text(
@@ -4587,7 +4700,7 @@ fun PlayerScreen(
                                                 Icon(
                                                     imageVector = Icons.Default.Edit,
                                                     contentDescription = stringResource(R.string.player_subtitles_edit_query),
-                                                    tint = if (isEditingSubSearchQuery) Color(0xFF1E88E5) else Color.White.copy(alpha = 0.7f),
+                                                    tint = if (isEditingSubSearchQuery) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.7f),
                                                     modifier = Modifier.size(16.dp)
                                                 )
                                             }
@@ -4610,7 +4723,7 @@ fun PlayerScreen(
                                                     CircularProgressIndicator(
                                                         modifier = Modifier.size(14.dp),
                                                         strokeWidth = 2.dp,
-                                                        color = Color(0xFF1E88E5)
+                                                        color = MaterialTheme.colorScheme.primary
                                                     )
                                                 } else {
                                                     Icon(
@@ -4643,7 +4756,7 @@ fun PlayerScreen(
                                                 color = Color.White,
                                                 fontWeight = FontWeight.Normal
                                             ),
-                                            cursorBrush = androidx.compose.ui.graphics.SolidColor(Color(0xFF1E88E5)),
+                                            cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
                                             modifier = Modifier
                                                 .weight(1f)
                                                 .height(36.dp),
@@ -4652,7 +4765,7 @@ fun PlayerScreen(
                                                     modifier = Modifier
                                                         .fillMaxSize()
                                                         .background(Color(0xFF161920), RoundedCornerShape(8.dp))
-                                                        .border(1.dp, Color(0xFF1E88E5).copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                                                        .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
                                                         .padding(horizontal = 8.dp),
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
@@ -4698,7 +4811,7 @@ fun PlayerScreen(
                                                 }
                                             },
                                             shape = RoundedCornerShape(8.dp),
-                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E88E5)),
+                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                                             modifier = Modifier.height(36.dp)
                                         ) {
@@ -4737,7 +4850,7 @@ fun PlayerScreen(
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                            CircularProgressIndicator(modifier = Modifier.size(26.dp), strokeWidth = 2.5.dp, color = Color(0xFF1E88E5))
+                                            CircularProgressIndicator(modifier = Modifier.size(26.dp), strokeWidth = 2.5.dp, color = MaterialTheme.colorScheme.primary)
                                             Spacer(modifier = Modifier.height(10.dp))
                                             Text(
                                                 text = stringResource(R.string.player_subtitles_loading_online),
@@ -4765,7 +4878,7 @@ fun PlayerScreen(
                                                     executeOnlineSubSearch(selectedLangGroup, force = true)
                                                 }
                                             ) {
-                                                Text(stringResource(R.string.player_subtitles_refresh), color = Color(0xFF64B5F6), fontSize = 12.sp)
+                                                Text(stringResource(R.string.player_subtitles_refresh), color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
                                             }
                                         }
                                     }
@@ -4780,7 +4893,7 @@ fun PlayerScreen(
                                             Surface(
                                                 modifier = Modifier.fillMaxWidth(),
                                                 shape = RoundedCornerShape(10.dp),
-                                                color = if (isSelected) Color(0xFF1E88E5) else Color(0xFF1E222B),
+                                                color = if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFF1E222B),
                                                 border = if (isSelected) null else BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
                                                 onClick = {
                                                     applySubJob?.cancel()
@@ -4830,12 +4943,12 @@ fun PlayerScreen(
                                                         }
                                                         Text(
                                                             text = badgeText,
-                                                            color = if (isSelected) Color.White.copy(alpha = 0.9f) else Color(0xFF64B5F6),
+                                                            color = if (isSelected) Color.White.copy(alpha = 0.9f) else MaterialTheme.colorScheme.primary,
                                                             fontSize = 10.sp,
                                                             fontWeight = FontWeight.SemiBold,
                                                             modifier = Modifier
                                                                 .background(
-                                                                    if (isSelected) Color.White.copy(alpha = 0.2f) else Color(0x331E88E5),
+                                                                    if (isSelected) Color.White.copy(alpha = 0.2f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
                                                                     RoundedCornerShape(4.dp)
                                                                 )
                                                                 .padding(horizontal = 5.dp, vertical = 2.dp)
@@ -4872,7 +4985,7 @@ fun PlayerScreen(
                                             Surface(
                                                 modifier = Modifier.fillMaxWidth(),
                                                 shape = RoundedCornerShape(10.dp),
-                                                color = if (isSelected) Color(0xFF1E88E5) else Color(0xFF1E222B),
+                                                color = if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFF1E222B),
                                                 border = if (isSelected) null else BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
                                                 onClick = {
                                                     if (!isDownloadingThis && !isTranslatingWithGemini) {
@@ -4892,12 +5005,12 @@ fun PlayerScreen(
                                                         ) {
                                                             Text(
                                                                 text = "[${item.source}]",
-                                                                color = if (isSelected) Color.White.copy(alpha = 0.95f) else Color(0xFF64B5F6),
+                                                                color = if (isSelected) Color.White.copy(alpha = 0.95f) else MaterialTheme.colorScheme.primary,
                                                                 fontSize = 10.sp,
                                                                 fontWeight = FontWeight.Bold,
                                                                 modifier = Modifier
                                                                     .background(
-                                                                        if (isSelected) Color.White.copy(alpha = 0.2f) else Color(0x331E88E5),
+                                                                        if (isSelected) Color.White.copy(alpha = 0.2f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
                                                                         RoundedCornerShape(4.dp)
                                                                     )
                                                                     .padding(horizontal = 5.dp, vertical = 2.dp)
@@ -5110,7 +5223,7 @@ fun PlayerScreen(
                                             .fillMaxWidth()
                                             .height(38.dp),
                                         shape = RoundedCornerShape(8.dp),
-                                        color = if (isAiSyncing) Color(0xFF1E88E5).copy(alpha = 0.5f) else Color(0xFF1E88E5),
+                                        color = if (isAiSyncing) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else MaterialTheme.colorScheme.primary,
                                         onClick = {
                                             if (isAiSyncing) return@Surface
                                             if (currentSubCues.isEmpty()) {
@@ -5291,7 +5404,7 @@ fun PlayerScreen(
                                                 Surface(
                                                     modifier = Modifier.weight(1f).height(36.dp),
                                                     shape = RoundedCornerShape(8.dp),
-                                                    color = if (isSelected) Color(0xFF1E88E5) else Color(0xFF262A34),
+                                                    color = if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFF262A34),
                                                     onClick = {
                                                         settingsManager.setTtsVoice(opt.id)
                                                     }
@@ -5322,7 +5435,7 @@ fun PlayerScreen(
                                                 Surface(
                                                     modifier = Modifier.weight(1f).height(36.dp),
                                                     shape = RoundedCornerShape(8.dp),
-                                                    color = if (isSelected) Color(0xFF1E88E5) else Color(0xFF262A34),
+                                                    color = if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFF262A34),
                                                     onClick = {
                                                         settingsManager.setTtsVoice(opt.id)
                                                     }
@@ -5363,7 +5476,7 @@ fun PlayerScreen(
                                                 Surface(
                                                     modifier = Modifier.weight(1f).height(28.dp),
                                                     shape = RoundedCornerShape(6.dp),
-                                                    color = if (isSelected) Color(0xFF1E88E5) else Color(0xFF262A34),
+                                                    color = if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFF262A34),
                                                     onClick = { settingsManager.setTtsDuckingVolume(vol) }
                                                 ) {
                                                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -5397,7 +5510,7 @@ fun PlayerScreen(
                                                 Surface(
                                                     modifier = Modifier.weight(1f).height(28.dp),
                                                     shape = RoundedCornerShape(6.dp),
-                                                    color = if (isSelected) Color(0xFF1E88E5) else Color(0xFF262A34),
+                                                    color = if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFF262A34),
                                                     onClick = { settingsManager.setTtsSpeechRate(rate) }
                                                 ) {
                                                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -5486,7 +5599,7 @@ fun PlayerScreen(
                                     Surface(
                                         modifier = Modifier.height(34.dp),
                                         shape = RoundedCornerShape(17.dp),
-                                        color = if (subtitleIsBold) Color(0xFF1E88E5) else Color(0xFF262A34),
+                                        color = if (subtitleIsBold) MaterialTheme.colorScheme.primary else Color(0xFF262A34),
                                         onClick = { settingsManager.setSubtitleIsBold(!subtitleIsBold) }
                                     ) {
                                         Box(modifier = Modifier.padding(horizontal = 18.dp), contentAlignment = Alignment.Center) {
@@ -5530,7 +5643,7 @@ fun PlayerScreen(
                                                     .background(Color(col), CircleShape)
                                                     .border(
                                                         width = if (isSelected) 2.5.dp else 1.dp,
-                                                        color = if (isSelected) Color(0xFF1E88E5) else Color.Black.copy(alpha = 0.5f),
+                                                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.5f),
                                                         shape = CircleShape
                                                     )
                                                     .pointerInput(Unit) {
@@ -5611,7 +5724,7 @@ fun PlayerScreen(
                                     Surface(
                                         modifier = Modifier.height(34.dp),
                                         shape = RoundedCornerShape(17.dp),
-                                        color = if (subtitleIsOutline) Color(0xFF1E88E5) else Color(0xFF262A34),
+                                        color = if (subtitleIsOutline) MaterialTheme.colorScheme.primary else Color(0xFF262A34),
                                         onClick = { settingsManager.setSubtitleIsOutline(!subtitleIsOutline) }
                                     ) {
                                         Box(modifier = Modifier.padding(horizontal = 18.dp), contentAlignment = Alignment.Center) {
@@ -5652,7 +5765,7 @@ fun PlayerScreen(
                                                     .background(Color(col), CircleShape)
                                                     .border(
                                                         width = if (isSelected) 2.5.dp else 1.dp,
-                                                        color = if (isSelected) Color(0xFF1E88E5) else Color.White.copy(alpha = 0.5f),
+                                                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.5f),
                                                         shape = CircleShape
                                                     )
                                                     .pointerInput(Unit) {
@@ -5750,6 +5863,290 @@ fun PlayerScreen(
             }
         }
     }
+
+        // 8.1.6 Panel Chọn Luồng Âm Thanh Phong Cách Nuvio (Audio Tracks Sheet)
+        AnimatedVisibility(
+            visible = showAudioSheet,
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.52f))
+                    .pointerInput(Unit) {
+                        detectTapGestures { showAudioSheet = false }
+                    }
+            ) {
+                Box(
+                    modifier = Modifier
+                        .then(
+                            if (isLandscape) {
+                                Modifier
+                                    .align(Alignment.Center)
+                                    .fillMaxWidth(0.55f)
+                                    .fillMaxHeight(0.70f)
+                                    .background(Color.Black.copy(alpha = 0.70f), RoundedCornerShape(16.dp))
+                                    .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)), RoundedCornerShape(16.dp))
+                                    .padding(horizontal = 20.dp, vertical = 16.dp)
+                            } else {
+                                Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .fillMaxWidth()
+                                    .fillMaxHeight(0.55f)
+                                    .background(Color.Black.copy(alpha = 0.70f), RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+                                    .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)), RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+                                    .padding(horizontal = 16.dp, vertical = 16.dp)
+                            }
+                        )
+                        .pointerInput(Unit) { detectTapGestures { } }
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        // Header: Tiêu đề "Luồng Âm Thanh" & Nút đóng
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Audiotrack,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = stringResource(R.string.player_audio_title),
+                                    color = Color.White,
+                                    fontSize = if (isLandscape) 20.sp else 18.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                if (audioTracks.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Text(
+                                            text = "${audioTracks.size}",
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            IconButton(
+                                onClick = { showAudioSheet = false },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = stringResource(R.string.common_close),
+                                    tint = Color.White.copy(alpha = 0.8f)
+                                )
+                            }
+                        }
+
+                        HorizontalDivider(
+                            color = Color.White.copy(alpha = 0.12f),
+                            modifier = Modifier.padding(bottom = 10.dp)
+                        )
+
+                        if (audioTracks.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(
+                                        imageVector = Icons.Default.Audiotrack,
+                                        contentDescription = null,
+                                        tint = Color.White.copy(alpha = 0.35f),
+                                        modifier = Modifier.size(46.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Text(
+                                        text = stringResource(R.string.player_audio_auto),
+                                        color = Color.White.copy(alpha = 0.85f),
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = stringResource(R.string.player_audio_auto_desc),
+                                        color = Color.White.copy(alpha = 0.5f),
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                // 1. Tự động / Mặc định
+                                item {
+                                    val isAutoSelected = selectedAudioTrackId == "auto"
+                                    Surface(
+                                        onClick = {
+                                            selectedAudioTrackId = "auto"
+                                            exoPlayerManager.setAudioTrack(null)
+                                            showAudioSheet = false
+                                            Toast.makeText(
+                                                context,
+                                                context.getString(R.string.player_audio_selected_toast, context.getString(R.string.player_audio_auto)),
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        },
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = if (isAutoSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else Color(0xFF1E222B),
+                                        border = BorderStroke(
+                                            width = 1.dp,
+                                            color = if (isAutoSelected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.08f)
+                                        ),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = stringResource(R.string.player_audio_auto),
+                                                    color = if (isAutoSelected) MaterialTheme.colorScheme.primary else Color.White,
+                                                    fontWeight = if (isAutoSelected) FontWeight.Bold else FontWeight.Medium,
+                                                    fontSize = 14.5.sp
+                                                )
+                                                Spacer(modifier = Modifier.height(2.dp))
+                                                Text(
+                                                    text = stringResource(R.string.player_audio_auto_desc),
+                                                    color = Color.White.copy(alpha = 0.55f),
+                                                    fontSize = 12.sp
+                                                )
+                                            }
+                                            if (isAutoSelected) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Check,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // 2. Các luồng âm thanh chi tiết
+                                items(audioTracks) { track ->
+                                    val isTrackSelected = if (selectedAudioTrackId == "auto") track.isSelected else selectedAudioTrackId == track.id
+                                    val specs = exoPlayerManager.formatAudioSpecs(track)
+                                    val isDubbed = (track.roleFlags and androidx.media3.common.C.ROLE_FLAG_DUB) != 0
+                                    val isOriginal = (track.roleFlags and androidx.media3.common.C.ROLE_FLAG_MAIN) != 0
+
+                                    Surface(
+                                        onClick = {
+                                            selectedAudioTrackId = track.id
+                                            exoPlayerManager.setAudioTrack(track)
+                                            showAudioSheet = false
+                                            Toast.makeText(
+                                                context,
+                                                context.getString(R.string.player_audio_selected_toast, track.label),
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        },
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = if (isTrackSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else Color(0xFF1E222B),
+                                        border = BorderStroke(
+                                            width = 1.dp,
+                                            color = if (isTrackSelected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.08f)
+                                        ),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text(
+                                                        text = track.label,
+                                                        color = if (isTrackSelected) MaterialTheme.colorScheme.primary else Color.White,
+                                                        fontWeight = if (isTrackSelected) FontWeight.Bold else FontWeight.Medium,
+                                                        fontSize = 14.5.sp
+                                                    )
+                                                    if (isDubbed) {
+                                                        Spacer(modifier = Modifier.width(8.dp))
+                                                        Surface(
+                                                            color = Color(0xFFFF9800).copy(alpha = 0.22f),
+                                                            shape = RoundedCornerShape(4.dp)
+                                                        ) {
+                                                            Text(
+                                                                text = stringResource(R.string.player_audio_dubbed_badge),
+                                                                color = Color(0xFFFFB74D),
+                                                                fontSize = 10.sp,
+                                                                fontWeight = FontWeight.SemiBold,
+                                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                                            )
+                                                        }
+                                                    } else if (isOriginal) {
+                                                        Spacer(modifier = Modifier.width(8.dp))
+                                                        Surface(
+                                                            color = Color(0xFF4CAF50).copy(alpha = 0.22f),
+                                                            shape = RoundedCornerShape(4.dp)
+                                                        ) {
+                                                            Text(
+                                                                text = stringResource(R.string.player_audio_original_badge),
+                                                                color = Color(0xFF81C784),
+                                                                fontSize = 10.sp,
+                                                                fontWeight = FontWeight.SemiBold,
+                                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                                if (specs.isNotBlank()) {
+                                                    Spacer(modifier = Modifier.height(3.dp))
+                                                    Text(
+                                                        text = specs,
+                                                        color = Color.White.copy(alpha = 0.65f),
+                                                        fontSize = 12.sp
+                                                    )
+                                                }
+                                            }
+                                            if (isTrackSelected) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Check,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // 8.1.8 Dialog Xác Nhận Tiếp Tục Xem Hoặc Xem Từ Đầu
         if (showResumePromptDialog && resumeTargetPositionMs > 0L) {
