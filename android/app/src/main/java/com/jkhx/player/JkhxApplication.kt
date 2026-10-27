@@ -157,17 +157,18 @@ class JkhxApplication : Application(), ImageLoaderFactory {
     }
 
     val okHttpClient: okhttp3.OkHttpClient by lazy {
-        okhttp3.OkHttpClient.Builder()
-            .proxySelector(object : java.net.ProxySelector() {
-                override fun select(uri: java.net.URI?): List<java.net.Proxy> {
-                    val proxy = settingsManager.getProxy()
-                    return if (proxy != null) listOf(proxy) else listOf(java.net.Proxy.NO_PROXY)
-                }
-                override fun connectFailed(uri: java.net.URI?, sa: java.net.SocketAddress?, ioe: java.io.IOException?) {}
-            })
-            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-            .build()
+        com.jkhx.player.core.network.SslHelper.configureSsl(
+            okhttp3.OkHttpClient.Builder()
+                .proxySelector(object : java.net.ProxySelector() {
+                    override fun select(uri: java.net.URI?): List<java.net.Proxy> {
+                        val proxy = settingsManager.getProxy()
+                        return if (proxy != null) listOf(proxy) else listOf(java.net.Proxy.NO_PROXY)
+                    }
+                    override fun connectFailed(uri: java.net.URI?, sa: java.net.SocketAddress?, ioe: java.io.IOException?) {}
+                })
+                .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        ).build()
     }
 
     val subtitleManager: com.jkhx.player.core.player.subtitle.SubtitleManager by lazy {
@@ -204,7 +205,9 @@ class JkhxApplication : Application(), ImageLoaderFactory {
             pluginDao = database.pluginDao(),
             repositoryDao = database.repositoryDao(),
             stremioAddonDao = database.stremioAddonDao(),
-            runtime = QuickJsRuntime(context = this)
+            runtime = QuickJsRuntime(context = this),
+            okHttpClient = okHttpClient,
+            stremioClient = com.jkhx.player.core.network.stremio.StremioBridgeClient(okHttpClient)
         )
 
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {

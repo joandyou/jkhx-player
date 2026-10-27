@@ -37,7 +37,7 @@ class PluginManager(
     private val repositoryDao: RepositoryDao? = null,
     private val stremioAddonDao: StremioAddonDao? = null,
     private val runtime: PluginRuntime = QuickJsRuntime(),
-    private val okHttpClient: OkHttpClient = OkHttpClient(),
+    private val okHttpClient: OkHttpClient = com.jkhx.player.core.network.SslHelper.configureSsl(OkHttpClient.Builder()).build(),
     private val stremioClient: StremioBridgeClient = StremioBridgeClient()
 ) : AutoCloseable {
 
