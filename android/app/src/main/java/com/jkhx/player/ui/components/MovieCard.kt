@@ -34,6 +34,7 @@ import com.jkhx.player.core.database.entity.HistoryEntity
 import com.jkhx.player.core.model.MovieItem
 import com.jkhx.player.ui.theme.AppTheme
 import com.jkhx.player.ui.theme.ShapeTokens
+import com.jkhx.player.ui.theme.tvFocusableItem
 
 private val REGEX_COMPLETE_EPISODE = Regex(
     """(?:hoàn\s*tất|hoan\s*tat|trọn\s*bộ|tron\s*bo|full|tập|tap)?\s*\(?(\d+)\s*/\s*(\d+)\)?""",
@@ -102,6 +103,7 @@ fun MovieCard(
     Column(
         modifier = modifier
             .clip(ShapeTokens.Card)
+            .tvFocusableItem(cornerRadius = 12.dp, focusedScale = 1.04f)
             .clickable(onClick = onClick)
     ) {
         // Khung Poster
@@ -318,6 +320,7 @@ fun ContinueWatchingCard(
     Column(
         modifier = modifier
             .clip(ShapeTokens.Card)
+            .tvFocusableItem(cornerRadius = 12.dp, focusedScale = 1.04f)
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick
@@ -490,6 +493,7 @@ fun FavoriteMovieCard(
     Column(
         modifier = modifier
             .clip(ShapeTokens.Card)
+            .tvFocusableItem(cornerRadius = 12.dp, focusedScale = 1.04f)
             .clickable(onClick = onClick)
     ) {
         Box(

@@ -186,6 +186,13 @@ class JkhxApplication : Application(), ImageLoaderFactory {
         super.onCreate()
         instance = this
 
+        // Cài đặt Conscrypt làm Security Provider số 1 để hỗ trợ TLS 1.3 và cập nhật Trust Store cho Android 7.0/7.1 (API 24/25)
+        try {
+            java.security.Security.insertProviderAt(org.conscrypt.Conscrypt.newProvider(), 1)
+        } catch (e: Throwable) {
+            android.util.Log.w("JkhxApplication", "Không thể khởi tạo Conscrypt: ${e.message}")
+        }
+
         settingsManager = com.jkhx.player.settings.SettingsManager.getInstance(this)
         com.jkhx.player.core.network.HttpBridgeClient.globalProxyProvider = { settingsManager.getProxy() }
         com.jkhx.player.settings.LocaleHelper.updateConfiguration(this, settingsManager.language.value.code)

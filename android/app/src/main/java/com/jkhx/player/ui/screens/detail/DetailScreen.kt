@@ -62,8 +62,11 @@ import com.jkhx.player.core.model.MovieDetail
 import com.jkhx.player.core.model.MovieItem
 import com.jkhx.player.core.network.tmdb.TmdbConfig
 import com.jkhx.player.settings.DeviceDisplayMode
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import com.jkhx.player.ui.components.MovieCard
 import com.jkhx.player.ui.theme.LocalDisplayMode
+import com.jkhx.player.ui.theme.tvFocusableItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -702,6 +705,15 @@ fun DetailScreen(
                             if (isEpisodeSortDescending) eps.reversed() else eps
                         }
                         val firstEpisode = sortedFirstServerEpisodes.firstOrNull()
+                        val watchButtonFocusRequester = remember { FocusRequester() }
+
+                        LaunchedEffect(detail.slug, firstEpisode != null, isTablet) {
+                            if (isTablet && firstEpisode != null) {
+                                try {
+                                    watchButtonFocusRequester.requestFocus()
+                                } catch (_: Exception) {}
+                            }
+                        }
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -735,6 +747,8 @@ fun DetailScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(AppTheme.dimens.buttonHeightMedium)
+                                    .focusRequester(watchButtonFocusRequester)
+                                    .tvFocusableItem(cornerRadius = 16.dp, focusedScale = 1.03f)
                             ) {
                                 Icon(
                                     imageVector = if (isComic) Icons.AutoMirrored.Filled.MenuBook else Icons.Default.PlayArrow,
@@ -782,7 +796,9 @@ fun DetailScreen(
                                 shape = CircleShape,
                                 color = AppTheme.colors.glassBackground,
                                 border = BorderStroke(1.dp, AppTheme.colors.glassBorder),
-                                modifier = Modifier.size(48.dp)
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.08f)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
@@ -830,7 +846,9 @@ fun DetailScreen(
                                 shape = ShapeTokens.Card,
                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .tvFocusableItem(cornerRadius = 12.dp, focusedScale = 1.02f)
                             ) {
                                 Row(
                                     modifier = Modifier
@@ -968,6 +986,7 @@ fun DetailScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(horizontal = AppTheme.dimens.space16)
+                                        .tvFocusableItem(cornerRadius = 12.dp, focusedScale = 1.02f)
                                 ) {
                                     Row(
                                         modifier = Modifier
@@ -1109,7 +1128,8 @@ fun DetailScreen(
                                             border = BorderStroke(
                                                 1.dp,
                                                 if (isCurrentPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                                            )
+                                            ),
+                                            modifier = Modifier.tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.06f)
                                         ) {
                                             Row(
                                                 verticalAlignment = Alignment.CenterVertically,

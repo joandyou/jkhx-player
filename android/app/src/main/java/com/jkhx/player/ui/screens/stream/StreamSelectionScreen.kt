@@ -48,6 +48,7 @@ import com.jkhx.player.JkhxApplication
 import com.jkhx.player.R
 import com.jkhx.player.core.model.EpisodeData
 import com.jkhx.player.core.model.MovieDetail
+import com.jkhx.player.ui.theme.tvFocusableItem
 import com.jkhx.player.ui.screens.stream.badge.*
 import com.jkhx.player.ui.theme.AppTheme
 import kotlinx.coroutines.flow.catch
@@ -306,6 +307,7 @@ fun StreamSelectionScreen(
                     modifier = Modifier
                         .padding(start = 16.dp, end = 8.dp)
                         .size(36.dp)
+                        .tvFocusableItem(cornerRadius = 18.dp, focusedScale = 1.08f)
                         .clickable(enabled = !isLoading) { refreshKey++ }
                 ) {
                     Box(contentAlignment = Alignment.Center) {
@@ -334,6 +336,7 @@ fun StreamSelectionScreen(
                                 selectedGroupFilter = null
                                 ActivePlayerSession.lastSelectedStreamGroup = null
                             },
+                            modifier = Modifier.tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.05f),
                             label = {
                                 Text(
                                     stringResource(R.string.streams_all_filter),
@@ -358,6 +361,7 @@ fun StreamSelectionScreen(
                                 selectedGroupFilter = newFilter
                                 ActivePlayerSession.lastSelectedStreamGroup = newFilter
                             },
+                            modifier = Modifier.tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.05f),
                             label = {
                                 Text(
                                     text = group,
@@ -486,6 +490,7 @@ private fun StreamCardItem(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
+            .tvFocusableItem(cornerRadius = 12.dp, focusedScale = 1.02f)
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick

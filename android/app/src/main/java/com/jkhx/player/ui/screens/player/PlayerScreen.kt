@@ -11,6 +11,7 @@ import android.content.pm.ActivityInfo
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -44,6 +45,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -72,8 +74,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -106,6 +113,7 @@ import com.jkhx.player.ui.screens.stream.UnifiedStreamItem
 import com.jkhx.player.LocalPipMode
 import com.jkhx.player.ui.theme.AppTheme
 import com.jkhx.player.ui.theme.ShapeTokens
+import com.jkhx.player.ui.theme.tvFocusableItem
 import com.jkhx.player.core.database.AppDatabase
 import com.jkhx.player.core.database.entity.HistoryEntity
 import com.jkhx.player.core.database.entity.PlaybackProgressEntity
@@ -1494,8 +1502,20 @@ fun PlayerScreen(
         }
     }
 
-    // Nút Back thoát fullscreen HTML5 của WebView trước khi thoát màn hình
-    BackHandler(enabled = webCustomView != null) { exitWebCustomView() }
+    // Nút Back đóng các Sheet/Drawer hoặc thoát fullscreen HTML5 của WebView trước khi thoát màn hình
+    val isAnyOverlayOpen = showSubtitleSheet || showAudioSheet || showSettingsDialog ||
+            showEpisodesDrawer || showSourceSelectorDrawer || showResumePromptDialog
+    BackHandler(enabled = webCustomView != null || isAnyOverlayOpen) {
+        when {
+            webCustomView != null -> exitWebCustomView()
+            showSubtitleSheet -> showSubtitleSheet = false
+            showAudioSheet -> showAudioSheet = false
+            showSettingsDialog -> showSettingsDialog = false
+            showEpisodesDrawer -> showEpisodesDrawer = false
+            showSourceSelectorDrawer -> showSourceSelectorDrawer = false
+            showResumePromptDialog -> showResumePromptDialog = false
+        }
+    }
 
     // Quản lý trạng thái ExoPlayer và Listener
     LaunchedEffect(exoPlayerManager) {
@@ -2614,10 +2634,119 @@ fun PlayerScreen(
         Modifier
     }
 
+    val rootPlayerFocusRequester = remember { FocusRequester() }
+    val playPauseFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(showControls, isPlaybackStartedEffective, isAnyOverlayOpen) {
+        if (isAnyOverlayOpen) return@LaunchedEffect
+        if (showControls && isPlaybackStartedEffective && !isLoading && !isPlayerBuffering) {
+            try {
+                playPauseFocusRequester.requestFocus()
+            } catch (_: Exception) {}
+        } else if (!showControls) {
+            try {
+                rootPlayerFocusRequester.requestFocus()
+            } catch (_: Exception) {}
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
+            .focusRequester(rootPlayerFocusRequester)
+            .focusable()
+            .onPreviewKeyEvent { keyEvent ->
+                if (keyEvent.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                lastInteractionTime = System.currentTimeMillis()
+                val nativeCode = keyEvent.nativeKeyEvent.keyCode
+
+                // Phím Media chuyên dụng trên Remote TV / HDMI-CEC hoạt động mọi lúc
+                when (nativeCode) {
+                    KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                        if (isPlaying) exoPlayerManager.pause() else exoPlayerManager.play()
+                        showControls = true
+                        return@onPreviewKeyEvent true
+                    }
+                    KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                        exoPlayerManager.play()
+                        showControls = true
+                        return@onPreviewKeyEvent true
+                    }
+                    KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                        exoPlayerManager.pause()
+                        showControls = true
+                        return@onPreviewKeyEvent true
+                    }
+                    KeyEvent.KEYCODE_MEDIA_REWIND -> {
+                        val target = (exoPlayerManager.player.currentPosition - 10_000).coerceAtLeast(0L)
+                        exoPlayerManager.player.seekTo(target)
+                        showHud(HudIndicatorType.SEEK_REWIND, 10f)
+                        return@onPreviewKeyEvent true
+                    }
+                    KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                        val maxDur = exoPlayerManager.player.duration.coerceAtLeast(0L)
+                        val target = if (maxDur > 0) (exoPlayerManager.player.currentPosition + 10_000).coerceAtMost(maxDur) else exoPlayerManager.player.currentPosition + 10_000
+                        exoPlayerManager.player.seekTo(target)
+                        showHud(HudIndicatorType.SEEK_FORWARD, 10f)
+                        return@onPreviewKeyEvent true
+                    }
+                    KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                        if (activeEpisodes.isNotEmpty() && currentEpisodeIndex < activeEpisodes.size - 1) {
+                            showResumePromptDialog = false
+                            resumeTargetPositionMs = 0L
+                            currentEpisodeIndex += 1
+                            ActivePlayerSession.currentEpisodeIndex = currentEpisodeIndex
+                            ActivePlayerSession.currentEpisode = activeEpisodes[currentEpisodeIndex]
+                        }
+                        return@onPreviewKeyEvent true
+                    }
+                    KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                        if (activeEpisodes.isNotEmpty() && currentEpisodeIndex > 0) {
+                            showResumePromptDialog = false
+                            resumeTargetPositionMs = 0L
+                            currentEpisodeIndex -= 1
+                            ActivePlayerSession.currentEpisodeIndex = currentEpisodeIndex
+                            ActivePlayerSession.currentEpisode = activeEpisodes[currentEpisodeIndex]
+                        }
+                        return@onPreviewKeyEvent true
+                    }
+                }
+
+                // Khi không mở Sheet/Drawer và Controls đang ẩn: Phím D-Pad điều khiển trực tiếp Player
+                if (!isAnyOverlayOpen && !isWebViewMode && !isLocked && !showControls) {
+                    when (nativeCode) {
+                        KeyEvent.KEYCODE_DPAD_LEFT -> {
+                            val target = (exoPlayerManager.player.currentPosition - 10_000).coerceAtLeast(0L)
+                            exoPlayerManager.player.seekTo(target)
+                            showHud(HudIndicatorType.SEEK_REWIND, 10f)
+                            return@onPreviewKeyEvent true
+                        }
+                        KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                            val maxDur = exoPlayerManager.player.duration.coerceAtLeast(0L)
+                            val target = if (maxDur > 0) (exoPlayerManager.player.currentPosition + 10_000).coerceAtMost(maxDur) else exoPlayerManager.player.currentPosition + 10_000
+                            exoPlayerManager.player.seekTo(target)
+                            showHud(HudIndicatorType.SEEK_FORWARD, 10f)
+                            return@onPreviewKeyEvent true
+                        }
+                        KeyEvent.KEYCODE_DPAD_CENTER,
+                        KeyEvent.KEYCODE_ENTER,
+                        KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                            if (isPlaying) exoPlayerManager.pause() else exoPlayerManager.play()
+                            showControls = true
+                            return@onPreviewKeyEvent true
+                        }
+                        KeyEvent.KEYCODE_DPAD_UP,
+                        KeyEvent.KEYCODE_DPAD_DOWN,
+                        KeyEvent.KEYCODE_MENU,
+                        KeyEvent.KEYCODE_INFO -> {
+                            showControls = true
+                            return@onPreviewKeyEvent true
+                        }
+                    }
+                }
+                false
+            }
             .then(gestureModifier)
     ) {
         // 1. Chế độ phát Web Embed (WebView Player)
@@ -3631,7 +3760,10 @@ fun PlayerScreen(
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        IconButton(onClick = onBack) {
+                        IconButton(
+                            onClick = onBack,
+                            modifier = Modifier.tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.12f)
+                        ) {
                             Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.common_back), tint = Color.White)
                         }
 
@@ -3662,7 +3794,8 @@ fun PlayerScreen(
                                 isLocked = true
                                 lastInteractionTime = System.currentTimeMillis()
                                 Toast.makeText(context, context.getString(R.string.player_lock_controls), Toast.LENGTH_SHORT).show()
-                            }
+                            },
+                            modifier = Modifier.tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.12f)
                         ) {
                             Icon(Icons.Default.Lock, contentDescription = stringResource(R.string.player_lock_controls), tint = Color.White)
                         }
@@ -3683,7 +3816,8 @@ fun PlayerScreen(
                                     if (nextLandscape) context.getString(R.string.player_orientation_landscape) else context.getString(R.string.player_orientation_portrait),
                                     Toast.LENGTH_SHORT
                                 ).show()
-                            }
+                            },
+                            modifier = Modifier.tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.12f)
                         ) {
                             Icon(
                                 Icons.Default.ScreenRotation,
@@ -3704,7 +3838,8 @@ fun PlayerScreen(
                                     } catch (e: Exception) {
                                         println("[PlayerScreen] Lỗi vào PiP: ${e.message}")
                                     }
-                                }
+                                },
+                                modifier = Modifier.tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.12f)
                             ) {
                                 Icon(Icons.Default.PictureInPictureAlt, contentDescription = stringResource(R.string.player_pip), tint = Color.White)
                             }
@@ -3716,7 +3851,8 @@ fun PlayerScreen(
                                 onClick = {
                                     lastInteractionTime = System.currentTimeMillis()
                                     showEpisodesDrawer = true
-                                }
+                                },
+                                modifier = Modifier.tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.12f)
                             ) {
                                 Icon(
                                     Icons.Default.VideoLibrary,
@@ -3733,7 +3869,8 @@ fun PlayerScreen(
                                     videoTracks = exoPlayerManager.getVideoTracks()
                                     audioTracks = exoPlayerManager.getAudioTracks()
                                     showSettingsDialog = true
-                                }
+                                },
+                                modifier = Modifier.tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.12f)
                             ) {
                                 Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.player_settings_title), tint = Color.White)
                             }
@@ -3868,7 +4005,8 @@ fun PlayerScreen(
                                             ActivePlayerSession.currentEpisode = activeEpisodes[currentEpisodeIndex]
                                         }
                                     },
-                                    enabled = activeEpisodes.isNotEmpty() && currentEpisodeIndex > 0
+                                    enabled = activeEpisodes.isNotEmpty() && currentEpisodeIndex > 0,
+                                    modifier = Modifier.tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.12f)
                                 ) {
                                     Icon(
                                         Icons.Default.SkipPrevious,
@@ -3884,7 +4022,8 @@ fun PlayerScreen(
                                         val target = (exoPlayerManager.player.currentPosition - 10_000).coerceAtLeast(0L)
                                         exoPlayerManager.player.seekTo(target)
                                         showHud(HudIndicatorType.SEEK_REWIND, 10f)
-                                    }
+                                    },
+                                    modifier = Modifier.tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.12f)
                                 ) {
                                     Icon(Icons.Default.Replay10, contentDescription = stringResource(R.string.player_rewind_10s), tint = Color.White, modifier = Modifier.size(38.dp))
                                 }
@@ -3896,6 +4035,8 @@ fun PlayerScreen(
                                     },
                                     modifier = Modifier
                                         .size(64.dp)
+                                        .focusRequester(playPauseFocusRequester)
+                                        .tvFocusableItem(cornerRadius = 32.dp, focusedScale = 1.12f, focusColor = Color.White)
                                         .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.85f), CircleShape)
                                 ) {
                                     Icon(
@@ -3913,7 +4054,8 @@ fun PlayerScreen(
                                         val target = if (maxDur > 0) (exoPlayerManager.player.currentPosition + 10_000).coerceAtMost(maxDur) else exoPlayerManager.player.currentPosition + 10_000
                                         exoPlayerManager.player.seekTo(target)
                                         showHud(HudIndicatorType.SEEK_FORWARD, 10f)
-                                    }
+                                    },
+                                    modifier = Modifier.tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.12f)
                                 ) {
                                     Icon(Icons.Default.Forward10, contentDescription = stringResource(R.string.player_forward_10s), tint = Color.White, modifier = Modifier.size(38.dp))
                                 }
@@ -3929,7 +4071,8 @@ fun PlayerScreen(
                                             ActivePlayerSession.currentEpisode = activeEpisodes[currentEpisodeIndex]
                                         }
                                     },
-                                    enabled = activeEpisodes.isNotEmpty() && currentEpisodeIndex < activeEpisodes.size - 1
+                                    enabled = activeEpisodes.isNotEmpty() && currentEpisodeIndex < activeEpisodes.size - 1,
+                                    modifier = Modifier.tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.12f)
                                 ) {
                                     Icon(
                                         Icons.Default.SkipNext,
@@ -4090,6 +4233,7 @@ fun PlayerScreen(
                                                 .size(btnSize)
                                                 .clip(CircleShape)
                                                 .background(if (isResizeCustom) MaterialTheme.colorScheme.primary.copy(alpha = 0.20f) else Color.Transparent)
+                                                .tvFocusableItem(cornerRadius = 20.dp, focusedScale = 1.15f)
                                                 .clickable {
                                                     lastInteractionTime = System.currentTimeMillis()
                                                     resizeModeIndex = (resizeModeIndex + 1) % resizeModes.size
@@ -4114,6 +4258,7 @@ fun PlayerScreen(
                                                 .size(btnSize)
                                                 .clip(CircleShape)
                                                 .background(if (isSpeedCustom) MaterialTheme.colorScheme.primary.copy(alpha = 0.20f) else Color.Transparent)
+                                                .tvFocusableItem(cornerRadius = 20.dp, focusedScale = 1.15f)
                                                 .clickable {
                                                     lastInteractionTime = System.currentTimeMillis()
                                                     val nextIdx = (speeds.indexOf(currentSpeed) + 1) % speeds.size
@@ -4149,6 +4294,7 @@ fun PlayerScreen(
                                                 .size(btnSize)
                                                 .clip(CircleShape)
                                                 .background(if (isAudioActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.20f) else Color.Transparent)
+                                                .tvFocusableItem(cornerRadius = 20.dp, focusedScale = 1.15f)
                                                 .clickable {
                                                     lastInteractionTime = System.currentTimeMillis()
                                                     audioTracks = exoPlayerManager.getAudioTracks()
@@ -4171,6 +4317,7 @@ fun PlayerScreen(
                                                 .size(btnSize)
                                                 .clip(CircleShape)
                                                 .background(if (hasActiveSub) MaterialTheme.colorScheme.primary.copy(alpha = 0.20f) else Color.Transparent)
+                                                .tvFocusableItem(cornerRadius = 20.dp, focusedScale = 1.15f)
                                                 .clickable {
                                                     lastInteractionTime = System.currentTimeMillis()
                                                     subtitleTracks = mergeSubtitleTracks(customSubtitleTracks, exoPlayerManager.getSubtitleTracks())
@@ -4195,6 +4342,7 @@ fun PlayerScreen(
                                                 .size(btnSize)
                                                 .clip(CircleShape)
                                                 .background(if (isTtsEnabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.20f) else Color.Transparent)
+                                                .tvFocusableItem(cornerRadius = 20.dp, focusedScale = 1.15f)
                                                 .clickable {
                                                     lastInteractionTime = System.currentTimeMillis()
                                                     val newState = !isTtsEnabled
@@ -4225,6 +4373,7 @@ fun PlayerScreen(
                                                 .size(btnSize)
                                                 .clip(CircleShape)
                                                 .background(Color.Transparent)
+                                                .tvFocusableItem(cornerRadius = 20.dp, focusedScale = 1.15f)
                                                 .clickable {
                                                     lastInteractionTime = System.currentTimeMillis()
                                                     showSourceSelectorDrawer = true
@@ -6334,6 +6483,7 @@ fun PlayerScreen(
                             Surface(
                                 shape = RoundedCornerShape(16.dp),
                                 color = Color.White.copy(alpha = 0.12f),
+                                modifier = Modifier.tvFocusableItem(cornerRadius = 16.dp, focusedScale = 1.08f),
                                 onClick = { showSourceSelectorDrawer = false }
                             ) {
                                 Text(
@@ -6498,7 +6648,9 @@ fun PlayerScreen(
                                 val isThisStreamPlaying = item.id == playingStreamId
 
                                 Surface(
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .tvFocusableItem(cornerRadius = 12.dp, focusedScale = 1.02f),
                                     shape = RoundedCornerShape(12.dp),
                                     color = if (isThisStreamPlaying) MaterialTheme.colorScheme.primary.copy(alpha = 0.20f) else Color.White.copy(alpha = 0.08f),
                                     border = if (isThisStreamPlaying) BorderStroke(1.2.dp, MaterialTheme.colorScheme.primary) else BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
@@ -6771,7 +6923,9 @@ fun PlayerScreen(
                                         shape = RoundedCornerShape(8.dp),
                                         color = if (isSelected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.08f),
                                         border = BorderStroke(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.15f)),
-                                        modifier = Modifier.clickable {
+                                        modifier = Modifier
+                                            .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.06f)
+                                            .clickable {
                                             if (srv.serverName != activeServerName) {
                                                 activeServerName = srv.serverName
                                                 activeEpisodes = srv.episodes
@@ -6826,6 +6980,7 @@ fun PlayerScreen(
                                     ),
                                     modifier = Modifier
                                         .fillMaxWidth()
+                                        .tvFocusableItem(cornerRadius = 10.dp, focusedScale = 1.08f)
                                         .clickable {
                                             if (idx != currentEpisodeIndex) {
                                                 showResumePromptDialog = false

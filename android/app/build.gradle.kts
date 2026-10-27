@@ -12,10 +12,10 @@ android {
 
     defaultConfig {
         applicationId = "com.jkhx.player"
-        minSdk = 26
+        minSdk = 24
         targetSdk = 35
-        versionCode = 15
-        versionName = "1.0.14"
+        versionCode = 16
+        versionName = "1.0.15"
 
         ndk {
             abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a", "x86_64"))
@@ -77,5 +77,6 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.play.services.auth)
+    implementation(libs.conscrypt.android)
 }
 

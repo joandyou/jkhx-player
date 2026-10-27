@@ -79,6 +79,7 @@ import android.content.res.Configuration
 import androidx.compose.runtime.compositionLocalOf
 import com.jkhx.player.ui.theme.JkhxTheme
 import com.jkhx.player.ui.theme.LocalDisplayMode
+import com.jkhx.player.ui.theme.tvFocusableItem
 import kotlinx.serialization.json.Json
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -347,6 +348,7 @@ fun MainAppNavigation(displayMode: DeviceDisplayMode = DeviceDisplayMode.MOBILE)
                                         color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f) else Color.Transparent,
                                         shape = RoundedCornerShape(20.dp)
                                     )
+                                    .tvFocusableItem(cornerRadius = 20.dp, focusedScale = 1.06f)
                                     .clickable { handleNavClick(screen) }
                                     .padding(vertical = 10.dp),
                                 contentAlignment = Alignment.Center
@@ -440,6 +442,7 @@ fun NuvioFloatingBottomBar(
                         .weight(1f)
                         .fillMaxHeight()
                         .clip(RoundedCornerShape(24.dp))
+                        .tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.05f)
                         .clickable { onNavigate(screen) },
                     contentAlignment = Alignment.Center
                 ) {

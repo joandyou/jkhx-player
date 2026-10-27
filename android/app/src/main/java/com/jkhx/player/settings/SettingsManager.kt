@@ -51,7 +51,7 @@ enum class DeviceDisplayMode(val key: String, val titleRes: Int) {
 
     val title: String get() = when (this) {
         MOBILE -> "Điện thoại"
-        TABLET -> "Máy tính bảng"
+        TABLET -> "Tablet / TV"
     }
 
     companion object {
@@ -80,6 +80,8 @@ enum class AppLanguage(val code: String, val titleRes: Int) {
 class SettingsManager(context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences("jkhx_settings_pref", Context.MODE_PRIVATE)
+
+    val isTvHardware: Boolean = isTvDevice(context)
 
     private val _isAdultEnabled = MutableStateFlow(
         prefs.getBoolean(KEY_IS_ADULT_ENABLED, false)
@@ -132,7 +134,12 @@ class SettingsManager(context: Context) {
     }
 
     private val _displayMode = MutableStateFlow(
-        DeviceDisplayMode.fromKey(prefs.getString(KEY_DISPLAY_MODE, DeviceDisplayMode.MOBILE.key))
+        DeviceDisplayMode.fromKey(
+            prefs.getString(
+                KEY_DISPLAY_MODE,
+                if (isTvHardware) DeviceDisplayMode.TABLET.key else DeviceDisplayMode.MOBILE.key
+            )
+        )
     )
     val displayMode: StateFlow<DeviceDisplayMode> = _displayMode.asStateFlow()
 
@@ -248,8 +255,8 @@ class SettingsManager(context: Context) {
 
     // --- Subtitle Appearance Settings ---
     private val _subtitleTextSize = MutableStateFlow(
-        prefs.getFloat(KEY_SUBTITLE_TEXT_SIZE, 20f).let {
-            if (it < 16f) 20f else it
+        prefs.getFloat(KEY_SUBTITLE_TEXT_SIZE, if (isTvHardware) 22f else 20f).let {
+            if (it < 16f) (if (isTvHardware) 22f else 20f) else it
         }
     )
     val subtitleTextSize: StateFlow<Float> = _subtitleTextSize.asStateFlow()
@@ -695,6 +702,20 @@ class SettingsManager(context: Context) {
         fun getInstance(context: Context): SettingsManager {
             return instance ?: synchronized(this) {
                 instance ?: SettingsManager(context.applicationContext).also { instance = it }
+            }
+        }
+
+        fun isTvDevice(context: Context): Boolean {
+            return try {
+                val uiModeManager = context.getSystemService(Context.UI_MODE_SERVICE) as? android.app.UiModeManager
+                val isTelevisionMode = uiModeManager?.currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+                val pm = context.packageManager
+                val hasLeanback = pm.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK)
+                val hasTelevision = pm.hasSystemFeature(android.content.pm.PackageManager.FEATURE_TELEVISION)
+                val hasNoTouchscreen = !pm.hasSystemFeature(android.content.pm.PackageManager.FEATURE_TOUCHSCREEN)
+                isTelevisionMode || hasLeanback || hasTelevision || hasNoTouchscreen
+            } catch (_: Exception) {
+                false
             }
         }
     }

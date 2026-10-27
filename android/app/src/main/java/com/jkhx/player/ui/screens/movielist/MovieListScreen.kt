@@ -1,5 +1,6 @@
 package com.jkhx.player.ui.screens.movielist
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -9,6 +10,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
@@ -56,6 +58,36 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
+private class MovieListSessionState(
+    initialItems: List<MovieItem>
+) {
+    val movies: MutableList<MovieItem> = initialItems.distinctBy { it.slug }.toMutableList()
+    var currentPage: Int = 1
+    var hasNextPage: Boolean = true
+    var filterConfig: PluginFilterConfig? = null
+    var filtersInitialized: Boolean = false
+    var selectedGenre: FilterOption? = null
+    var selectedCountry: FilterOption? = null
+    var selectedYear: FilterOption? = null
+    var selectedSortField: FilterOption? = null
+    var selectedSortType: FilterOption? = null
+    var activeFilters: Map<String, String>? = null
+    var firstVisibleItemIndex: Int = 0
+    var firstVisibleItemScrollOffset: Int = 0
+}
+
+private object MovieListSessionCache {
+    private val map = mutableMapOf<String, MovieListSessionState>()
+
+    fun getOrCreate(key: String, initialItems: List<MovieItem>): MovieListSessionState {
+        return map.getOrPut(key) { MovieListSessionState(initialItems) }
+    }
+
+    fun remove(key: String) {
+        map.remove(key)
+    }
+}
+
 @Composable
 fun MovieListScreen(
     providerId: String,
@@ -69,21 +101,52 @@ fun MovieListScreen(
     val context = LocalContext.current
     val pluginManager = JkhxApplication.instance.pluginManager
     val coroutineScope = rememberCoroutineScope()
-    val gridState = rememberLazyGridState()
     val displayMode = LocalDisplayMode.current
     val isTablet = displayMode == DeviceDisplayMode.TABLET
 
-    val movies = remember {
+    val sessionKey = remember(providerId, categoryTitle, type, slug) {
+        "$providerId|$categoryTitle|${type.orEmpty()}|${slug.orEmpty()}"
+    }
+    val cachedSession = remember(sessionKey) {
+        MovieListSessionCache.getOrCreate(sessionKey, initialMovies)
+    }
+
+    val handleBack: () -> Unit = remember(sessionKey, onBack) {
+        {
+            MovieListSessionCache.remove(sessionKey)
+            onBack()
+        }
+    }
+    BackHandler(onBack = handleBack)
+
+    val gridState = remember(sessionKey) {
+        LazyGridState(
+            firstVisibleItemIndex = cachedSession.firstVisibleItemIndex,
+            firstVisibleItemScrollOffset = cachedSession.firstVisibleItemScrollOffset
+        )
+    }
+
+    val movies = remember(sessionKey) {
         mutableStateListOf<MovieItem>().apply {
-            addAll(initialMovies)
+            addAll(cachedSession.movies)
         }
     }
 
-    var currentPage by remember { mutableStateOf(1) }
-    var isLoadingFirst by remember { mutableStateOf(initialMovies.isEmpty()) }
-    var isLoadingMore by remember { mutableStateOf(false) }
-    var hasNextPage by remember { mutableStateOf(true) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var currentPage by remember(sessionKey) { mutableStateOf(cachedSession.currentPage) }
+    var isLoadingFirst by remember(sessionKey) { mutableStateOf(cachedSession.movies.isEmpty()) }
+    var isLoadingMore by remember(sessionKey) { mutableStateOf(false) }
+    var hasNextPage by remember(sessionKey) { mutableStateOf(cachedSession.hasNextPage) }
+    var errorMessage by remember(sessionKey) { mutableStateOf<String?>(null) }
+
+    // Lưu vị trí cuộn theo thời gian thực để khôi phục chính xác khi Back từ DetailScreen
+    LaunchedEffect(gridState, sessionKey) {
+        snapshotFlow {
+            gridState.firstVisibleItemIndex to gridState.firstVisibleItemScrollOffset
+        }.collect { (index, offset) ->
+            cachedSession.firstVisibleItemIndex = index
+            cachedSession.firstVisibleItemScrollOffset = offset
+        }
+    }
 
     // Hiệu ứng xoay mượt mà cho nút Refresh — xoay tròn đều khi tải, xoay nốt vòng và hạ cánh êm dịu khi hoàn thành
     val rotationAnimatable = remember { androidx.compose.animation.core.Animatable(0f) }
@@ -120,18 +183,19 @@ fun MovieListScreen(
     val providerName = providerRecord?.manifest?.name ?: providerId
 
     // Dynamic Filter Config loaded strictly from plugin; null means provider doesn't support filters
-    var filterConfig by remember { mutableStateOf<PluginFilterConfig?>(null) }
+    var filterConfig by remember(sessionKey) { mutableStateOf(cachedSession.filterConfig) }
 
     // Selected filter states
-    var selectedGenre by remember { mutableStateOf<FilterOption?>(null) }
-    var selectedCountry by remember { mutableStateOf<FilterOption?>(null) }
-    var selectedYear by remember { mutableStateOf<FilterOption?>(null) }
-    var selectedSortField by remember { mutableStateOf<FilterOption?>(null) }
-    var selectedSortType by remember { mutableStateOf<FilterOption?>(null) }
-    var activeFilters by remember { mutableStateOf<Map<String, String>?>(null) }
+    var selectedGenre by remember(sessionKey) { mutableStateOf(cachedSession.selectedGenre) }
+    var selectedCountry by remember(sessionKey) { mutableStateOf(cachedSession.selectedCountry) }
+    var selectedYear by remember(sessionKey) { mutableStateOf(cachedSession.selectedYear) }
+    var selectedSortField by remember(sessionKey) { mutableStateOf(cachedSession.selectedSortField) }
+    var selectedSortType by remember(sessionKey) { mutableStateOf(cachedSession.selectedSortType) }
+    var activeFilters by remember(sessionKey) { mutableStateOf(cachedSession.activeFilters) }
 
     // Fetch dynamic filter options strictly from plugin; if unsupported, filterConfig remains null
-    LaunchedEffect(providerId) {
+    LaunchedEffect(providerId, sessionKey) {
+        if (cachedSession.filtersInitialized) return@LaunchedEffect
         try {
             val plugin = pluginManager.getPlugin(providerId)
             val remoteFilters = plugin?.getFilters()
@@ -144,11 +208,18 @@ fun MovieListScreen(
                 filterConfig = remoteFilters
                 selectedSortField = remoteFilters.sortFields.firstOrNull()
                 selectedSortType = remoteFilters.sortTypes.firstOrNull()
+                cachedSession.filterConfig = remoteFilters
+                cachedSession.selectedSortField = selectedSortField
+                cachedSession.selectedSortType = selectedSortType
             } else {
                 filterConfig = null
+                cachedSession.filterConfig = null
             }
+            cachedSession.filtersInitialized = true
         } catch (_: Exception) {
             filterConfig = null
+            cachedSession.filterConfig = null
+            cachedSession.filtersInitialized = true
         }
     }
 
@@ -181,17 +252,30 @@ fun MovieListScreen(
                 )
 
                 if (isRefresh || page == 1) {
+                    val uniqueItems = result.items.distinctBy { it.slug }
                     movies.clear()
-                    movies.addAll(result.items)
+                    movies.addAll(uniqueItems)
                     currentPage = 1
+                    cachedSession.movies.clear()
+                    cachedSession.movies.addAll(uniqueItems)
+                    cachedSession.currentPage = 1
+                    if (isRefresh) {
+                        cachedSession.firstVisibleItemIndex = 0
+                        cachedSession.firstVisibleItemScrollOffset = 0
+                        gridState.scrollToItem(0)
+                    }
                 } else {
                     val existingSlugs = movies.map { it.slug }.toSet()
-                    val newUniqueItems = result.items.filter { it.slug !in existingSlugs }
+                    val newUniqueItems = result.items.filter { it.slug !in existingSlugs }.distinctBy { it.slug }
                     movies.addAll(newUniqueItems)
                     currentPage = page
+                    cachedSession.movies.clear()
+                    cachedSession.movies.addAll(movies)
+                    cachedSession.currentPage = page
                 }
 
                 hasNextPage = result.hasNext || (result.items.size >= 12 && page < 50)
+                cachedSession.hasNextPage = hasNextPage
             } catch (e: Exception) {
                 if (movies.isEmpty()) {
                     errorMessage = e.message ?: context.getString(R.string.movie_list_load_error)
@@ -234,6 +318,12 @@ fun MovieListScreen(
         selectedSortField?.let { if (it.slug.isNotBlank()) filters["sort_field"] = it.slug }
         selectedSortType?.let { if (it.slug.isNotBlank()) filters["sort_type"] = it.slug }
         activeFilters = filters.ifEmpty { null }
+        cachedSession.selectedGenre = selectedGenre
+        cachedSession.selectedCountry = selectedCountry
+        cachedSession.selectedYear = selectedYear
+        cachedSession.selectedSortField = selectedSortField
+        cachedSession.selectedSortType = selectedSortType
+        cachedSession.activeFilters = activeFilters
         loadPage(1, isRefresh = true)
     }
 
@@ -319,7 +409,7 @@ fun MovieListScreen(
             ) {
                 // Nút quay lại tròn mờ chuẩn Glassmorphic
                 Surface(
-                    onClick = onBack,
+                    onClick = handleBack,
                     shape = CircleShape,
                     color = AppTheme.colors.glassBackground,
                     border = BorderStroke(1.dp, AppTheme.colors.glassBorder),
@@ -413,7 +503,10 @@ fun MovieListScreen(
                         MovieListFilterDropdown(
                             selectedText = selectedGenre?.name ?: placeholderGenre,
                             options = genreOptions,
-                            onSelect = { selectedGenre = if (it.slug.isBlank()) null else it }
+                            onSelect = {
+                                selectedGenre = if (it.slug.isBlank()) null else it
+                                cachedSession.selectedGenre = selectedGenre
+                            }
                         )
                     }
 
@@ -427,7 +520,10 @@ fun MovieListScreen(
                         MovieListFilterDropdown(
                             selectedText = selectedCountry?.name ?: placeholderCountry,
                             options = countryOptions,
-                            onSelect = { selectedCountry = if (it.slug.isBlank()) null else it }
+                            onSelect = {
+                                selectedCountry = if (it.slug.isBlank()) null else it
+                                cachedSession.selectedCountry = selectedCountry
+                            }
                         )
                     }
 
@@ -441,7 +537,10 @@ fun MovieListScreen(
                         MovieListFilterDropdown(
                             selectedText = selectedYear?.name ?: placeholderYear,
                             options = yearOptions,
-                            onSelect = { selectedYear = if (it.slug.isBlank()) null else it }
+                            onSelect = {
+                                selectedYear = if (it.slug.isBlank()) null else it
+                                cachedSession.selectedYear = selectedYear
+                            }
                         )
                     }
 
@@ -450,7 +549,10 @@ fun MovieListScreen(
                         MovieListFilterDropdown(
                             selectedText = selectedSortField?.name ?: currentConfig.sortFields.first().name,
                             options = currentConfig.sortFields,
-                            onSelect = { selectedSortField = it }
+                            onSelect = {
+                                selectedSortField = it
+                                cachedSession.selectedSortField = selectedSortField
+                            }
                         )
                     }
 
@@ -459,7 +561,10 @@ fun MovieListScreen(
                         MovieListFilterDropdown(
                             selectedText = selectedSortType?.name ?: currentConfig.sortTypes.first().name,
                             options = currentConfig.sortTypes,
-                            onSelect = { selectedSortType = it }
+                            onSelect = {
+                                selectedSortType = it
+                                cachedSession.selectedSortType = selectedSortType
+                            }
                         )
                     }
 
@@ -562,7 +667,7 @@ fun MovieListScreen(
                             )
                             Spacer(modifier = Modifier.height(AppTheme.dimens.space16))
                             OutlinedButton(
-                                onClick = onBack,
+                                onClick = handleBack,
                                 shape = ShapeTokens.Button
                             ) {
                                 Text(stringResource(R.string.common_back), color = MaterialTheme.colorScheme.onSurface)
@@ -581,7 +686,7 @@ fun MovieListScreen(
                         ) {
                             items(
                                 count = movies.size,
-                                key = { index -> "${movies[index].providerId ?: providerId}_${movies[index].slug}" },
+                                key = { index -> "${movies[index].providerId ?: providerId}_${movies[index].slug}_$index" },
                                 contentType = { "movie_card" }
                             ) { index ->
                                 val movie = movies[index]
@@ -589,6 +694,8 @@ fun MovieListScreen(
                                     movie = movie,
                                     modifier = Modifier.fillMaxWidth(),
                                     onClick = {
+                                        cachedSession.firstVisibleItemIndex = gridState.firstVisibleItemIndex
+                                        cachedSession.firstVisibleItemScrollOffset = gridState.firstVisibleItemScrollOffset
                                         onMovieClick(movie.providerId ?: providerId, movie.slug)
                                     }
                                 )

@@ -371,7 +371,7 @@
 
     <!-- Display Mode Titles -->
     <string name="display_mobile">Điện thoại</string>
-    <string name="display_tablet">Máy tính bảng</string>
+    <string name="display_tablet">Tablet / TV</string>
 
     <!-- Language Titles -->
     <string name="language_vietnamese">Tiếng Việt</string>

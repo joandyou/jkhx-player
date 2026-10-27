@@ -70,6 +70,7 @@ import com.jkhx.player.ui.components.MovieCard
 import com.jkhx.player.ui.theme.AppTheme
 import com.jkhx.player.ui.theme.LocalDisplayMode
 import com.jkhx.player.ui.theme.ShapeTokens
+import com.jkhx.player.ui.theme.tvFocusableItem
 import com.jkhx.player.ui.theme.PluginCategoryAdult
 import com.jkhx.player.ui.theme.PluginCategoryComic
 import com.jkhx.player.ui.theme.PluginCategoryLive
@@ -752,7 +753,9 @@ fun HomeScreen(
                             shape = ShapeTokens.LargeChip,
                             color = MaterialTheme.colorScheme.primaryContainer,
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
-                            modifier = Modifier.padding(end = 4.dp)
+                            modifier = Modifier
+                                .padding(end = 4.dp)
+                                .tvFocusableItem(cornerRadius = 18.dp, focusedScale = 1.05f)
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -908,6 +911,7 @@ fun HomeScreen(
                                         verticalAlignment = Alignment.CenterVertically,
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(6.dp))
+                                            .tvFocusableItem(cornerRadius = 6.dp, focusedScale = 1.05f)
                                             .clickable {
                                                 expandedMenuIndex = if (expandedMenuIndex == index) null else index
                                             }
@@ -964,6 +968,7 @@ fun HomeScreen(
                                 Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(6.dp))
+                                        .tvFocusableItem(cornerRadius = 6.dp, focusedScale = 1.05f)
                                         .clickable {
                                             selectedMenuIndex = index
                                             if (menuItem.slug == "home" || menuItem.slug.isNullOrBlank()) {
@@ -1150,6 +1155,7 @@ fun HeroBannerSection(
                                 ),
                                 shape = ShapeTokens.BannerCard
                             )
+                            .tvFocusableItem(cornerRadius = 16.dp, focusedScale = 1.03f)
                             .clickable { onMovieClick(movie) }
                     ) {
                         val heroContext = LocalContext.current
@@ -1345,7 +1351,9 @@ fun QuickCategoriesSection(
                     onClick = { onCategoryClick(section) },
                     shape = ShapeTokens.Card,
                     color = gradientColors[0],
-                    modifier = Modifier.height(48.dp)
+                    modifier = Modifier
+                        .height(48.dp)
+                        .tvFocusableItem(cornerRadius = 12.dp, focusedScale = 1.05f)
                 ) {
                     Box(
                         contentAlignment = Alignment.Center,
