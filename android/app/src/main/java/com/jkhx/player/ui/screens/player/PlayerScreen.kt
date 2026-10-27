@@ -109,6 +109,7 @@ import androidx.compose.ui.res.stringResource
 import com.jkhx.player.R
 import com.jkhx.player.ActivePlayerSession
 import com.jkhx.player.JkhxApplication
+import com.jkhx.player.core.network.SslHelper
 import com.jkhx.player.core.model.MovieDetail
 import com.jkhx.player.ui.screens.stream.StreamAggregator
 import com.jkhx.player.ui.screens.stream.UnifiedStreamItem
@@ -2836,15 +2837,16 @@ fun PlayerScreen(
                                 (inferredStreamType in setOf("m3u8", "hls", "mp4", "mkv", "webm", "mov", "avi") ||
                                     (currentUrl == resolvedStream?.url && resolvedStream?.type != "embed"))
 
-                            val embedHttpClient = OkHttpClient.Builder()
-                                .dns(object : okhttp3.Dns {
-                                    override fun lookup(hostname: String): List<java.net.InetAddress> =
-                                        okhttp3.Dns.SYSTEM.lookup(hostname).sortedBy { it is java.net.Inet6Address }
-                                })
-                                .protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
-                                .followRedirects(true)
-                                .followSslRedirects(true)
-                                .build()
+                            val embedHttpClient = SslHelper.configureSsl(
+                                OkHttpClient.Builder()
+                                    .dns(object : okhttp3.Dns {
+                                        override fun lookup(hostname: String): List<java.net.InetAddress> =
+                                            okhttp3.Dns.SYSTEM.lookup(hostname).sortedBy { it is java.net.Inet6Address }
+                                    })
+                                    .protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
+                                    .followRedirects(true)
+                                    .followSslRedirects(true)
+                            ).build()
 
                             webViewClient = object : WebViewClient() {
                                 override fun shouldOverrideUrlLoading(

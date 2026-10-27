@@ -22,14 +22,15 @@ class JkhxApplication : Application(), ImageLoaderFactory {
 
     override fun newImageLoader(): ImageLoader {
         val settings = com.jkhx.player.settings.SettingsManager.getInstance(this)
-        val okHttpClient = okhttp3.OkHttpClient.Builder()
-            .proxySelector(object : java.net.ProxySelector() {
-                override fun select(uri: java.net.URI?): List<java.net.Proxy> {
-                    val proxy = settings.getProxy()
-                    return if (proxy != null) listOf(proxy) else listOf(java.net.Proxy.NO_PROXY)
-                }
-                override fun connectFailed(uri: java.net.URI?, sa: java.net.SocketAddress?, ioe: java.io.IOException?) {}
-            })
+        val okHttpClient = com.jkhx.player.core.network.SslHelper.configureSsl(
+            okhttp3.OkHttpClient.Builder()
+                .proxySelector(object : java.net.ProxySelector() {
+                    override fun select(uri: java.net.URI?): List<java.net.Proxy> {
+                        val proxy = settings.getProxy()
+                        return if (proxy != null) listOf(proxy) else listOf(java.net.Proxy.NO_PROXY)
+                    }
+                    override fun connectFailed(uri: java.net.URI?, sa: java.net.SocketAddress?, ioe: java.io.IOException?) {}
+                })
             .addInterceptor { chain ->
                 val originalRequest = chain.request()
                 val originalUrlStr = originalRequest.url.toString()
@@ -116,7 +117,7 @@ class JkhxApplication : Application(), ImageLoaderFactory {
 
                 response
             }
-            .build()
+        ).build()
 
         return ImageLoader.Builder(this)
             .okHttpClient(okHttpClient)

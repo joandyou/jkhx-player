@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import com.jkhx.player.core.network.SslHelper
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.net.InetSocketAddress
@@ -515,11 +516,12 @@ class SettingsManager(context: Context) {
         val proxyType = if (type == ProxyType.HTTP) Proxy.Type.HTTP else Proxy.Type.SOCKS
         val proxy = Proxy(proxyType, InetSocketAddress.createUnresolved(cleanHost, port))
 
-        val testClient = OkHttpClient.Builder()
-            .proxy(proxy)
-            .connectTimeout(6, TimeUnit.SECONDS)
-            .readTimeout(6, TimeUnit.SECONDS)
-            .build()
+        val testClient = SslHelper.configureSsl(
+            OkHttpClient.Builder()
+                .proxy(proxy)
+                .connectTimeout(6, TimeUnit.SECONDS)
+                .readTimeout(6, TimeUnit.SECONDS)
+        ).build()
 
         val start = System.currentTimeMillis()
         try {
