@@ -8,6 +8,10 @@
 [![Stremio](https://img.shields.io/badge/Addon%20Protocol-Stremio%20%2F%20Nuvio%20v3-cyan.svg)](https://stremio.com)
 [![License](https://img.shields.io/badge/License-Apache%202.0-lightgrey.svg)](LICENSE)
 
+🌐 **Ngôn ngữ / Language:** **Tiếng Việt** | [English](README_EN.md)
+
+---
+
 **JKHX Player** là ứng dụng trình phát đa phương tiện mã nguồn mở (Modular Media Player) hiện đại dành cho hệ điều hành Android. Ứng dụng kết hợp sức mạnh phát video hiệu năng cao của **AndroidX Media3 (ExoPlayer)**, giao diện mượt mà của **Jetpack Compose (Material 3)**, hỗ trợ toàn diện giao thức **Stremio / Nuvio Addon v3**, cùng kiến trúc mở rộng bằng tiện ích độc lập (Plugins) chạy trên môi trường sandbox **QuickJS-NG NDK C++**.
 
 ---
