@@ -52,6 +52,7 @@ import coil.compose.AsyncImage
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInStatusCodes
 import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.common.api.CommonStatusCodes
 import com.jkhx.player.sync.GoogleAuthManager
 import com.jkhx.player.sync.SyncManager
 import com.jkhx.player.sync.SyncState
@@ -153,7 +154,13 @@ fun SettingsScreen(
             }
         } catch (e: ApiException) {
             if (e.statusCode != GoogleSignInStatusCodes.SIGN_IN_CANCELLED) {
-                Toast.makeText(context, context.getString(R.string.settings_sync_sign_in_failed, "Code ${e.statusCode}"), Toast.LENGTH_SHORT).show()
+                val detailMsg = when (e.statusCode) {
+                    CommonStatusCodes.DEVELOPER_ERROR -> "Code 10 (DEVELOPER_ERROR: Cần cấu hình đúng mã SHA-1 của app trên Google Cloud Console)"
+                    CommonStatusCodes.NETWORK_ERROR -> "Code 7 (NETWORK_ERROR: Lỗi kết nối mạng)"
+                    CommonStatusCodes.INTERNAL_ERROR -> "Code 8 (INTERNAL_ERROR: Lỗi hệ thống Google Play Services)"
+                    else -> "Code ${e.statusCode}"
+                }
+                Toast.makeText(context, context.getString(R.string.settings_sync_sign_in_failed, detailMsg), Toast.LENGTH_LONG).show()
             }
         } catch (e: Exception) {
             Toast.makeText(context, context.getString(R.string.settings_sync_sign_in_failed, e.message ?: ""), Toast.LENGTH_SHORT).show()

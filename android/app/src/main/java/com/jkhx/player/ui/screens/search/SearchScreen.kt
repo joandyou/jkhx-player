@@ -49,6 +49,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.jkhx.player.JkhxApplication
 import com.jkhx.player.R
+import com.jkhx.player.core.cache.SessionCacheManager
 import com.jkhx.player.core.database.entity.StremioAddonEntity
 import com.jkhx.player.core.model.MovieItem
 import com.jkhx.player.core.model.stremio.StremioCatalogDefinition
@@ -126,11 +127,16 @@ fun SearchScreen(
     val coroutineScope = rememberCoroutineScope()
     var searchJob by remember { mutableStateOf<Job?>(null) }
 
+    val discoverMovies = ActiveSearchHolder.discoverMovies
+    var isDiscoverLoading by remember { mutableStateOf(false) }
+    var isDiscoverLoadingMore by remember { mutableStateOf(false) }
+
     val rotationAnimatable = remember { Animatable(0f) }
     val rotationAngle by rotationAnimatable.asState()
 
-    LaunchedEffect(isSearching) {
-        if (isSearching) {
+    val isAnyLoading = isSearching || isDiscoverLoading
+    LaunchedEffect(isAnyLoading) {
+        if (isAnyLoading) {
             while (isActive) {
                 rotationAnimatable.animateTo(
                     targetValue = rotationAnimatable.value + 360f,
@@ -262,26 +268,36 @@ fun SearchScreen(
     var catalogMenuExpanded by remember { mutableStateOf(false) }
     var filterMenuExpanded by remember { mutableStateOf(false) }
 
-    val discoverMovies = ActiveSearchHolder.discoverMovies
-    var isDiscoverLoading by remember { mutableStateOf(false) }
-    var isDiscoverLoadingMore by remember { mutableStateOf(false) }
-
     val gridState = rememberLazyGridState()
     var discoverJob by remember { mutableStateOf<Job?>(null) }
 
     // Hàm tải danh sách phim từ Stremio Catalog
-    fun fetchDiscover(reset: Boolean = false) {
+    fun fetchDiscover(reset: Boolean = false, forceRefresh: Boolean = false) {
         val addon = currentAddon ?: return
         val catalog = selectedCatalog ?: return
         val client = pluginManager.getStremioClient()
+        val cacheKey = "${addon.url}_${selectedType}_${catalog.id}_${selectedFilterOption ?: ""}"
 
         if (reset) {
             discoverJob?.cancel()
             ActiveSearchHolder.discoverPage = 1
             ActiveSearchHolder.hasMorePages = true
+            isDiscoverLoadingMore = false
+
+            if (!forceRefresh) {
+                val cached = SessionCacheManager.getDiscoverCatalog(cacheKey)
+                if (!cached.isNullOrEmpty()) {
+                    discoverMovies.clear()
+                    discoverMovies.addAll(cached)
+                    isDiscoverLoading = false
+                    return
+                }
+            } else {
+                SessionCacheManager.removeDiscoverCatalog(cacheKey)
+            }
+
             discoverMovies.clear()
             isDiscoverLoading = true
-            isDiscoverLoadingMore = false
         } else {
             if (!ActiveSearchHolder.hasMorePages || isDiscoverLoadingMore || isDiscoverLoading || discoverJob?.isActive == true) return
             isDiscoverLoadingMore = true
@@ -325,6 +341,10 @@ fun SearchScreen(
                     val existingKeys = discoverMovies.map { it.slug }.toSet()
                     val uniqueNewItems = items.filter { it.slug !in existingKeys }
                     discoverMovies.addAll(uniqueNewItems)
+                }
+
+                if (discoverMovies.isNotEmpty()) {
+                    SessionCacheManager.putDiscoverCatalog(cacheKey, discoverMovies.toList())
                 }
 
                 if (items.isEmpty() || items.size < 15) {
@@ -378,34 +398,53 @@ fun SearchScreen(
     }
 
     // ==================== TÌM KIẾM ĐA NGUỒN ====================
-    fun triggerSearch(keyword: String, saveToHistory: Boolean = false) {
+    fun triggerSearch(keyword: String, saveToHistory: Boolean = false, forceRefresh: Boolean = false) {
         searchJob?.cancel()
         ActiveSearchHolder.selectedPluginId = null
-        if (keyword.isBlank()) {
+        val cleanKeyword = keyword.trim()
+        if (cleanKeyword.isBlank()) {
             ActiveSearchHolder.searchResults.clear()
             ActiveSearchHolder.isSearching = false
             return
         }
 
+        if (!forceRefresh) {
+            val cached = SessionCacheManager.getSearchResult(cleanKeyword)
+            if (cached != null) {
+                ActiveSearchHolder.searchResults.clear()
+                ActiveSearchHolder.searchResults.addAll(cached)
+                ActiveSearchHolder.isSearching = false
+                if (saveToHistory) {
+                    searchHistoryManager.addQuery(cleanKeyword)
+                }
+                return
+            }
+        } else {
+            SessionCacheManager.removeSearchResult(cleanKeyword)
+        }
+
         searchJob = coroutineScope.launch {
             try {
-                delay(400) // debounce
+                if (!forceRefresh) {
+                    delay(400) // debounce
+                }
                 ActiveSearchHolder.searchResults.clear()
                 ActiveSearchHolder.isSearching = true
                 pluginManager.searchAll(
-                    keyword,
+                    cleanKeyword,
                     includeAdult = isAdultEnabled,
                     includeComic = isComicEnabled,
                     includeNovel = isNovelEnabled,
                     includeLive = isLiveEnabled
                 ).collect { items ->
                     ActiveSearchHolder.searchResults.addAll(items)
-                    if (saveToHistory && keyword.isNotBlank()) {
-                        searchHistoryManager.addQuery(keyword)
+                    if (saveToHistory && cleanKeyword.isNotBlank()) {
+                        searchHistoryManager.addQuery(cleanKeyword)
                     }
                 }
-                if (ActiveSearchHolder.searchResults.isNotEmpty() && keyword.isNotBlank()) {
-                    searchHistoryManager.addQuery(keyword)
+                if (ActiveSearchHolder.searchResults.isNotEmpty() && cleanKeyword.isNotBlank()) {
+                    searchHistoryManager.addQuery(cleanKeyword)
+                    SessionCacheManager.putSearchResult(cleanKeyword, ActiveSearchHolder.searchResults.toList())
                 }
             } finally {
                 ActiveSearchHolder.isSearching = false
@@ -525,7 +564,7 @@ fun SearchScreen(
                                 .padding(end = if (searchResults.isNotEmpty()) 8.dp else 0.dp)
                                 .size(36.dp)
                                 .clickable(enabled = !isSearching && query.isNotBlank()) {
-                                    triggerSearch(query, saveToHistory = true)
+                                    triggerSearch(query, saveToHistory = true, forceRefresh = true)
                                 }
                         ) {
                             Box(contentAlignment = Alignment.Center) {
@@ -661,7 +700,7 @@ fun SearchScreen(
                     }
                 } else {
                     Column(modifier = Modifier.fillMaxSize()) {
-                        // Tiêu đề phụ "Khám phá" bên trái + Dropdown chọn Addon nguồn bên phải (nếu có từ 2 Addon trở lên)
+                        // Tiêu đề phụ "Khám phá" bên trái + Nút Refresh xoay vòng và Dropdown chọn Addon nguồn bên phải
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -676,52 +715,78 @@ fun SearchScreen(
                                 color = MaterialTheme.colorScheme.onBackground
                             )
 
-                            if (stremioAddons.size > 1) {
-                                Box {
-                                    val addonCleanName = currentManifest?.name?.let {
-                                        StremioPluginWrapper.cleanCatalogTitle(it)
-                                    } ?: "Addon"
-
-                                    Surface(
-                                        onClick = { addonMenuExpanded = true },
-                                        shape = RoundedCornerShape(16.dp),
-                                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f))
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                                        ) {
-                                            Icon(
-                                                Icons.Default.CloudQueue,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(15.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text(
-                                                text = addonCleanName,
-                                                fontSize = 12.5.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.widthIn(max = 140.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(2.dp))
-                                            Icon(
-                                                imageVector = Icons.Default.ArrowDropDown,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(18.dp),
-                                                tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                // Nút reload / refresh xoay vòng cho màn hình Khám phá
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clickable(enabled = !isDiscoverLoading) {
+                                            fetchDiscover(reset = true, forceRefresh = true)
                                         }
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.Refresh,
+                                            contentDescription = stringResource(R.string.search_refresh),
+                                            tint = if (isDiscoverLoading) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier
+                                                .size(18.dp)
+                                                .rotate(rotationAngle)
+                                        )
                                     }
+                                }
 
-                                    DropdownMenu(
-                                        expanded = addonMenuExpanded,
-                                        onDismissRequest = { addonMenuExpanded = false }
-                                    ) {
+                                if (stremioAddons.size > 1) {
+                                    Box {
+                                        val addonCleanName = currentManifest?.name?.let {
+                                            StremioPluginWrapper.cleanCatalogTitle(it)
+                                        } ?: "Addon"
+
+                                        Surface(
+                                            onClick = { addonMenuExpanded = true },
+                                            shape = RoundedCornerShape(16.dp),
+                                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f))
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.CloudQueue,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(15.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(
+                                                    text = addonCleanName,
+                                                    fontSize = 12.5.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.widthIn(max = 140.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(2.dp))
+                                                Icon(
+                                                    imageVector = Icons.Default.ArrowDropDown,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(18.dp),
+                                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                                )
+                                            }
+                                        }
+
+                                        DropdownMenu(
+                                            expanded = addonMenuExpanded,
+                                            onDismissRequest = { addonMenuExpanded = false }
+                                        ) {
                                         stremioAddons.forEachIndexed { idx, pair ->
                                             val m = pair.second
                                             val cleanName = StremioPluginWrapper.cleanCatalogTitle(m.name)
@@ -749,6 +814,7 @@ fun SearchScreen(
                                 }
                             }
                         }
+                    }
 
                         // Lịch sử tìm kiếm (nếu có, hiển thị dạng chip nhỏ gọn)
                         if (searchHistory.isNotEmpty()) {

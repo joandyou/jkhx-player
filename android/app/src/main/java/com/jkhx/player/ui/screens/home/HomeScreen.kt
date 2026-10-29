@@ -59,6 +59,7 @@ import coil.request.ImageRequest
 import androidx.compose.ui.platform.LocalContext
 import com.jkhx.player.JkhxApplication
 import com.jkhx.player.core.database.entity.HistoryEntity
+import com.jkhx.player.core.cache.SessionCacheManager
 import com.jkhx.player.core.model.HomeSection
 import com.jkhx.player.core.model.MenuItem
 import com.jkhx.player.core.model.MovieItem
@@ -254,6 +255,28 @@ fun HomeScreen(
         }
         settingsManager.setLastSelectedProvider(targetId)
 
+        // KIỂM TRA SESSION CACHE:
+        // Nếu không yêu cầu làm mới (forceRefresh = false) và đã có trong SessionCacheManager:
+        // Hiển thị ngay lập tức (0ms) mà không gọi mạng hay chạy vòng xoay loading!
+        if (!forceRefresh) {
+            val cached = SessionCacheManager.getHomeFeed(targetId)
+            if (cached != null && cached.sections.isNotEmpty()) {
+                sections.clear()
+                sections.addAll(cached.sections)
+                quickCategories.clear()
+                quickCategories.addAll(cached.quickCategories)
+                menuItems.clear()
+                menuItems.addAll(cached.menuItems)
+                selectedMenuIndex = 0
+                expandedMenuIndex = null
+                isLoading = false
+                errorMessage = null
+                return
+            }
+        } else {
+            SessionCacheManager.removeHomeFeed(targetId)
+        }
+
         val currentName = enabledPlugins.find { it.manifest.id == targetId }?.manifest?.name ?: targetId
         isLoading = true
         errorMessage = null
@@ -317,6 +340,12 @@ fun HomeScreen(
                             if (sections.isNotEmpty()) {
                                 val remaining = if (firstSection.items.size > 8) firstSection.items.drop(8) else emptyList()
                                 sections[0] = firstSection.copy(items = enrichedHero + remaining)
+                                SessionCacheManager.putHomeFeed(
+                                    providerId = targetId,
+                                    sections = sections.toList(),
+                                    quickCategories = quickCategories.toList(),
+                                    menuItems = menuItems.toList()
+                                )
                             }
                         } catch (_: Exception) {}
                     }
@@ -345,6 +374,16 @@ fun HomeScreen(
                 }
                 selectedMenuIndex = 0
                 expandedMenuIndex = null
+
+                // Lưu vào SessionCacheManager để tái sử dụng tức thì trong phiên
+                if (sections.isNotEmpty()) {
+                    SessionCacheManager.putHomeFeed(
+                        providerId = targetId,
+                        sections = sections.toList(),
+                        quickCategories = quickCategories.toList(),
+                        menuItems = menuItems.toList()
+                    )
+                }
 
                 if (forceRefresh) {
                     android.widget.Toast.makeText(

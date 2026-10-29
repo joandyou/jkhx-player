@@ -43,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.jkhx.player.core.cache.SessionCacheManager
 import com.jkhx.player.ActivePlayerSession
 import com.jkhx.player.JkhxApplication
 import com.jkhx.player.R
@@ -147,7 +148,24 @@ fun StreamSelectionScreen(
         }
     }
 
-    LaunchedEffect(refreshKey, providerId, movieDetail.slug, episode.id) {
+    val streamCacheKey = remember(providerId, movieDetail.slug, episode.id) {
+        "$providerId:${movieDetail.slug}:${episode.id}"
+    }
+
+    LaunchedEffect(refreshKey, streamCacheKey) {
+        val isForceRefresh = refreshKey > 0
+        if (!isForceRefresh) {
+            val cached = SessionCacheManager.getStreams(streamCacheKey)
+            if (!cached.isNullOrEmpty()) {
+                allStreams = cached
+                ActivePlayerSession.aggregatedStreams = cached
+                isLoading = false
+                return@LaunchedEffect
+            }
+        } else {
+            SessionCacheManager.removeStreams(streamCacheKey)
+        }
+
         isLoading = true
         allStreams = emptyList()
         try {
@@ -158,6 +176,7 @@ fun StreamSelectionScreen(
                 .collect { list ->
                     allStreams = list
                     ActivePlayerSession.aggregatedStreams = list
+                    SessionCacheManager.putStreams(streamCacheKey, list)
                 }
         } finally {
             isLoading = false
