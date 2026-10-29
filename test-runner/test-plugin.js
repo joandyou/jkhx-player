@@ -62,8 +62,18 @@ export async function testPlugin(pluginDir) {
     manifest = { id: path.basename(pluginDir), name: path.basename(pluginDir), version: "1.0.0" };
   }
 
+  const activeDomain = (manifest.customDomain && manifest.customDomain.trim()) 
+    || (manifest.defaultDomain && manifest.defaultDomain.trim()) 
+    || '';
+  globalThis.CUSTOM_DOMAIN = activeDomain;
+  globalThis.BASE_URL = activeDomain;
+  globalThis.DEFAULT_DOMAIN = manifest.defaultDomain || '';
+  globalThis.currentPluginId = manifest.id;
+  globalThis.context.manifest = manifest;
+
   console.log(`\n========================================`);
   console.log(`🧪 TESTING PLUGIN: [${manifest.id}] - ${manifest.name} (v${manifest.version})`);
+  console.log(`🌐 ACTIVE DOMAIN: ${activeDomain || 'N/A'}`);
   console.log(`========================================`);
 
   const moduleUrl = 'file://' + path.resolve(pluginPath);

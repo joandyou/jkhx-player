@@ -648,7 +648,7 @@ fun PlayerScreen(
     var audioTracks by remember { mutableStateOf<List<AudioTrackOption>>(emptyList()) }
     var subtitleTracks by remember { mutableStateOf<List<SubtitleTrackOption>>(emptyList()) }
     var selectedVideoTrackId by remember { mutableStateOf<String?>("auto") }
-    var selectedAudioTrackId by remember { mutableStateOf<String?>("auto") }
+    var selectedAudioTrackId by remember { mutableStateOf<String?>(null) }
     var selectedSubtitleTrackId by remember { mutableStateOf<String?>("off") }
     var showAudioSheet by remember { mutableStateOf(false) }
 
@@ -4311,7 +4311,7 @@ fun PlayerScreen(
 
                                         // 3.2.1. Âm thanh (Audio Tracks - Nuvio Style)
                                         val hasMultiAudio = audioTracks.size > 1
-                                        val isCustomAudio = selectedAudioTrackId != "auto"
+                                        val isCustomAudio = selectedAudioTrackId != null
                                         val isAudioActive = hasMultiAudio || isCustomAudio
                                         Box(
                                             modifier = Modifier
@@ -4599,22 +4599,11 @@ fun PlayerScreen(
                                         letterSpacing = 1.sp
                                     )
                                     Spacer(modifier = Modifier.height(8.dp))
-
-                                    SettingsOptionCard(
-                                        title = stringResource(R.string.player_audio_auto),
-                                        subtitle = stringResource(R.string.player_audio_auto_desc),
-                                        isSelected = selectedAudioTrackId == "auto",
-                                        onClick = {
-                                            selectedAudioTrackId = "auto"
-                                            exoPlayerManager.setAudioTrack(null)
-                                            Toast.makeText(context, context.getString(R.string.player_audio_selected_toast, context.getString(R.string.player_audio_auto)), Toast.LENGTH_SHORT).show()
-                                        }
-                                    )
                                 }
 
                                 items(audioTracks) { track ->
                                     val specs = exoPlayerManager.formatAudioSpecs(track)
-                                    val isSelected = if (selectedAudioTrackId == "auto") track.isSelected else selectedAudioTrackId == track.id
+                                    val isSelected = if (selectedAudioTrackId != null) selectedAudioTrackId == track.id else track.isSelected
                                     SettingsOptionCard(
                                         title = track.label,
                                         subtitle = specs.ifBlank { null },
@@ -4622,6 +4611,7 @@ fun PlayerScreen(
                                         onClick = {
                                             selectedAudioTrackId = track.id
                                             exoPlayerManager.setAudioTrack(track)
+                                            audioTracks = exoPlayerManager.getAudioTracks()
                                             Toast.makeText(context, context.getString(R.string.player_audio_selected_toast, track.label), Toast.LENGTH_SHORT).show()
                                         }
                                     )
@@ -6260,66 +6250,9 @@ fun PlayerScreen(
                                     .fillMaxWidth(),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                // 1. Tự động / Mặc định
-                                item {
-                                    val isAutoSelected = selectedAudioTrackId == "auto"
-                                    Surface(
-                                        onClick = {
-                                            selectedAudioTrackId = "auto"
-                                            exoPlayerManager.setAudioTrack(null)
-                                            showAudioSheet = false
-                                            Toast.makeText(
-                                                context,
-                                                context.getString(R.string.player_audio_selected_toast, context.getString(R.string.player_audio_auto)),
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        },
-                                        shape = RoundedCornerShape(10.dp),
-                                        color = if (isAutoSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else Color(0xFF1E222B),
-                                        border = BorderStroke(
-                                            width = 1.dp,
-                                            color = if (isAutoSelected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.08f)
-                                        ),
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .tvFocusableItem(cornerRadius = 10.dp, focusedScale = 1.03f)
-                                    ) {
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(horizontal = 14.dp, vertical = 12.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(
-                                                    text = stringResource(R.string.player_audio_auto),
-                                                    color = if (isAutoSelected) MaterialTheme.colorScheme.primary else Color.White,
-                                                    fontWeight = if (isAutoSelected) FontWeight.Bold else FontWeight.Medium,
-                                                    fontSize = 14.5.sp
-                                                )
-                                                Spacer(modifier = Modifier.height(2.dp))
-                                                Text(
-                                                    text = stringResource(R.string.player_audio_auto_desc),
-                                                    color = Color.White.copy(alpha = 0.55f),
-                                                    fontSize = 12.sp
-                                                )
-                                            }
-                                            if (isAutoSelected) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Check,
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.size(20.dp)
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // 2. Các luồng âm thanh chi tiết
+                                // Danh sách các luồng âm thanh chi tiết
                                 items(audioTracks) { track ->
-                                    val isTrackSelected = if (selectedAudioTrackId == "auto") track.isSelected else selectedAudioTrackId == track.id
+                                    val isTrackSelected = if (selectedAudioTrackId != null) selectedAudioTrackId == track.id else track.isSelected
                                     val specs = exoPlayerManager.formatAudioSpecs(track)
                                     val isDubbed = (track.roleFlags and androidx.media3.common.C.ROLE_FLAG_DUB) != 0
                                     val isOriginal = (track.roleFlags and androidx.media3.common.C.ROLE_FLAG_MAIN) != 0
@@ -6328,6 +6261,7 @@ fun PlayerScreen(
                                         onClick = {
                                             selectedAudioTrackId = track.id
                                             exoPlayerManager.setAudioTrack(track)
+                                            audioTracks = exoPlayerManager.getAudioTracks()
                                             showAudioSheet = false
                                             Toast.makeText(
                                                 context,

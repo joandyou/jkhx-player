@@ -210,6 +210,7 @@ class QuickJsRuntime(
         val polyfillScript = """
             globalThis.__jkhx_plugins = {};
             globalThis.__jkhx_plugin_domains = {};
+            globalThis.__jkhx_plugin_manifests = {};
             globalThis.currentPluginId = "unknown";
 
             Object.defineProperty(globalThis, 'CUSTOM_DOMAIN', {
@@ -226,6 +227,16 @@ class QuickJsRuntime(
                             delete globalThis.__jkhx_plugin_domains[globalThis.currentPluginId];
                         }
                     }
+                },
+                configurable: true,
+                enumerable: true
+            });
+
+            Object.defineProperty(globalThis, 'DEFAULT_DOMAIN', {
+                get: function() {
+                    return (globalThis.__jkhx_plugin_manifests && globalThis.currentPluginId && globalThis.__jkhx_plugin_manifests[globalThis.currentPluginId])
+                        ? (globalThis.__jkhx_plugin_manifests[globalThis.currentPluginId].defaultDomain || undefined)
+                        : undefined;
                 },
                 configurable: true,
                 enumerable: true
@@ -310,6 +321,16 @@ class QuickJsRuntime(
                     }
                 }
             };
+
+            Object.defineProperty(globalThis.context, 'manifest', {
+                get: function() {
+                    return (globalThis.__jkhx_plugin_manifests && globalThis.currentPluginId)
+                        ? (globalThis.__jkhx_plugin_manifests[globalThis.currentPluginId] || null)
+                        : null;
+                },
+                configurable: true,
+                enumerable: true
+            });
 
             if (typeof globalThis.btoa === 'undefined') {
                 const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
@@ -443,11 +464,23 @@ class QuickJsRuntime(
     ): LoadedPlugin = withContext(Dispatchers.Default) {
         val pluginId = manifest.id
 
-        val domainSetupCode = if (!manifest.customDomain.isNullOrBlank()) {
-            """globalThis.__jkhx_plugin_domains["$pluginId"] = "${manifest.customDomain}";"""
-        } else {
-            """delete globalThis.__jkhx_plugin_domains["$pluginId"];"""
-        }
+        val activeDomain = manifest.customDomain?.takeIf { it.isNotBlank() }
+            ?: manifest.defaultDomain?.takeIf { it.isNotBlank() }
+        val domainVal = if (!activeDomain.isNullOrBlank()) "\"$activeDomain\"" else "undefined"
+        val defDomainVal = if (!manifest.defaultDomain.isNullOrBlank()) "\"${manifest.defaultDomain}\"" else "null"
+        val custDomainVal = if (!manifest.customDomain.isNullOrBlank()) "\"${manifest.customDomain}\"" else "null"
+
+        val domainSetupCode = """
+            globalThis.__jkhx_plugin_domains["$pluginId"] = $domainVal;
+            if (!globalThis.__jkhx_plugin_manifests) globalThis.__jkhx_plugin_manifests = {};
+            globalThis.__jkhx_plugin_manifests["$pluginId"] = {
+                id: "$pluginId",
+                name: "${manifest.name.replace("\"", "\\\"")}",
+                version: "${manifest.version}",
+                defaultDomain: $defDomainVal,
+                customDomain: $custDomainVal
+            };
+        """.trimIndent()
 
         val transformedScript = scriptContent
             .replaceFirst(Regex("""export\s+default\s+"""), "globalThis.__jkhx_plugins[\"$pluginId\"] = ")
@@ -523,11 +556,23 @@ class LoadedPluginImpl(
         timeoutMs: Long = 15000L,
         deserializer: (String) -> T
     ): T = withContext(Dispatchers.Default) {
-        val domainSetupCode = if (!manifest.customDomain.isNullOrBlank()) {
-            """globalThis.__jkhx_plugin_domains["${manifest.id}"] = "${manifest.customDomain}";"""
-        } else {
-            """delete globalThis.__jkhx_plugin_domains["${manifest.id}"];"""
-        }
+        val activeDomain = manifest.customDomain?.takeIf { it.isNotBlank() }
+            ?: manifest.defaultDomain?.takeIf { it.isNotBlank() }
+        val domainVal = if (!activeDomain.isNullOrBlank()) "\"$activeDomain\"" else "undefined"
+        val defDomainVal = if (!manifest.defaultDomain.isNullOrBlank()) "\"${manifest.defaultDomain}\"" else "null"
+        val custDomainVal = if (!manifest.customDomain.isNullOrBlank()) "\"${manifest.customDomain}\"" else "null"
+
+        val domainSetupCode = """
+            globalThis.__jkhx_plugin_domains["${manifest.id}"] = $domainVal;
+            if (!globalThis.__jkhx_plugin_manifests) globalThis.__jkhx_plugin_manifests = {};
+            globalThis.__jkhx_plugin_manifests["${manifest.id}"] = {
+                id: "${manifest.id}",
+                name: "${manifest.name.replace("\"", "\\\"")}",
+                version: "${manifest.version}",
+                defaultDomain: $defDomainVal,
+                customDomain: $custDomainVal
+            };
+        """.trimIndent()
 
         runtimeMutex.withLock {
             bridge.nativeSetTimeout(rtPtr, timeoutMs)
@@ -761,6 +806,9 @@ class LoadedPluginImpl(
                     delete globalThis.__jkhx_plugins["${manifest.id}"];
                     if (globalThis.__jkhx_plugin_domains) {
                         delete globalThis.__jkhx_plugin_domains["${manifest.id}"];
+                    }
+                    if (globalThis.__jkhx_plugin_manifests) {
+                        delete globalThis.__jkhx_plugin_manifests["${manifest.id}"];
                     }
                     """.trimIndent(),
                     "cleanup.js"

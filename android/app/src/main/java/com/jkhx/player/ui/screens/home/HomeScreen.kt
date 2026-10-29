@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.ui.res.painterResource
 import com.jkhx.player.R
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
@@ -26,6 +27,7 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -1064,15 +1066,17 @@ fun HeroBannerSection(
     val isTablet = displayMode == DeviceDisplayMode.TABLET
     val currentMovie = movies.getOrNull(pagerState.currentPage) ?: movies.firstOrNull()
 
+    val coroutineScope = rememberCoroutineScope()
     val isDragged by pagerState.interactionSource.collectIsDraggedAsState()
     var isUserInteracting by remember { mutableStateOf(false) }
+    var isHeroFocused by remember { mutableStateOf(false) }
 
-    // Tự động slide mỗi 5 giây, tạm dừng khi người dùng chạm/giữ hoặc cuộn
-    LaunchedEffect(movies.size, isDragged, isUserInteracting) {
-        if (movies.size > 1 && !isDragged && !isUserInteracting) {
+    // Tự động slide mỗi 5 giây, tạm dừng khi người dùng chạm/giữ, cuộn hoặc đang duyệt bằng Remote TV
+    LaunchedEffect(movies.size, isDragged, isUserInteracting, isHeroFocused) {
+        if (movies.size > 1 && !isDragged && !isUserInteracting && !isHeroFocused) {
             while (true) {
                 delay(5000L)
-                if (!pagerState.isScrollInProgress && !isDragged && !isUserInteracting) {
+                if (!pagerState.isScrollInProgress && !isDragged && !isUserInteracting && !isHeroFocused) {
                     val nextPage = (pagerState.currentPage + 1) % movies.size
                     pagerState.animateScrollToPage(nextPage)
                 }
@@ -1167,11 +1171,17 @@ fun HeroBannerSection(
         ) {
             HorizontalPager(
                 state = pagerState,
+                key = { page -> movies.getOrNull(page)?.let { "${it.providerId ?: ""}_${it.slug}" } ?: page },
+                beyondViewportPageCount = 2,
                 contentPadding = PaddingValues(horizontal = if (isTablet) 140.dp else 76.dp),
                 pageSpacing = 16.dp,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(if (isTablet) 420.dp else 340.dp)
+                    .focusGroup()
+                    .onFocusChanged { state ->
+                        isHeroFocused = state.hasFocus || state.isFocused
+                    }
             ) { page ->
                 val movie = movies[page]
                 Box(
@@ -1194,7 +1204,17 @@ fun HeroBannerSection(
                                 ),
                                 shape = ShapeTokens.BannerCard
                             )
-                            .tvFocusableItem(cornerRadius = 16.dp, focusedScale = 1.03f)
+                            .onFocusChanged { state ->
+                                if (state.isFocused) {
+                                    isHeroFocused = true
+                                    if (pagerState.currentPage != page) {
+                                        coroutineScope.launch {
+                                            pagerState.animateScrollToPage(page)
+                                        }
+                                    }
+                                }
+                            }
+                            .tvFocusableItem(cornerRadius = 16.dp, focusedScale = 1.05f)
                             .clickable { onMovieClick(movie) }
                     ) {
                         val heroContext = LocalContext.current
