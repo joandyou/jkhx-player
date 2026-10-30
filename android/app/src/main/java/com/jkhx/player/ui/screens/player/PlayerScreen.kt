@@ -663,22 +663,10 @@ fun PlayerScreen(
                         }
                     } else {
                         // --- TẦNG 3: KHÔNG CÓ CẢ IMDB VÀ TMDB ID -> DÙNG REGEX LỌC TÊN VÀ TÌM KIẾM TRÊN TMDB ---
-                        fun cleanForSearch(raw: String): String {
-                            return raw
-                                .replace(Regex("""\s*[\(\[\{].*?[\)\]\}]"""), " ")
-                                .replace(Regex("""[._\s]+(\d{4}|\d{3,4}p|REPACK|UHD|Blu-?ray|Remux|WEB-?DL|WEBRip|HDR\d*|DV|HEVC|x264|x265|TrueHD|Atmos|3D|2D|IMAX|Vietsub|Thuyết\s*Minh|Lồng\s*Tiếng|Cam|HD|FHD).*""", RegexOption.IGNORE_CASE), "")
-                                .replace(Regex("""\b(3D|2D|IMAX|4K|UHD|FHD|HD|Vietsub|Thuyết Minh|Lồng Tiếng)\b""", RegexOption.IGNORE_CASE), "")
-                                .replace('.', ' ')
-                                .trim()
-                        }
-
                         val rawOrigin = ActivePlayerSession.originName?.ifBlank { null }
                             ?: ActivePlayerSession.rawPluginOriginName?.ifBlank { null }
-                        val searchTitle = cleanForSearch(rawOrigin ?: movieName)
+                        val searchTitle = cleanTitleForSubtitleSearch(rawOrigin ?: movieName)
                         if (searchTitle.isNotBlank()) {
-                            // withContext(Dispatchers.Main) {
-                            //     Toast.makeText(context, context.getString(R.string.player_subtitles_searching_title, searchTitle), Toast.LENGTH_SHORT).show()
-                            // }
                             try {
                                 val foundId = kotlinx.coroutines.withTimeoutOrNull(3500L) {
                                     tmdbRepo.searchTmdbId(searchTitle, mediaType)?.toString()
@@ -694,7 +682,7 @@ fun PlayerScreen(
 
                         // Nếu tìm bằng originName thất bại hoặc chưa có, thử tìm bằng movieName
                         if (tmdbId.isNullOrBlank() && movieName.isNotBlank() && movieName != rawOrigin) {
-                            val cleanMovie = cleanForSearch(movieName)
+                            val cleanMovie = cleanTitleForSubtitleSearch(movieName)
                             if (cleanMovie.isNotBlank() && cleanMovie != searchTitle) {
                                 try {
                                     val foundId = kotlinx.coroutines.withTimeoutOrNull(3000L) {
@@ -735,22 +723,8 @@ fun PlayerScreen(
                         ActivePlayerSession.imdbId = imdbId
                     }
 
-                    val epMatchFromId = Regex(""":(\d+):(\d+)$""").find(currentEpisode.id)
-                    val epMatchFromName = Regex("""S(\d+)\s*[•\-:]?\s*E(\d+)""", RegexOption.IGNORE_CASE).find(currentEpisode.name)
-                    val seasonNum = epMatchFromId?.groupValues?.getOrNull(1)?.toIntOrNull()
-                        ?: epMatchFromName?.groupValues?.getOrNull(1)?.toIntOrNull()
-                        ?: 1
-                    val epNum = epMatchFromId?.groupValues?.getOrNull(2)?.toIntOrNull()
-                        ?: epMatchFromName?.groupValues?.getOrNull(2)?.toIntOrNull()
-                        ?: currentEpisode.number
-                        ?: Regex("""(\d+)""").find(currentEpisode.name)?.groupValues?.getOrNull(1)?.toIntOrNull()
-                        ?: 1
-
-                    val videoId = when {
-                        !imdbId.isNullOrBlank() -> if (isSeries) "$imdbId:$seasonNum:$epNum" else imdbId
-                        currentEpisode.id.isNotBlank() && !currentEpisode.id.startsWith("http", ignoreCase = true) -> currentEpisode.id
-                        else -> null
-                    }
+                    val videoId = buildStremioVideoId(imdbId, tmdbId, isSeries, currentEpisode.id, currentEpisode.name, currentEpisode.number)
+                        ?: if (currentEpisode.id.isNotBlank() && !currentEpisode.id.startsWith("http", ignoreCase = true)) currentEpisode.id else null
 
                     if (videoId.isNullOrBlank()) {
                         println("[PlayerScreen] Stremio subtitles: No videoId available to fetch subtitles")
@@ -2034,6 +2008,15 @@ fun PlayerScreen(
                             val matchedStreamSub = stream.subtitles.firstOrNull { it.url == savedTrackId || it.label == savedTrackId }
                             if (matchedStreamSub != null) {
                                 selectedSubtitleTrackId = matchedStreamSub.url
+                                val cues = subtitleCuesMap[matchedStreamSub.url] ?: subtitleCuesMap[matchedStreamSub.label]
+                                if (cues != null && cues.isNotEmpty()) {
+                                    currentSubCues = cues
+                                    exoPlayerManager.player.trackSelectionParameters = exoPlayerManager.player.trackSelectionParameters
+                                        .buildUpon()
+                                        .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, true)
+                                        .build()
+                                }
+                                currentSubOffsetMs = subtitleManager.cacheManager.getSubtitleOffset(activeProviderId, activeMovieSlug, currentEpisode.id, matchedStreamSub.url, movieTmdbId)
                                 subRestored = true
                             } else {
                                 val containerSubs = exoPlayerManager.getSubtitleTracks()
@@ -2063,8 +2046,8 @@ fun PlayerScreen(
                     if (!subRestored && !isSubtitleDisabled) {
                         // Kiểm tra xem đã có bản dịch Gemini AI lưu cache cho tập phim này chưa
                         val hasCachedGemini = checkAndLoadCachedGeminiSub()
-                        val hasViSub = stream.subtitles.any { it.language.equals("vi", true) || it.label.contains("việt", true) || it.label.contains("viet", true) }
-                        if (hasCachedGemini && !hasViSub) {
+                        val viSub = stream.subtitles.firstOrNull { it.language.equals("vi", true) || it.label.contains("việt", true) || it.label.contains("viet", true) }
+                        if (hasCachedGemini && viSub == null) {
                             val geminiTrack = customSubtitleTracks.firstOrNull { it.id.startsWith("cached_gemini_") }
                             if (geminiTrack != null) {
                                 val cues = subtitleCuesMap[geminiTrack.id] ?: emptyList()
@@ -2079,6 +2062,19 @@ fun PlayerScreen(
                                     .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, true)
                                     .build()
                             }
+                        } else if (viSub != null) {
+                            // Tự động ưu tiên phụ đề tiếng Việt từ luồng phát (như VSMov)
+                            selectedSubtitleTrackId = viSub.url
+                            val cues = subtitleCuesMap[viSub.url] ?: subtitleCuesMap[viSub.label]
+                            if (cues != null && cues.isNotEmpty()) {
+                                currentSubCues = cues
+                                exoPlayerManager.player.trackSelectionParameters = exoPlayerManager.player.trackSelectionParameters
+                                    .buildUpon()
+                                    .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, true)
+                                    .build()
+                            }
+                            currentSubOffsetMs = subtitleManager.cacheManager.getSubtitleOffset(activeProviderId, activeMovieSlug, currentEpisode.id, viSub.url, movieTmdbId)
+                            subRestored = true
                         }
                     }
                 }
@@ -2768,8 +2764,59 @@ fun PlayerScreen(
                 selectedSubtitleTrackId = opt.id
                 activeOnlineSubId = null
                 ttsManager.stopAudio()
-                currentSubCues = emptyList()
-                exoPlayerManager.setSubtitleTrack(opt)
+                val cues = subtitleCuesMap[opt.id] ?: subtitleCuesMap[opt.label]
+                if (!cues.isNullOrEmpty()) {
+                    currentSubCues = cues
+                    val savedOffset = subtitleManager.cacheManager.getSubtitleOffset(
+                        activeProviderId, activeMovieSlug, currentEpisode.id, opt.id, movieTmdbId
+                    ).takeIf { it != 0L } ?: subtitleManager.cacheManager.getSubtitleOffset(
+                        activeProviderId, activeMovieSlug, currentEpisode.id, opt.label, movieTmdbId
+                    )
+                    currentSubOffsetMs = savedOffset
+                    subtitleManager.cacheManager.saveSavedSubtitleTrack(activeProviderId, activeMovieSlug, currentEpisode.id, opt.id, tmdbId = movieTmdbId)
+                    exoPlayerManager.player.trackSelectionParameters = exoPlayerManager.player.trackSelectionParameters
+                        .buildUpon()
+                        .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, true)
+                        .build()
+                } else {
+                    currentSubCues = emptyList()
+                    exoPlayerManager.setSubtitleTrack(opt)
+                    resolvedStream?.let { stream ->
+                        val matchedSub = stream.subtitles.firstOrNull { it.url == opt.id || it.label == opt.label }
+                        if (matchedSub != null) {
+                            coroutineScope.launch(Dispatchers.IO) {
+                                try {
+                                    val client = JkhxApplication.instance.okHttpClient
+                                    val reqBuilder = okhttp3.Request.Builder().url(matchedSub.url)
+                                    stream.headers.forEach { (k, v) -> reqBuilder.header(k, v) }
+                                    if (!stream.headers.containsKey("User-Agent")) {
+                                        reqBuilder.header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                                    }
+                                    val response = client.newCall(reqBuilder.build()).execute()
+                                    if (response.isSuccessful) {
+                                        val bodyStr = response.body?.string()
+                                        if (!bodyStr.isNullOrBlank()) {
+                                            val parsed = com.jkhx.player.core.player.subtitle.parser.SrtParser.parse(bodyStr)
+                                            if (parsed.isNotEmpty()) {
+                                                withContext(Dispatchers.Main) {
+                                                    subtitleCuesMap[matchedSub.url] = parsed
+                                                    subtitleCuesMap[matchedSub.label] = parsed
+                                                    if (selectedSubtitleTrackId == opt.id) {
+                                                        currentSubCues = parsed
+                                                        exoPlayerManager.player.trackSelectionParameters = exoPlayerManager.player.trackSelectionParameters
+                                                            .buildUpon()
+                                                            .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, true)
+                                                            .build()
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                } catch (_: Exception) {}
+                            }
+                        }
+                    }
+                }
             },
             downloadingSubItemId = downloadingSubItemId,
             translatedEnglishSubIds = translatedEnglishSubIds,
@@ -2796,58 +2843,13 @@ fun PlayerScreen(
                     isAiSyncing = true
                     try {
                         val pos = exoPlayerManager.player.currentPosition
-                        val currentEffective = pos - currentSubOffsetMs
-                        val sortedCues = currentSubCues.sortedBy { kotlin.math.abs(it.startTimeMs - currentEffective) }.take(6)
-
-                        var calculatedOffset: Long? = null
                         val apiKey = ttsApiKey.trim()
+                        val calculatedOffset = withContext(Dispatchers.IO) {
+                            performAiSubtitleSync(pos, currentSubCues, currentSubOffsetMs, apiKey)
+                        } ?: 0L
 
-                        if (apiKey.isNotBlank()) {
-                            withContext(Dispatchers.IO) {
-                                try {
-                                    val cueContext = sortedCues.joinToString("\n") { "[${it.startTimeMs}ms - ${it.endTimeMs}ms]: ${it.text.replace("\n", " ")}" }
-                                    val promptText = "You are an expert subtitle timecode synchronizer. A video is currently at playback time " + pos + " ms. Surrounding subtitles:\n" + cueContext + "\nDetermine the exact offset adjustment (current_position - subtitle_start_time) for the subtitle matching " + pos + " ms, and respond ONLY with: OFFSET:<integer_in_ms> (e.g. OFFSET:1200 or OFFSET:-450)"
-                                    val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + apiKey
-                                    val reqJson = org.json.JSONObject().apply {
-                                        put("contents", org.json.JSONArray().put(org.json.JSONObject().apply {
-                                            put("parts", org.json.JSONArray().put(org.json.JSONObject().apply {
-                                                put("text", promptText)
-                                            }))
-                                        }))
-                                    }
-                                    val conn = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
-                                        requestMethod = "POST"
-                                        setRequestProperty("Content-Type", "application/json")
-                                        connectTimeout = 4000
-                                        readTimeout = 4000
-                                        doOutput = true
-                                    }
-                                    conn.outputStream.use { it.write(reqJson.toString().toByteArray()) }
-                                    if (conn.responseCode in 200..299) {
-                                        val resp = conn.inputStream.bufferedReader().use { it.readText() }
-                                        val jsonResp = org.json.JSONObject(resp)
-                                        val text = jsonResp.optJSONArray("candidates")?.optJSONObject(0)
-                                            ?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text") ?: ""
-                                        val match = Regex("OFFSET:\\s*([+-]?\\d+)").find(text)
-                                        if (match != null) {
-                                            calculatedOffset = match.groupValues[1].toLongOrNull()
-                                        }
-                                    }
-                                } catch (e: Exception) {
-                                    println("[AI Sub Sync] Gemini API fallback: ${e.message}")
-                                }
-                            }
-                        }
-
-                        val finalOffset = calculatedOffset ?: run {
-                            val nearestCue = sortedCues.firstOrNull() ?: currentSubCues.minByOrNull { kotlin.math.abs(it.startTimeMs - currentEffective) }
-                            if (nearestCue != null) {
-                                pos - nearestCue.startTimeMs
-                            } else 0L
-                        }
-
-                        updateSubOffset(finalOffset)
-                        val offsetStr = "${if (finalOffset >= 0) "+" else ""}${String.format(java.util.Locale.US, "%.3f", finalOffset / 1000f)}s"
+                        updateSubOffset(calculatedOffset)
+                        val offsetStr = "${if (calculatedOffset >= 0) "+" else ""}${String.format(java.util.Locale.US, "%.3f", calculatedOffset / 1000f)}s"
                         Toast.makeText(
                             context,
                             context.getString(R.string.player_subtitles_ai_sync_success, offsetStr),

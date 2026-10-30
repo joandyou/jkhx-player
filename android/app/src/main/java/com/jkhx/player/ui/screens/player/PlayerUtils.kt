@@ -9,6 +9,11 @@ import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.SubtitleView
 import com.jkhx.player.core.model.EpisodeServer
 import com.jkhx.player.core.player.SubtitleTrackOption
+import com.jkhx.player.core.player.subtitle.model.SubtitleCue
+import org.json.JSONArray
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 
 data class AvailablePluginSource(
     val pluginId: String,
@@ -296,4 +301,90 @@ internal fun mergeSubtitleTracks(
 }
 
 enum class HudIndicatorType { NONE, VOLUME, BRIGHTNESS, SEEK_FORWARD, SEEK_REWIND, SEEK_GESTURE }
+
+internal fun cleanTitleForSubtitleSearch(raw: String): String {
+    return raw
+        .replace(Regex("""\s*[\(\[\{].*?[\)\]\}]"""), " ")
+        .replace(Regex("""[._\s]+(\d{4}|\d{3,4}p|REPACK|UHD|Blu-?ray|Remux|WEB-?DL|WEBRip|HDR\d*|DV|HEVC|x264|x265|TrueHD|Atmos|3D|2D|IMAX|Vietsub|Thuyết\s*Minh|Lồng\s*Tiếng|Cam|HD|FHD).*""", RegexOption.IGNORE_CASE), "")
+        .replace(Regex("""\b(3D|2D|IMAX|4K|UHD|FHD|HD|Vietsub|Thuyết Minh|Lồng Tiếng)\b""", RegexOption.IGNORE_CASE), "")
+        .replace('.', ' ')
+        .trim()
+}
+
+internal fun buildStremioVideoId(
+    imdbId: String?,
+    tmdbId: String?,
+    isSeries: Boolean,
+    episodeId: String,
+    episodeName: String,
+    episodeNumber: Int?
+): String? {
+    val epMatchFromId = Regex(""":(\d+):(\d+)$""").find(episodeId)
+    val epMatchFromName = Regex("""S(\d+)\s*[•\-:]?\s*E(\d+)""", RegexOption.IGNORE_CASE).find(episodeName)
+    val seasonNum = epMatchFromId?.groupValues?.getOrNull(1)?.toIntOrNull()
+        ?: epMatchFromName?.groupValues?.getOrNull(1)?.toIntOrNull()
+        ?: 1
+    val epNum = epMatchFromId?.groupValues?.getOrNull(2)?.toIntOrNull()
+        ?: epMatchFromName?.groupValues?.getOrNull(2)?.toIntOrNull()
+        ?: episodeNumber
+        ?: Regex("""(\d+)""").find(episodeName)?.groupValues?.getOrNull(1)?.toIntOrNull()
+        ?: 1
+
+    return when {
+        !imdbId.isNullOrBlank() -> if (isSeries) "$imdbId:$seasonNum:$epNum" else imdbId
+        !tmdbId.isNullOrBlank() -> if (isSeries) "tmdb:$tmdbId:$seasonNum:$epNum" else "tmdb:$tmdbId"
+        else -> null
+    }
+}
+
+internal fun performAiSubtitleSync(
+    pos: Long,
+    cues: List<SubtitleCue>,
+    currentSubOffsetMs: Long,
+    apiKey: String
+): Long? {
+    val currentEffective = pos - currentSubOffsetMs
+    val sortedCues = cues.sortedBy { kotlin.math.abs(it.startTimeMs - currentEffective) }.take(6)
+    var calculatedOffset: Long? = null
+
+    if (apiKey.isNotBlank()) {
+        try {
+            val cueContext = sortedCues.joinToString("\n") { "[${it.startTimeMs}ms - ${it.endTimeMs}ms]: ${it.text.replace("\n", " ")}" }
+            val promptText = "You are an expert subtitle timecode synchronizer. A video is currently at playback time " + pos + " ms. Surrounding subtitles:\n" + cueContext + "\nDetermine the exact offset adjustment (current_position - subtitle_start_time) for the subtitle matching " + pos + " ms, and respond ONLY with: OFFSET:<integer_in_ms> (e.g. OFFSET:1200 or OFFSET:-450)"
+            val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + apiKey
+            val reqJson = JSONObject().apply {
+                put("contents", JSONArray().put(JSONObject().apply {
+                    put("parts", JSONArray().put(JSONObject().apply {
+                        put("text", promptText)
+                    }))
+                }))
+            }
+            val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                setRequestProperty("Content-Type", "application/json")
+                connectTimeout = 4000
+                readTimeout = 4000
+                doOutput = true
+            }
+            conn.outputStream.use { it.write(reqJson.toString().toByteArray()) }
+            if (conn.responseCode in 200..299) {
+                val resp = conn.inputStream.bufferedReader().use { it.readText() }
+                val match = Regex("""OFFSET:\s*([+-]?\d+)""").find(resp)
+                if (match != null) {
+                    calculatedOffset = match.groupValues[1].toLongOrNull()
+                }
+            }
+        } catch (e: Exception) {
+            println("[AI Sub Sync] Gemini API fallback: ${e.message}")
+        }
+    }
+
+    if (calculatedOffset == null) {
+        val nearestCue = sortedCues.firstOrNull() ?: cues.minByOrNull { kotlin.math.abs(it.startTimeMs - currentEffective) }
+        if (nearestCue != null) {
+            calculatedOffset = pos - nearestCue.startTimeMs
+        }
+    }
+    return calculatedOffset
+}
 

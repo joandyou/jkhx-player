@@ -1,6 +1,12 @@
 package com.jkhx.player.ui.screens.player.overlays
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
@@ -39,12 +45,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -119,8 +127,20 @@ fun BoxScope.PlayerHudOverlays(
                     )
             )
         }
-    } else if (!isWebViewMode && errorMessage == null && isPlaybackStartedEffective && (isLoading || isPlayerBuffering)) {
-        // Buffer mid-stream sau khi phim đã bắt đầu phát: Hiển thị khối thông tin phim trang trọng đồng bộ màu Theme
+    } else if (!isWebViewMode && errorMessage == null && isPlaybackStartedEffective && (isLoading || isPlayerBuffering) && !showControls) {
+        // Buffer mid-stream sau khi phim đã bắt đầu phát (chỉ hiển thị khi Controls ẩn để triệt tiêu hoàn toàn trùng lặp 2 vòng xoay)
+        // Hiệu ứng chữ "Đang tải bộ đệm..." nhấp nháy êm dịu (pulsing alpha) chuẩn phong cách streaming cao cấp
+        val infiniteTransition = rememberInfiniteTransition(label = "buffering_pulse")
+        val pulseAlpha by infiniteTransition.animateFloat(
+            initialValue = 0.35f,
+            targetValue = 1.0f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 800, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "buffering_alpha"
+        )
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -134,12 +154,6 @@ fun BoxScope.PlayerHudOverlays(
                     .fillMaxWidth(0.85f)
                     .padding(24.dp)
             ) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(46.dp),
-                    strokeWidth = 3.5.dp,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.height(18.dp))
                 Text(
                     text = movieName,
                     style = MaterialTheme.typography.titleMedium.copy(
@@ -169,15 +183,16 @@ fun BoxScope.PlayerHudOverlays(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(18.dp))
                 Surface(
                     shape = RoundedCornerShape(20.dp),
                     color = Color.Black.copy(alpha = 0.75f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
-                    shadowElevation = 6.dp
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f * pulseAlpha)),
+                    shadowElevation = 6.dp,
+                    modifier = Modifier.graphicsLayer { alpha = pulseAlpha }
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
@@ -189,8 +204,8 @@ fun BoxScope.PlayerHudOverlays(
                         Text(
                             text = stringResource(R.string.player_buffering_title),
                             color = MaterialTheme.colorScheme.primary,
-                            fontSize = 12.5.sp,
-                            fontWeight = FontWeight.SemiBold
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
