@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -12,6 +13,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -37,6 +40,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import com.jkhx.player.ui.theme.AppTheme
+import com.jkhx.player.ui.components.glass.frostedGlassSurface
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Extension
@@ -415,19 +419,70 @@ fun NuvioFloatingBottomBar(
     onNavigate: (Screen) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Surface(
+    val selectedIndex = navItems.indexOfFirst { screen ->
+        if (screen == Screen.Search) {
+            currentDestination == screen.route || currentDestination?.startsWith("search") == true
+        } else {
+            currentDestination == screen.route
+        }
+    }.coerceAtLeast(0)
+
+    val animatedIndex by animateFloatAsState(
+        targetValue = selectedIndex.toFloat(),
+        animationSpec = spring(
+            dampingRatio = 0.72f,
+            stiffness = 340f
+        ),
+        label = "jellyPillMotion"
+    )
+
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .height(64.dp)
-            .shadow(elevation = 16.dp, shape = RoundedCornerShape(32.dp), spotColor = Color.Black.copy(alpha = 0.4f)),
-        shape = RoundedCornerShape(32.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
+            .height(66.dp)
+            .frostedGlassSurface(
+                shape = RoundedCornerShape(33.dp),
+                containerColor = Color(0xFF14171D).copy(alpha = 0.88f),
+                elevation = 18.dp,
+                rimWidth = 0.85.dp
+            )
     ) {
+        val count = navItems.size.coerceAtLeast(1)
+        val tabWidth = (maxWidth - 16.dp) / count
+
+        // 1. Lớp Indicator Viên Thạch Trượt Đàn Hồi (Jelly Spring Selection Pill) chuẩn Nuvio
+        Box(
+            modifier = Modifier
+                .padding(vertical = 7.dp)
+                .offset(x = 8.dp + tabWidth * animatedIndex + (tabWidth * 0.04f))
+                .width(tabWidth * 0.92f)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(26.dp))
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.28f),
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                        )
+                    )
+                )
+                .border(
+                    width = 1.dp,
+                    brush = Brush.verticalGradient(
+                        listOf(
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.65f),
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
+                        )
+                    ),
+                    shape = RoundedCornerShape(26.dp)
+                )
+        )
+
+        // 2. Hàng Tab Items
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 6.dp, vertical = 4.dp),
+                .padding(horizontal = 8.dp, vertical = 5.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -441,34 +496,22 @@ fun NuvioFloatingBottomBar(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .clip(RoundedCornerShape(24.dp))
-                        .tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.05f)
+                        .clip(RoundedCornerShape(26.dp))
+                        .tvFocusableItem(cornerRadius = 26.dp, focusedScale = 1.05f)
                         .clickable { onNavigate(screen) },
                     contentAlignment = Alignment.Center
                 ) {
-                    if (isSelected) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth(0.92f)
-                                .height(52.dp)
-                                .clip(RoundedCornerShape(26.dp))
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f))
-                                .border(
-                                    width = 1.dp,
-                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
-                                    shape = RoundedCornerShape(26.dp)
-                                )
-                        )
-                    }
-
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
-                        val iconColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        val iconColor = if (isSelected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.60f)
                         val iconScale by animateFloatAsState(
-                            targetValue = if (isSelected) 1.08f else 1.0f,
-                            animationSpec = tween(200),
+                            targetValue = if (isSelected) 1.15f else 1.0f,
+                            animationSpec = spring(
+                                dampingRatio = 0.55f,
+                                stiffness = 380f
+                            ),
                             label = "navIconScale"
                         )
 
@@ -488,7 +531,7 @@ fun NuvioFloatingBottomBar(
                             text = stringResource(screen.titleRes),
                             fontSize = 10.5.sp,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.65f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
