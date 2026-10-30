@@ -142,335 +142,20 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-
-data class AvailablePluginSource(
-    val pluginId: String,
-    val pluginName: String,
-    val movieSlug: String,
-    val movieTitle: String,
-    val servers: List<com.jkhx.player.core.model.EpisodeServer>,
-    val isMatchedByTmdb: Boolean,
-    val isCurrent: Boolean
-)
-
-private const val DEFAULT_WEB_UA =
-    "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
-
-private fun embedHeadersFor(url: String, customHeaders: Map<String, String>? = null): Map<String, String> {
-    val origin = try {
-        val u = Uri.parse(url)
-        if (u.scheme != null && u.host != null) "${u.scheme}://${u.host}/" else null
-    } catch (e: Exception) {
-        null
-    }
-    return buildMap {
-        put("User-Agent", DEFAULT_WEB_UA)
-        origin?.let { put("Referer", it) }
-        customHeaders?.forEach { (k, v) ->
-            when {
-                k.equals("User-Agent", ignoreCase = true) -> put("User-Agent", v)
-                k.equals("Referer", ignoreCase = true) -> put("Referer", v)
-                k.equals("Origin", ignoreCase = true) -> put("Origin", v)
-                else -> put(k, v)
-            }
-        }
-    }
-}
-
-private fun buildHtml5HlsPlayerPage(streamUrl: String, referer: String): String {
-    val escapedUrl = streamUrl.replace("\\", "\\\\").replace("'", "\\'").replace("\"", "\\\"")
-    val escapedRef = referer.replace("\\", "\\\\").replace("'", "\\'")
-    return """
-        <!DOCTYPE html>
-        <html lang="vi">
-        <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-            <style>
-                * { margin: 0 !important; padding: 0 !important; box-sizing: border-box !important; }
-                html, body {
-                    width: 100vw !important;
-                    height: 100vh !important;
-                    background: #000 !important;
-                    overflow: hidden !important;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                }
-                video {
-                    width: 100vw !important;
-                    height: 100vh !important;
-                    max-width: 100vw !important;
-                    max-height: 100vh !important;
-                    object-fit: contain !important;
-                    background: #000 !important;
-                    outline: none !important;
-                    border: none !important;
-                }
-            </style>
-            <script>
-                try {
-                    if ('$escapedRef') {
-                        Object.defineProperty(document, 'referrer', {
-                            get: function() { return '$escapedRef'; },
-                            configurable: true
-                        });
-                    }
-                } catch (e) {}
-            </script>
-            <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js"></script>
-        </head>
-        <body>
-            <video id="video" controls autoplay playsinline preload="auto"></video>
-            <script>
-                (function() {
-                    var video = document.getElementById('video');
-                    var src = '$escapedUrl';
-                    var lowerSrc = src.toLowerCase();
-                    var isDirectContainer = lowerSrc.indexOf('.mp4') !== -1 || lowerSrc.indexOf('.webm') !== -1 || lowerSrc.indexOf('.mkv') !== -1;
-                    if (!isDirectContainer && window.Hls && Hls.isSupported()) {
-                        var hls = new Hls({
-                            enableWorker: true,
-                            lowLatencyMode: false,
-                            backBufferLength: 60,
-                            maxBufferLength: 60,
-                            fragLoadingMaxRetry: 4,
-                            manifestLoadingMaxRetry: 4
-                        });
-                        hls.loadSource(src);
-                        hls.attachMedia(video);
-                        hls.on(Hls.Events.MANIFEST_PARSED, function() {
-                            var p = video.play();
-                            if (p && p.catch) {
-                                p.catch(function() {
-                                    video.muted = true;
-                                    video.play();
-                                });
-                            }
-                        });
-                        hls.on(Hls.Events.ERROR, function(event, data) {
-                            if (data.fatal) {
-                                switch (data.type) {
-                                    case Hls.ErrorTypes.NETWORK_ERROR:
-                                        hls.startLoad();
-                                        break;
-                                    case Hls.ErrorTypes.MEDIA_ERROR:
-                                        hls.recoverMediaError();
-                                        break;
-                                    default:
-                                        video.src = src;
-                                        video.play();
-                                        break;
-                                }
-                            }
-                        });
-                    } else {
-                        video.src = src;
-                        video.addEventListener('loadedmetadata', function() {
-                            var p = video.play();
-                            if (p && p.catch) {
-                                p.catch(function() {
-                                    video.muted = true;
-                                    video.play();
-                                });
-                            }
-                        });
-                    }
-                })();
-            </script>
-        </body>
-        </html>
-    """.trimIndent()
-}
-
-private tailrec fun Context.findActivity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
-}
-
-private fun formatTime(ms: Long): String {
-    if (ms <= 0L) return "00:00"
-    val totalSeconds = ms / 1000
-    val seconds = totalSeconds % 60
-    val minutes = (totalSeconds / 60) % 60
-    val hours = totalSeconds / 3600
-    return if (hours > 0) {
-        String.format("%d:%02d:%02d", hours, minutes, seconds)
-    } else {
-        String.format("%02d:%02d", minutes, seconds)
-    }
-}
-
-private fun parseDurationStringToMs(durationStr: String?): Long {
-    if (durationStr.isNullOrBlank()) return 0L
-    try {
-        val hMatch = Regex("""(\d+)\s*(?:h|giờ)""", RegexOption.IGNORE_CASE).find(durationStr)
-        val mMatch = Regex("""(\d+)\s*(?:m|phút|min)""", RegexOption.IGNORE_CASE).find(durationStr)
-        if (hMatch != null || mMatch != null) {
-            val hours = hMatch?.groupValues?.getOrNull(1)?.toLongOrNull() ?: 0L
-            val minutes = mMatch?.groupValues?.getOrNull(1)?.toLongOrNull() ?: 0L
-            val totalMs = (hours * 3600 + minutes * 60) * 1000L
-            if (totalMs > 0) return totalMs
-        }
-        val pureNum = Regex("""^(\d+)$""").find(durationStr.trim())?.groupValues?.getOrNull(1)?.toLongOrNull()
-        if (pureNum != null && pureNum > 0) {
-            return pureNum * 60 * 1000L
-        }
-        val parts = durationStr.trim().split(":")
-        if (parts.size == 3) {
-            val h = parts[0].toLongOrNull() ?: 0L
-            val m = parts[1].toLongOrNull() ?: 0L
-            val s = parts[2].toLongOrNull() ?: 0L
-            return (h * 3600 + m * 60 + s) * 1000L
-        } else if (parts.size == 2) {
-            val m = parts[0].toLongOrNull() ?: 0L
-            val s = parts[1].toLongOrNull() ?: 0L
-            return (m * 60 + s) * 1000L
-        }
-    } catch (_: Exception) {}
-    return 0L
-}
-
-private fun applySubtitleAppearance(
-    subtitleView: SubtitleView?,
-    textSizeSp: Float,
-    isBold: Boolean,
-    textColor: Int,
-    textOpacityPercent: Int,
-    isOutlineEnabled: Boolean,
-    outlineColor: Int,
-    bottomMarginPercent: Int,
-    isLandscape: Boolean = true
-) {
-    if (subtitleView == null) return
-    subtitleView.setApplyEmbeddedFontSizes(false)
-    subtitleView.setApplyEmbeddedStyles(false)
-
-    // Ở màn hình dọc (portrait), khung video co nhỏ chỉ chiếm phần trên màn hình (~220dp chiều cao),
-    // tự động scale kích thước (~0.70f) để chữ không bị to quá cỡ so với hình ảnh video
-    val effectiveTextSize = if (isLandscape) textSizeSp else (textSizeSp * 0.70f).coerceAtLeast(10f)
-    subtitleView.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, effectiveTextSize)
-
-    // Khoảng cách lề dưới: càng tăng giá trị thì phụ đề càng được đẩy lên trên xa đáy
-    val bottomFraction = (bottomMarginPercent.toFloat() / 100f).coerceIn(0.02f, 0.95f)
-    subtitleView.setBottomPaddingFraction(bottomFraction)
-
-    val alpha = ((textOpacityPercent.coerceIn(10, 100) / 100f) * 255).toInt()
-    val finalTextColor = android.graphics.Color.argb(
-        alpha,
-        android.graphics.Color.red(textColor),
-        android.graphics.Color.green(textColor),
-        android.graphics.Color.blue(textColor)
-    )
-
-    val edgeType = if (isOutlineEnabled) CaptionStyleCompat.EDGE_TYPE_OUTLINE else CaptionStyleCompat.EDGE_TYPE_NONE
-    val typeface = if (isBold) android.graphics.Typeface.DEFAULT_BOLD else android.graphics.Typeface.DEFAULT
-
-    val style = CaptionStyleCompat(
-        finalTextColor,
-        android.graphics.Color.TRANSPARENT,
-        android.graphics.Color.TRANSPARENT,
-        edgeType,
-        outlineColor,
-        typeface
-    )
-    subtitleView.setStyle(style)
-}
-
-private fun isVietnameseTrack(track: SubtitleTrackOption): Boolean {
-    val lang = track.language?.lowercase()?.trim()
-    if (lang == "vi" || lang == "vie" || lang == "vietnamese") return true
-    val label = track.label.lowercase()
-    return label.contains("tiếng việt") ||
-           label.contains("vietnamese") ||
-           label.contains("việt") ||
-           label.contains("(vi)") ||
-           label.contains("[vi]") ||
-           label.contains(".vi.") ||
-           label.endsWith(".vi") ||
-           label.contains("_vi_")
-}
-
-private fun isEnglishTrack(track: SubtitleTrackOption): Boolean {
-    val lang = track.language?.lowercase()?.trim()
-    if (lang == "en" || lang == "eng" || lang == "english") return true
-    val label = track.label.lowercase()
-    if (isVietnameseTrack(track)) return false
-    return label.contains("tiếng anh") ||
-           label.contains("english") ||
-           label.contains("(en)") ||
-           label.contains("[en]") ||
-           label.contains(".en.") ||
-           label.endsWith(".en") ||
-           label.contains("_en_")
-}
-
-private fun mergeSubtitleTracks(
-    customTracks: List<SubtitleTrackOption>,
-    exoTracks: List<SubtitleTrackOption>
-): List<SubtitleTrackOption> {
-    val nonOnlineCustom = customTracks.filterNot { it.id.startsWith("online_") }
-    val filteredExo = exoTracks.filterNot { s ->
-        nonOnlineCustom.any { c ->
-            c.id == s.id || (
-                !c.id.startsWith("cached_gemini_") &&
-                !c.id.startsWith("custom_gemini_") &&
-                c.label.trim().equals(s.label.trim(), ignoreCase = true) &&
-                (
-                    c.language?.trim()?.lowercase() == s.language?.trim()?.lowercase() ||
-                    (isVietnameseTrack(c) && isVietnameseTrack(s)) ||
-                    (isEnglishTrack(c) && isEnglishTrack(s))
-                )
-            )
-        }
-    }
-    return nonOnlineCustom + filteredExo
-}
-
-enum class HudIndicatorType { NONE, VOLUME, BRIGHTNESS, SEEK_FORWARD, SEEK_REWIND, SEEK_GESTURE }
-
-@Composable
-private fun RepeatingIconButton(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    initialDelayMs: Long = 350L,
-    repeatIntervalMs: Long = 80L,
-    content: @Composable () -> Unit
-) {
-    val currentOnClick by rememberUpdatedState(onClick)
-    val coroutineScope = rememberCoroutineScope()
-    Box(
-        modifier = modifier
-            .onKeyEvent { keyEvent ->
-                if (keyEvent.type == KeyEventType.KeyDown &&
-                    (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
-                     keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_ENTER ||
-                     keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
-                    currentOnClick()
-                    true
-                } else false
-            }
-            .pointerInput(Unit) {
-                awaitEachGesture {
-                    awaitFirstDown(requireUnconsumed = false)
-                    currentOnClick()
-                    val job = coroutineScope.launch {
-                        delay(initialDelayMs)
-                        while (isActive) {
-                            currentOnClick()
-                            delay(repeatIntervalMs)
-                        }
-                    }
-                    waitForUpOrCancellation()
-                    job.cancel()
-                }
-            },
-        contentAlignment = Alignment.Center
-    ) {
-        content()
-    }
-}
+import com.jkhx.player.ui.screens.player.panels.PlayerResumeDialog
+import com.jkhx.player.ui.screens.player.panels.PlayerSettingsPanel
+import com.jkhx.player.ui.screens.player.panels.PlayerEpisodesPanel
+import com.jkhx.player.ui.screens.player.panels.PlayerAudioPanel
+import com.jkhx.player.ui.screens.player.panels.PlayerSourcePanel
+import com.jkhx.player.ui.screens.player.panels.PlayerSubtitlePanel
+import com.jkhx.player.ui.screens.player.overlays.PlayerHudOverlays
+import com.jkhx.player.ui.screens.player.overlays.PlayerWebViewPlayer
+import com.jkhx.player.ui.screens.player.overlays.PlayerWebViewTopBar
+import com.jkhx.player.ui.screens.player.overlays.PlayerNativeView
+import com.jkhx.player.ui.screens.player.overlays.PlayerErrorOverlay
+import com.jkhx.player.ui.screens.player.controls.PlayerControlsOverlay
+import com.jkhx.player.ui.screens.player.components.RepeatingIconButton
+import com.jkhx.player.ui.screens.player.components.SettingsOptionCard
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -2776,4545 +2461,532 @@ fun PlayerScreen(
     ) {
         // 1. Chế độ phát Web Embed (WebView Player)
         if (isWebViewMode && webViewUrl != null) {
-            key(webViewUrl) {
-                AndroidView(
-                    factory = { ctx ->
-                        WebView(ctx).apply {
-                            activeWebView = this
-                            setBackgroundColor(android.graphics.Color.BLACK)
-                            layoutParams = FrameLayout.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.MATCH_PARENT
-                            )
-                            settings.apply {
-                                javaScriptEnabled = true
-                                domStorageEnabled = true
-                                databaseEnabled = true
-                                mediaPlaybackRequiresUserGesture = false
-                                loadWithOverviewMode = false
-                                useWideViewPort = false
-                                allowContentAccess = true
-                                allowFileAccess = true
-                                setSupportMultipleWindows(false)
-                                javaScriptCanOpenWindowsAutomatically = false
-                                userAgentString = webViewHeaders["User-Agent"] ?: DEFAULT_WEB_UA
-                            }
-
-                            val cookieManager = android.webkit.CookieManager.getInstance()
-                            cookieManager.setAcceptCookie(true)
-                            cookieManager.setAcceptThirdPartyCookies(this, true)
-
-                            val refererForPage = webViewHeaders["Referer"]
-                                ?: embedHeadersFor(webViewUrl ?: "")["Referer"]
-                                ?: ""
-
-                            val referrerJs = """
-                                (function() {
-                                    try {
-                                        if ('$refererForPage') {
-                                            Object.defineProperty(document, 'referrer', {
-                                                get: function() { return '$refererForPage'; },
-                                                configurable: true
-                                            });
-                                        }
-                                    } catch(e) {}
-                                    try {
-                                        window.open = function() { return null; };
-                                    } catch(e) {}
-                                    try {
-                                        var style = document.createElement('style');
-                                        style.textContent = '* { box-sizing: border-box !important; } html, body { overflow: hidden !important; margin: 0 !important; padding: 0 !important; width: 100% !important; height: 100% !important; background: #000 !important; } .player, #hrm-player, .jwplayer, #player, #v-player-wrapper { width: 100% !important; height: 100% !important; margin: 0 !important; padding: 0 !important; } video, iframe { width: 100% !important; height: 100% !important; object-fit: contain !important; border: none !important; margin: 0 !important; padding: 0 !important; }';
-                                        (document.head || document.documentElement).appendChild(style);
-                                    } catch(e) {}
-                                })();
-                            """.trimIndent()
-
-                            val currentUrl = webViewUrl ?: ""
-                            val currentUrlHost = try { Uri.parse(currentUrl).host?.lowercase() } catch (_: Exception) { null }
-                            val inferredStreamType = StremioPluginWrapper.inferStreamType(
-                                streamUrl = currentUrl,
-                                rawType = if (currentUrl == resolvedStream?.url) resolvedStream?.type else null,
-                                metaText = ""
-                            )
-                            val isDirectMediaStream = !currentUrl.contains("/embed", ignoreCase = true) &&
-                                !currentUrl.contains("player.php", ignoreCase = true) &&
-                                (inferredStreamType in setOf("m3u8", "hls", "mp4", "mkv", "webm", "mov", "avi") ||
-                                    (currentUrl == resolvedStream?.url && resolvedStream?.type != "embed"))
-
-                            val embedHttpClient = OkHttpClient.Builder()
-                                .dns(object : okhttp3.Dns {
-                                    override fun lookup(hostname: String): List<java.net.InetAddress> =
-                                        okhttp3.Dns.SYSTEM.lookup(hostname).sortedBy { it is java.net.Inet6Address }
-                                })
-                                .protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
-                                .followRedirects(true)
-                                .followSslRedirects(true)
-                                .build()
-
-                            webViewClient = object : WebViewClient() {
-                                override fun shouldOverrideUrlLoading(
-                                    view: WebView?,
-                                    request: WebResourceRequest?
-                                ): Boolean {
-                                    val targetUrl = request?.url?.toString() ?: return false
-                                    // Chặn toàn bộ scheme không phải HTTP/HTTPS (intent, market, tel...)
-                                    if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
-                                        return true
-                                    }
-
-                                    // Chỉ chặn redirect của main frame nếu cố tình nhảy sang web quảng cáo / cá độ khác
-                                    if (request?.isForMainFrame == true) {
-                                        val currentUri = Uri.parse(webViewUrl ?: "")
-                                        val targetUri = request.url
-                                        val currentHost = currentUri.host?.lowercase()
-                                        val targetHost = targetUri?.host?.lowercase()
-                                        val refererHost = try {
-                                             if (refererForPage.isNotBlank()) Uri.parse(refererForPage).host?.lowercase() else null
-                                        } catch (_: Exception) { null }
-
-                                        if (currentHost != null && targetHost != null) {
-                                            val isAllowed = targetHost == currentHost ||
-                                                    targetHost.endsWith(".$currentHost") ||
-                                                    currentHost.endsWith(".$targetHost") ||
-                                                    (refererHost != null && (targetHost == refererHost || targetHost.endsWith(".$refererHost") || refererHost.endsWith(".$targetHost")))
-
-                                            if (!isAllowed) {
-                                                println("[PlayerScreen WebView] Chặn redirect quảng cáo ngoại vi: $targetUrl")
-                                                return true
-                                            }
-                                        }
-                                    }
-
-                                    return false
-                                }
-
-                                override fun shouldInterceptRequest(
-                                    view: WebView?,
-                                    request: WebResourceRequest?
-                                ): WebResourceResponse? {
-                                    val reqUrl = request?.url?.toString() ?: return null
-
-                                    // 0. HLS / DIRECT MEDIA STREAM PROXY INTERCEPTION:
-                                    // Khi WebView đang đóng vai trò trình phát HTML5 + hls.js cho luồng HLS/Direct video,
-                                    // tự động đính kèm User-Agent, Referer, Origin từ webViewHeaders và cấp header CORS
-                                    val reqHost = request.url?.host?.lowercase()
-                                    val isMediaSubRequest = isDirectMediaStream && !request.isForMainFrame && (
-                                        reqUrl == currentUrl ||
-                                        (currentUrlHost != null && reqHost != null && (reqHost == currentUrlHost || reqHost.endsWith(".$currentUrlHost"))) ||
-                                        reqUrl.contains(".m3u8", ignoreCase = true) ||
-                                        reqUrl.contains(".ts", ignoreCase = true) ||
-                                        reqUrl.contains(".m4s", ignoreCase = true) ||
-                                        reqUrl.contains("/m/") ||
-                                        reqUrl.contains("/s/") ||
-                                        reqUrl.contains("/hls")
-                                    ) && !reqUrl.endsWith(".js", ignoreCase = true) && !reqUrl.endsWith(".css", ignoreCase = true)
-
-                                    if (isMediaSubRequest) {
-                                        if (request.method.equals("OPTIONS", ignoreCase = true)) {
-                                            val corsHeaders = mapOf(
-                                                "Access-Control-Allow-Origin" to "*",
-                                                "Access-Control-Allow-Methods" to "GET, HEAD, OPTIONS",
-                                                "Access-Control-Allow-Headers" to "*",
-                                                "Access-Control-Max-Age" to "86400"
-                                            )
-                                            return WebResourceResponse(
-                                                "text/plain",
-                                                "utf-8",
-                                                200,
-                                                "OK",
-                                                corsHeaders,
-                                                ByteArrayInputStream(ByteArray(0))
-                                            )
-                                        }
-
-                                        try {
-                                            val reqBuilder = Request.Builder()
-                                                .url(reqUrl)
-                                                .header("User-Agent", webViewHeaders["User-Agent"] ?: DEFAULT_WEB_UA)
-
-                                            if (refererForPage.isNotBlank()) {
-                                                reqBuilder.header("Referer", refererForPage)
-                                                val originHeader = webViewHeaders["Origin"] ?: try {
-                                                    Uri.parse(refererForPage).let { "${it.scheme}://${it.host}" }
-                                                } catch (_: Exception) { refererForPage }
-                                                reqBuilder.header("Origin", originHeader)
-                                            }
-
-                                            request.requestHeaders["Range"]?.let { rangeVal ->
-                                                reqBuilder.header("Range", rangeVal)
-                                            }
-
-                                            val mediaRes = embedHttpClient.newCall(reqBuilder.build()).execute()
-                                            val rawContentType = mediaRes.header("Content-Type") ?: "application/octet-stream"
-                                            val mimeType = rawContentType.substringBefore(";").trim().ifBlank { "application/octet-stream" }
-                                            val charset = rawContentType.substringAfter("charset=", "").substringBefore(";").trim().ifBlank { null }
-
-                                            val respHeaders = mutableMapOf<String, String>()
-                                            for (i in 0 until mediaRes.headers.size) {
-                                                val hName = mediaRes.headers.name(i)
-                                                if (!hName.equals("content-security-policy", ignoreCase = true) &&
-                                                    !hName.equals("x-frame-options", ignoreCase = true) &&
-                                                    !hName.equals("access-control-allow-origin", ignoreCase = true)
-                                                ) {
-                                                    respHeaders[hName] = mediaRes.headers.value(i)
-                                                }
-                                            }
-                                            respHeaders["Access-Control-Allow-Origin"] = "*"
-                                            respHeaders["Access-Control-Expose-Headers"] = "*"
-
-                                            return WebResourceResponse(
-                                                mimeType,
-                                                charset,
-                                                mediaRes.code,
-                                                mediaRes.message.ifBlank { "OK" },
-                                                respHeaders,
-                                                mediaRes.body?.byteStream()
-                                            )
-                                        } catch (e: Exception) {
-                                            println("[PlayerScreen WebView] Media proxy intercept error: ${e.message}")
-                                        }
-                                    }
-
-                                    // 1. MAIN FRAME INTERCEPTION: Nạp và chuẩn hóa HTML5 Viewport chuẩn cho trang Embed
-                                    if (request.isForMainFrame && !isDirectMediaStream && refererForPage.isNotBlank() &&
-                                        (reqUrl == (webViewUrl ?: "") || reqUrl.contains("/embed") || reqUrl.contains("player.php"))
-                                    ) {
-                                        try {
-                                            val okReq = Request.Builder()
-                                                .url(reqUrl)
-                                                .header("Referer", refererForPage)
-                                                .header("Origin", try { Uri.parse(refererForPage).let { "${it.scheme}://${it.host}" } } catch (_: Exception) { refererForPage })
-                                                .header("User-Agent", webViewHeaders["User-Agent"] ?: DEFAULT_WEB_UA)
-                                                .build()
-
-                                            val okRes = embedHttpClient.newCall(okReq).execute()
-                                            if (okRes.isSuccessful) {
-                                                val rawHtml = okRes.body?.string() ?: ""
-                                                val resContentType = okRes.header("Content-Type")?.lowercase() ?: ""
-                                                val isRawM3u8 = rawHtml.trimStart().startsWith("#EXTM3U") ||
-                                                    resContentType.contains("mpegurl") ||
-                                                    resContentType.contains("application/x-mpegurl")
-                                                val isFullDoc = rawHtml.contains("<html", ignoreCase = true) || rawHtml.contains("<!DOCTYPE", ignoreCase = true)
-
-                                                val modifiedHtml = if (isRawM3u8) {
-                                                    buildHtml5HlsPlayerPage(reqUrl, refererForPage)
-                                                } else if (isFullDoc) {
-                                                    val injectHeader = """
-                                                        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-                                                        <style>
-                                                            * { margin: 0 !important; padding: 0 !important; box-sizing: border-box !important; }
-                                                            html, body { width: 100% !important; height: 100% !important; margin: 0 !important; padding: 0 !important; overflow: hidden !important; background: #000 !important; }
-                                                            #v-player-wrapper, .player, #hrm-player, .jwplayer, #player { width: 100% !important; height: 100% !important; margin: 0 !important; padding: 0 !important; }
-                                                            video, iframe { width: 100% !important; height: 100% !important; object-fit: contain !important; border: none !important; margin: 0 !important; padding: 0 !important; }
-                                                        </style>
-                                                        <script>
-                                                            try { Object.defineProperty(document, 'referrer', { get: function() { return '$refererForPage'; }, configurable: true }); } catch(e) {}
-                                                            try { window.open = function() { return null; }; } catch(e) {}
-                                                        </script>
-                                                    """.trimIndent()
-
-                                                    if (rawHtml.contains("<head>", ignoreCase = true)) {
-                                                        rawHtml.replaceFirst("<head>", "<head>$injectHeader", ignoreCase = true)
-                                                    } else {
-                                                        rawHtml.replaceFirst("<html>", "<html><head>$injectHeader</head>", ignoreCase = true)
-                                                    }
-                                                } else {
-                                                    // Trường hợp player.php chỉ trả về raw <iframe>: bọc thành tài liệu HTML5 chuẩn
-                                                    """
-                                                    <!DOCTYPE html>
-                                                    <html lang="vi">
-                                                    <head>
-                                                        <meta charset="utf-8">
-                                                        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-                                                        <style>
-                                                            * { margin: 0 !important; padding: 0 !important; box-sizing: border-box !important; }
-                                                            html, body { width: 100vw !important; height: 100vh !important; margin: 0 !important; padding: 0 !important; overflow: hidden !important; background: #000 !important; }
-                                                            #v-player-wrapper { position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100vh !important; background: #000 !important; }
-                                                            iframe { position: absolute !important; top: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important; border: none !important; margin: 0 !important; padding: 0 !important; }
-                                                        </style>
-                                                        <script>
-                                                            try { Object.defineProperty(document, 'referrer', { get: function() { return '$refererForPage'; }, configurable: true }); } catch(e) {}
-                                                            try { window.open = function() { return null; }; } catch(e) {}
-                                                        </script>
-                                                    </head>
-                                                    <body style="margin: 0; padding: 0; background: #000; overflow: hidden;">
-                                                        <div id="v-player-wrapper">
-                                                            $rawHtml
-                                                        </div>
-                                                    </body>
-                                                    </html>
-                                                    """.trimIndent()
-                                                }
-
-                                                val respHeaders = mutableMapOf<String, String>()
-                                                for (i in 0 until okRes.headers.size) {
-                                                    val hName = okRes.headers.name(i)
-                                                    if (!hName.equals("content-security-policy", ignoreCase = true) &&
-                                                        !hName.equals("x-frame-options", ignoreCase = true)) {
-                                                        respHeaders[hName] = okRes.headers.value(i)
-                                                    }
-                                                }
-
-                                                return WebResourceResponse(
-                                                    "text/html",
-                                                    "utf-8",
-                                                    okRes.code,
-                                                    okRes.message.ifBlank { "OK" },
-                                                    respHeaders,
-                                                    ByteArrayInputStream(modifiedHtml.toByteArray(Charsets.UTF_8))
-                                                )
-                                            }
-                                        } catch (e: Exception) {
-                                            println("[PlayerScreen] shouldInterceptRequest main frame error: ${e.message}")
-                                        }
-                                    }
-
-                                    // 2. SUBFRAME INTERCEPTION (Iframe Player con như streamfree.vip):
-                                    // Bóc tách và tiêm CSS Lớp 2 để triệt tiêu padding-bottom 56.25% gây tràn & lẹm đáy video
-                                    val isSubframeCandidate = !request.isForMainFrame &&
-                                            (reqUrl.contains("streamfree.vip") || reqUrl.contains("/embed/") || reqUrl.contains("player")) &&
-                                            (request.requestHeaders["Accept"]?.contains("text/html") == true || reqUrl.contains("/embed/v/"))
-
-                                    if (isSubframeCandidate) {
-                                        try {
-                                            val subReferer = webViewUrl ?: refererForPage
-                                            val subReq = Request.Builder()
-                                                .url(reqUrl)
-                                                .header("Referer", subReferer)
-                                                .header("User-Agent", webViewHeaders["User-Agent"] ?: DEFAULT_WEB_UA)
-                                                .build()
-
-                                            val subRes = embedHttpClient.newCall(subReq).execute()
-                                            if (subRes.isSuccessful) {
-                                                val subHtml = subRes.body?.string() ?: ""
-                                                val subInject = """
-                                                    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-                                                    <style>
-                                                        * { box-sizing: border-box !important; }
-                                                        html, body { width: 100% !important; height: 100% !important; margin: 0 !important; padding: 0 !important; overflow: hidden !important; background: #000 !important; }
-                                                        .player, #hrm-player, .jwplayer, #player, #v-player-wrapper { width: 100% !important; height: 100% !important; margin: 0 !important; padding: 0 !important; }
-                                                        video, iframe { width: 100% !important; height: 100% !important; object-fit: contain !important; border: none !important; margin: 0 !important; padding: 0 !important; }
-                                                    </style>
-                                                """.trimIndent()
-
-                                                val modifiedSubHtml = if (subHtml.contains("<head>", ignoreCase = true)) {
-                                                    subHtml.replaceFirst("<head>", "<head>$subInject", ignoreCase = true)
-                                                } else if (subHtml.contains("<html>", ignoreCase = true)) {
-                                                    subHtml.replaceFirst("<html>", "<html><head>$subInject</head>", ignoreCase = true)
-                                                } else {
-                                                    subInject + subHtml
-                                                }
-
-                                                val respHeaders = mutableMapOf<String, String>()
-                                                for (i in 0 until subRes.headers.size) {
-                                                    val hName = subRes.headers.name(i)
-                                                    if (!hName.equals("content-security-policy", ignoreCase = true) &&
-                                                        !hName.equals("x-frame-options", ignoreCase = true)) {
-                                                        respHeaders[hName] = subRes.headers.value(i)
-                                                    }
-                                                }
-
-                                                return WebResourceResponse(
-                                                    "text/html",
-                                                    "utf-8",
-                                                    subRes.code,
-                                                    subRes.message.ifBlank { "OK" },
-                                                    respHeaders,
-                                                    ByteArrayInputStream(modifiedSubHtml.toByteArray(Charsets.UTF_8))
-                                                )
-                                            }
-                                        } catch (e: Exception) {
-                                            println("[PlayerScreen] shouldInterceptRequest subframe error: ${e.message}")
-                                        }
-                                    }
-
-                                    return super.shouldInterceptRequest(view, request)
-                                }
-
-                                override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
-                                    super.onPageStarted(view, url, favicon)
-                                    view?.evaluateJavascript(referrerJs, null)
-                                }
-
-                                override fun onPageFinished(view: WebView?, url: String?) {
-                                    super.onPageFinished(view, url)
-                                    view?.evaluateJavascript(referrerJs, null)
-                                }
-                            }
-                            webChromeClient = object : WebChromeClient() {
-                                // Chặn 100% lệnh mở cửa sổ mới từ mã quảng cáo (window.open, target="_blank")
-                                override fun onCreateWindow(
-                                    view: WebView?,
-                                    isDialog: Boolean,
-                                    isUserGesture: Boolean,
-                                    resultMsg: android.os.Message?
-                                ): Boolean {
-                                    return false
-                                }
-
-                                override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
-                                    if (view == null) return
-                                    if (webCustomView != null) {
-                                        callback?.onCustomViewHidden()
-                                        return
-                                    }
-                                    val decor = activity?.window?.decorView as? ViewGroup ?: return
-                                    view.setBackgroundColor(android.graphics.Color.BLACK)
-                                    decor.addView(
-                                        view,
-                                        FrameLayout.LayoutParams(
-                                            ViewGroup.LayoutParams.MATCH_PARENT,
-                                            ViewGroup.LayoutParams.MATCH_PARENT
-                                        )
-                                    )
-                                    webCustomView = view
-                                    webCustomViewCallback = callback
-                                }
-
-                                override fun onHideCustomView() {
-                                    exitWebCustomView()
-                                }
-                            }
-
-                            val referer = webViewHeaders["Referer"]
-                                ?: embedHeadersFor(currentUrl)["Referer"]
-
-                            val finalHeaders = webViewHeaders.toMutableMap()
-                            if (!finalHeaders.containsKey("Referer") && referer != null) {
-                                finalHeaders["Referer"] = referer
-                            }
-                            if (!finalHeaders.containsKey("User-Agent")) {
-                                finalHeaders["User-Agent"] = DEFAULT_WEB_UA
-                            }
-
-                            tag = currentUrl
-                            if (isDirectMediaStream) {
-                                val baseOrigin = try {
-                                    if (refererForPage.isNotBlank()) {
-                                        val u = Uri.parse(refererForPage)
-                                        if (u.scheme != null && u.host != null) "${u.scheme}://${u.host}/" else refererForPage
-                                    } else {
-                                        val u = Uri.parse(currentUrl)
-                                        if (u.scheme != null && u.host != null) "${u.scheme}://${u.host}/" else "https://localhost/"
-                                    }
-                                } catch (_: Exception) {
-                                    "https://localhost/"
-                                }
-                                loadDataWithBaseURL(
-                                    baseOrigin,
-                                    buildHtml5HlsPlayerPage(currentUrl, refererForPage),
-                                    "text/html",
-                                    "utf-8",
-                                    null
-                                )
-                            } else {
-                                loadUrl(currentUrl, finalHeaders)
-                            }
-                        }
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
+            PlayerWebViewPlayer(
+                webViewUrl = webViewUrl!!,
+                webViewHeaders = webViewHeaders,
+                resolvedStream = resolvedStream,
+                activity = activity,
+                onActiveWebViewChange = { activeWebView = it },
+                webCustomView = webCustomView,
+                onShowCustomView = { view, callback ->
+                    webCustomView = view
+                    webCustomViewCallback = callback
+                },
+                onHideCustomView = { exitWebCustomView() }
+            )
         }
         // 2. Chế độ phát ExoPlayer Native (.m3u8, .mp4, DASH)
         else if (resolvedStream != null) {
-            AndroidView(
-                factory = { ctx ->
-                    PlayerView(ctx).apply {
-                        activePlayerView = this
-                        player = exoPlayerManager.player
-                        keepScreenOn = true
-                        useController = false // Dùng toàn bộ custom Jetpack Compose Player Controls
-                        resizeMode = resizeModes[resizeModeIndex].first
-                        subtitleView?.apply {
-                            applySubtitleAppearance(
-                                this,
-                                subtitleTextSize,
-                                subtitleIsBold,
-                                subtitleTextColor,
-                                subtitleTextOpacity,
-                                subtitleIsOutline,
-                                subtitleOutlineColor,
-                                subtitleBottomMargin,
-                                isLandscape
-                            )
-                        }
-                        layoutParams = FrameLayout.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.MATCH_PARENT
-                        )
-                    }
-                },
-                update = { pv ->
-                    pv.resizeMode = resizeModes[resizeModeIndex].first
-                },
-                modifier = Modifier.fillMaxSize()
+            PlayerNativeView(
+                exoPlayerManager = exoPlayerManager,
+                resizeMode = resizeModes[resizeModeIndex].first,
+                subtitleTextSize = subtitleTextSize,
+                subtitleIsBold = subtitleIsBold,
+                subtitleTextColor = subtitleTextColor,
+                subtitleTextOpacity = subtitleTextOpacity,
+                subtitleIsOutline = subtitleIsOutline,
+                subtitleOutlineColor = subtitleOutlineColor,
+                subtitleBottomMargin = subtitleBottomMargin,
+                isLandscape = isLandscape,
+                onActivePlayerViewChange = { activePlayerView = it }
             )
         }
-
-        // 3. Nuvio-style Buffering / Loading Overlay Backdrop
-        if (!isWebViewMode && errorMessage == null && !isPlaybackStartedEffective) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black)
-            ) {
-                // Dimmed backdrop image if available (Hiển thị poster sắc nét, điện ảnh)
-                if (!movieThumb.isNullOrBlank()) {
-                    AsyncImage(
-                        model = movieThumb,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .blur(8.dp),
-                        alpha = 0.72f
-                    )
-                }
-
-                // Scrim overlay nhẹ nhàng, bảo toàn độ sáng và chi tiết của poster
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.Black.copy(alpha = 0.30f),
-                                    Color.Black.copy(alpha = 0.20f),
-                                    Color.Black.copy(alpha = 0.58f)
-                                )
-                            )
-                        )
-                )
+        // 3-6. HUD Overlays, Buffering & Lock indicators
+        PlayerHudOverlays(
+            isWebViewMode = isWebViewMode,
+            errorMessage = errorMessage,
+            isPlaybackStartedEffective = isPlaybackStartedEffective,
+            isLoading = isLoading,
+            isPlayerBuffering = isPlayerBuffering,
+            movieThumb = movieThumb,
+            movieName = movieName,
+            currentEpisodeName = currentEpisode.name,
+            activeServerName = activeServerName,
+            isLandscape = isLandscape,
+            isLongPressing2x = isLongPressing2x,
+            isTranslatingWithGemini = isTranslatingWithGemini,
+            geminiTranslateProgress = geminiTranslateProgress,
+            hudType = hudType,
+            hudValue = hudValue,
+            seekGestureDeltaMs = seekGestureDeltaMs,
+            seekGestureTargetMs = seekGestureTargetMs,
+            effectiveTotalDuration = effectiveTotalDuration,
+            isLocked = isLocked,
+            isPipMode = isPipMode,
+            showControls = showControls,
+            onUnlock = {
+                isLocked = false
+                showControls = true
+                lastInteractionTime = System.currentTimeMillis()
+                Toast.makeText(context, context.getString(R.string.player_unlock_controls), Toast.LENGTH_SHORT).show()
             }
-        } else if (!isWebViewMode && errorMessage == null && isPlaybackStartedEffective && (isLoading || isPlayerBuffering)) {
-            // Buffer mid-stream sau khi phim đã bắt đầu phát: Hiển thị khối thông tin phim trang trọng đồng bộ màu Theme
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.42f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                    modifier = Modifier
-                        .fillMaxWidth(0.85f)
-                        .padding(24.dp)
-                ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(46.dp),
-                        strokeWidth = 3.5.dp,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.height(18.dp))
-                    Text(
-                        text = movieName,
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = if (isLandscape) 18.sp else 16.sp
-                        ),
-                        color = Color.White,
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    val epAndServer = buildString {
-                        append(currentEpisode.name)
-                        if (activeServerName.isNotBlank()) {
-                            append(" • ")
-                            append(activeServerName)
-                        }
-                    }
-                    Text(
-                        text = epAndServer,
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontSize = if (isLandscape) 13.sp else 12.sp
-                        ),
-                        color = Color.White.copy(alpha = 0.7f),
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Surface(
-                        shape = RoundedCornerShape(20.dp),
-                        color = Color.Black.copy(alpha = 0.75f),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
-                        shadowElevation = 6.dp
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .background(MaterialTheme.colorScheme.primary, CircleShape)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = stringResource(R.string.player_buffering_title),
-                                color = MaterialTheme.colorScheme.primary,
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = stringResource(R.string.player_buffering_hint),
-                        color = Color.White.copy(alpha = 0.55f),
-                        fontSize = 11.sp,
-                        textAlign = TextAlign.Center
-                    )
-                }
-            }
-        }
-
-        // 4. Badge hiển thị khi đang giữ ngón tay tăng tốc 2X
-        if (isLongPressing2x) {
-            Surface(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 28.dp),
-                shape = ShapeTokens.Card,
-                color = Color.Black.copy(alpha = 0.75f)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.Speed, contentDescription = null, tint = Color.Yellow, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(stringResource(R.string.player_fast_forward_2x), color = Color.Yellow, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                }
-            }
-        }
-
-        // 4.1. HUD hiển thị % tiến độ dịch phụ đề Gemini AI
-        if (isTranslatingWithGemini) {
-            Surface(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = if (isLandscape) 36.dp else 24.dp),
-                shape = RoundedCornerShape(20.dp),
-                color = Color.Black.copy(alpha = 0.85f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)),
-                shadowElevation = 8.dp
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    CircularProgressIndicator(
-                        progress = { geminiTranslateProgress.coerceIn(0.05f, 1f) },
-                        modifier = Modifier.size(17.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = Color.White.copy(alpha = 0.2f)
-                    )
-                    Spacer(modifier = Modifier.width(9.dp))
-                    Text(
-                        text = "Gemini AI đang dịch phụ đề: ${(geminiTranslateProgress * 100).toInt()}%",
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
-        }
-
-        // 5. Cử chỉ HUD (Volume ở rìa phải, Brightness ở rìa trái, Double-tap Seek ở giữa)
-        // 5.1 HUD Âm lượng (Rìa phải màn hình - Vertical Pill)
-        AnimatedVisibility(
-            visible = hudType == HudIndicatorType.VOLUME,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(end = 28.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .width(46.dp)
-                    .height(175.dp)
-                    .background(Color.Black.copy(alpha = 0.75f), ShapeTokens.LargeChip)
-                    .padding(vertical = 12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.SpaceBetween
-            ) {
-                Icon(
-                    if (hudValue <= 0.01f) Icons.Default.VolumeMute else Icons.Default.VolumeUp,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp)
-                )
-
-                // Thanh trượt đứng
-                Box(
-                    modifier = Modifier
-                        .width(6.dp)
-                        .height(95.dp)
-                        .clip(RoundedCornerShape(3.dp))
-                        .background(Color.White.copy(alpha = 0.25f)),
-                    contentAlignment = Alignment.BottomCenter
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .fillMaxHeight(hudValue.coerceIn(0f, 1f))
-                            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(3.dp))
-                    )
-                }
-
-                Text(
-                    text = "${(hudValue * 100).toInt()}%",
-                    color = Color.White,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
-
-        // 5.2 HUD Độ sáng (Rìa trái màn hình - Vertical Pill)
-        AnimatedVisibility(
-            visible = hudType == HudIndicatorType.BRIGHTNESS,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .padding(start = 28.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .width(46.dp)
-                    .height(175.dp)
-                    .background(Color.Black.copy(alpha = 0.75f), ShapeTokens.LargeChip)
-                    .clip(ShapeTokens.LargeChip)
-                    .clickable {
-                        // Chạm vào HUD để khôi phục về độ sáng theo hệ thống (mở khóa thanh trượt Android)
-                        hasCustomBrightness = false
-                        lastCustomBrightnessValue = -1f
-                        activity?.window?.let { win ->
-                            val lp = win.attributes
-                            lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
-                            win.attributes = lp
-                        }
-                        showHud(HudIndicatorType.NONE, 0f)
-                        Toast.makeText(context, context.getString(R.string.player_brightness_system_restored), Toast.LENGTH_SHORT).show()
-                    }
-                    .padding(vertical = 12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.SpaceBetween
-            ) {
-                Icon(
-                    Icons.Default.BrightnessMedium,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp)
-                )
-
-                // Thanh trượt đứng
-                Box(
-                    modifier = Modifier
-                        .width(6.dp)
-                        .height(95.dp)
-                        .clip(RoundedCornerShape(3.dp))
-                        .background(Color.White.copy(alpha = 0.25f)),
-                    contentAlignment = Alignment.BottomCenter
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .fillMaxHeight(hudValue.coerceIn(0f, 1f))
-                            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(3.dp))
-                    )
-                }
-
-                Text(
-                    text = "${(hudValue * 100).toInt()}%",
-                    color = Color.White,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
-
-        // 5.3 HUD Tua lùi / Tua tới (Chạm đúp - Ở giữa màn hình)
-        AnimatedVisibility(
-            visible = hudType == HudIndicatorType.SEEK_FORWARD || hudType == HudIndicatorType.SEEK_REWIND,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier.align(Alignment.Center)
-        ) {
-            Surface(
-                shape = ShapeTokens.Card,
-                color = Color.Black.copy(alpha = 0.82f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)),
-                shadowElevation = 8.dp
-            ) {
-                Box(
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 14.dp)
-                ) {
-                    if (hudType == HudIndicatorType.SEEK_FORWARD) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Forward10, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("+10s", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        }
-                    } else {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Replay10, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("-10s", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        }
-                    }
-                }
-            }
-        }
-
-        // 5.4 HUD Kéo trượt tua ngang (Swipe to Seek Preview)
-        AnimatedVisibility(
-            visible = hudType == HudIndicatorType.SEEK_GESTURE,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier.align(Alignment.Center)
-        ) {
-            Box(
-                modifier = Modifier
-                    .background(Color.Black.copy(alpha = 0.85f), ShapeTokens.Card)
-                    .padding(horizontal = 24.dp, vertical = 14.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    val isForward = seekGestureDeltaMs >= 0
-                    Icon(
-                        if (isForward) Icons.Default.FastForward else Icons.Default.FastRewind,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(36.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(horizontalAlignment = Alignment.Start) {
-                        val deltaSec = seekGestureDeltaMs / 1000
-                        val deltaSign = if (isForward) "+" else ""
-                        Text(
-                            text = "$deltaSign${deltaSec}s",
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp
-                        )
-                        Text(
-                            text = "${formatTime(seekGestureTargetMs)} / ${formatTime(effectiveTotalDuration)}",
-                            color = Color.White,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-            }
-        }
-
-        // 6. Nút Mở khóa khi đang bật Khóa màn hình (Screen Lock)
-        if (isLocked && !isPipMode) {
-            AnimatedVisibility(
-                visible = showControls,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier.align(Alignment.CenterStart).padding(start = 24.dp)
-            ) {
-                IconButton(
-                    onClick = {
-                        isLocked = false
-                        showControls = true
-                        lastInteractionTime = System.currentTimeMillis()
-                        Toast.makeText(context, context.getString(R.string.player_unlock_controls), Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier.background(Color.Black.copy(alpha = 0.6f), CircleShape)
-                ) {
-                    Icon(Icons.Default.LockOpen, contentDescription = stringResource(R.string.player_unlock_controls), tint = Color.White)
-                }
-            }
-        }
-
+        )
         // 7.1 Hàng nút điều khiển cố định ở đỉnh màn hình cho WebView Player Fallback (Luôn hiển thị, không chiếm trọn màn hình)
         if (isWebViewMode && !isPipMode) {
-            Row(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                Color.Black.copy(alpha = 0.85f),
-                                Color.Black.copy(alpha = 0.4f),
-                                Color.Transparent
-                            )
-                        )
-                    )
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.common_back), tint = Color.White)
-                }
-
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = 8.dp)
-                ) {
-                    Text(
-                        text = movieName,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = "${currentEpisode.name} • Web Player",
-                        color = MaterialTheme.colorScheme.primary,
-                        fontSize = 12.sp,
-                        maxLines = 1
-                    )
-                }
-
-                // Nút Xoay màn hình (Ngang <-> Dọc)
-                IconButton(
-                    onClick = {
-                        val nextLandscape = !isLandscape
-                        isLandscape = nextLandscape
-                        settingsManager.setPlayerLandscape(nextLandscape)
-                        activity?.requestedOrientation = if (nextLandscape) {
-                            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                        } else {
-                            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                        }
-                        Toast.makeText(
-                            context,
-                            if (nextLandscape) context.getString(R.string.player_orientation_landscape) else context.getString(R.string.player_orientation_portrait),
-                            Toast.LENGTH_SHORT
-                        ).show()
+            val embedFallback = getEffectiveEmbedFallback()
+            PlayerWebViewTopBar(
+                movieName = movieName,
+                episodeName = currentEpisode.name,
+                onRotateScreen = {
+                    val nextLandscape = !isLandscape
+                    isLandscape = nextLandscape
+                    settingsManager.setPlayerLandscape(nextLandscape)
+                    activity?.requestedOrientation = if (nextLandscape) {
+                        ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                    } else {
+                        ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                     }
-                ) {
-                    Icon(
-                        Icons.Default.ScreenRotation,
-                        contentDescription = stringResource(R.string.player_rotate),
-                        tint = Color.White
-                    )
-                }
-
-                // Nút Danh sách tập (cho phim bộ trong Web Player)
-                if (activeEpisodes.size > 1) {
-                    IconButton(
-                        onClick = {
-                            showEpisodesDrawer = true
-                            lastInteractionTime = System.currentTimeMillis()
-                        }
-                    ) {
-                        Icon(
-                            Icons.Default.VideoLibrary,
-                            contentDescription = stringResource(R.string.player_episodes_sheet_title),
-                            tint = if (showEpisodesDrawer) MaterialTheme.colorScheme.primary.copy(alpha = 0.65f) else Color.White
-                        )
-                    }
-                }
-
-                // Nút Chọn Nguồn Phát & Server (Multi-source Selector)
-                IconButton(
-                    onClick = {
-                        showSourceSelectorDrawer = true
-                        lastInteractionTime = System.currentTimeMillis()
-                    }
-                ) {
-                    Icon(
-                        Icons.Default.Dns,
-                        contentDescription = stringResource(R.string.player_sources_btn),
-                        tint = if (showSourceSelectorDrawer) MaterialTheme.colorScheme.primary.copy(alpha = 0.65f) else Color.White
-                    )
-                }
-
-                // Nút chuyển đổi nhanh WebView -> ExoPlayer Native
-                val embedFallback = getEffectiveEmbedFallback()
-                if (!embedFallback.isNullOrEmpty() && resolvedStream != null && errorMessage == null) {
-                    IconButton(
-                        onClick = {
-                            isWebViewMode = false
-                            activeWebView?.loadUrl("about:blank")
-                            exoPlayerRetryCount = 0
-                            resolvedStream?.let { exoPlayerManager.prepareStream(it) }
-                        }
-                    ) {
-                        Icon(
-                            Icons.Default.PlayCircle,
-                            contentDescription = stringResource(R.string.player_switch_to_native),
-                            tint = Color.White
-                        )
-                    }
-                }
-            }
+                    Toast.makeText(
+                        context,
+                        if (nextLandscape) context.getString(R.string.player_orientation_landscape) else context.getString(R.string.player_orientation_portrait),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                },
+                hasMultipleEpisodes = activeEpisodes.size > 1,
+                isEpisodesDrawerOpen = showEpisodesDrawer,
+                onOpenEpisodesDrawer = {
+                    showEpisodesDrawer = true
+                    lastInteractionTime = System.currentTimeMillis()
+                },
+                isSourceDrawerOpen = showSourceSelectorDrawer,
+                onOpenSourceDrawer = {
+                    showSourceSelectorDrawer = true
+                    lastInteractionTime = System.currentTimeMillis()
+                },
+                canSwitchToNative = !embedFallback.isNullOrEmpty() && resolvedStream != null && errorMessage == null,
+                onSwitchToNative = {
+                    isWebViewMode = false
+                    activeWebView?.loadUrl("about:blank")
+                    exoPlayerRetryCount = 0
+                    resolvedStream?.let { exoPlayerManager.prepareStream(it) }
+                },
+                onBack = onBack
+            )
         }
-
         // 7. Giao diện điều khiển Player Compose Controls cho Native Player (Top Bar, Center Controls, Bottom Bar)
         if (!isLocked && !isPipMode && !isWebViewMode) {
-            CompositionLocalProvider(LocalLiquidGlassBackdrop provides videoBackdrop) {
-                AnimatedVisibility(
-                    visible = showControls,
-                    enter = fadeIn(),
-                    exit = fadeOut()
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(
-                                        Color.Black.copy(alpha = 0.8f),
-                                        Color.Transparent,
-                                        Color.Black.copy(alpha = 0.85f)
-                                    )
-                                )
+            val embedFallback = getEffectiveEmbedFallback()
+            PlayerControlsOverlay(
+                showControls = showControls,
+                videoBackdrop = videoBackdrop,
+                movieName = movieName,
+                currentEpisode = currentEpisode,
+                activeServerName = activeServerName,
+                isLandscape = isLandscape,
+                onRotateScreen = {
+                    val nextLandscape = !isLandscape
+                    isLandscape = nextLandscape
+                    settingsManager.setPlayerLandscape(nextLandscape)
+                    activity?.requestedOrientation = if (nextLandscape) {
+                        ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                    } else {
+                        ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    }
+                    Toast.makeText(
+                        context,
+                        if (nextLandscape) context.getString(R.string.player_orientation_landscape) else context.getString(R.string.player_orientation_portrait),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                },
+                onBack = onBack,
+                onLockScreen = {
+                    isLocked = true
+                    lastInteractionTime = System.currentTimeMillis()
+                    Toast.makeText(context, context.getString(R.string.player_lock_controls), Toast.LENGTH_SHORT).show()
+                },
+                activity = activity,
+                onEnterPip = {
+                    try {
+                        showControls = false
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            activity?.enterPictureInPictureMode(
+                                PictureInPictureParams.Builder().build()
                             )
-                    ) {
-                        // --- TOP BAR: Back, Tiêu đề phim & tập, Nút Khóa, Nút Tỉ lệ, Nút PiP, Nút Cài đặt ---
-                        Row(
-                            modifier = Modifier
-                                .align(Alignment.TopStart)
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            IconButton(
-                                onClick = onBack,
-                                modifier = Modifier
-                                    .size(42.dp)
-                                    .playerLiquidGlass(CircleShape, elevation = 4.dp)
-                                    .tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.12f)
-                            ) {
-                                Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.common_back), tint = Color.White)
-                            }
-
-                            Column(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(horizontal = 10.dp)
-                            ) {
-                                Text(
-                                    text = movieName,
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 16.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = currentEpisode.name,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontSize = 13.sp,
-                                    maxLines = 1
-                                )
-                            }
-
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                // Nút Khóa màn hình
-                                IconButton(
-                                    onClick = {
-                                        isLocked = true
-                                        lastInteractionTime = System.currentTimeMillis()
-                                        Toast.makeText(context, context.getString(R.string.player_lock_controls), Toast.LENGTH_SHORT).show()
-                                    },
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .playerLiquidGlass(CircleShape, elevation = 4.dp)
-                                        .tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.12f)
-                                ) {
-                                    Icon(Icons.Default.Lock, contentDescription = stringResource(R.string.player_lock_controls), tint = Color.White, modifier = Modifier.size(20.dp))
-                                }
-
-                                // Nút Xoay màn hình (Ngang <-> Dọc)
-                                IconButton(
-                                    onClick = {
-                                        val nextLandscape = !isLandscape
-                                        isLandscape = nextLandscape
-                                        settingsManager.setPlayerLandscape(nextLandscape)
-                                        activity?.requestedOrientation = if (nextLandscape) {
-                                            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                                        } else {
-                                            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                                        }
-                                        Toast.makeText(
-                                            context,
-                                            if (nextLandscape) context.getString(R.string.player_orientation_landscape) else context.getString(R.string.player_orientation_portrait),
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                    },
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .playerLiquidGlass(CircleShape, elevation = 4.dp)
-                                        .tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.12f)
-                                ) {
-                                    Icon(
-                                        Icons.Default.ScreenRotation,
-                                        contentDescription = stringResource(R.string.player_rotate),
-                                        tint = Color.White,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-
-                                // Nút Picture-in-Picture (PiP)
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                    IconButton(
-                                        onClick = {
-                                            try {
-                                                showControls = false
-                                                activity?.enterPictureInPictureMode(
-                                                    PictureInPictureParams.Builder().build()
-                                                )
-                                            } catch (e: Exception) {
-                                                println("[PlayerScreen] Lỗi vào PiP: ${e.message}")
-                                            }
-                                        },
-                                        modifier = Modifier
-                                            .size(40.dp)
-                                            .playerLiquidGlass(CircleShape, elevation = 4.dp)
-                                            .tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.12f)
-                                    ) {
-                                        Icon(Icons.Default.PictureInPictureAlt, contentDescription = stringResource(R.string.player_pip), tint = Color.White, modifier = Modifier.size(20.dp))
-                                    }
-                                }
-
-                                // Nút Danh sách tập (cho phim bộ)
-                                if (activeEpisodes.size > 1) {
-                                    IconButton(
-                                        onClick = {
-                                            lastInteractionTime = System.currentTimeMillis()
-                                            showEpisodesDrawer = true
-                                        },
-                                        modifier = Modifier
-                                            .size(40.dp)
-                                            .playerLiquidGlass(CircleShape, elevation = 4.dp)
-                                            .tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.12f)
-                                    ) {
-                                        Icon(
-                                            Icons.Default.VideoLibrary,
-                                            contentDescription = stringResource(R.string.player_episodes_sheet_title),
-                                            tint = if (showEpisodesDrawer) MaterialTheme.colorScheme.primary.copy(alpha = 0.65f) else Color.White,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-                                }
-
-                                // Nút Cài đặt (Tốc độ, Chất lượng HLS)
-                                if (!isWebViewMode) {
-                                    IconButton(
-                                        onClick = {
-                                            videoTracks = exoPlayerManager.getVideoTracks()
-                                            audioTracks = exoPlayerManager.getAudioTracks()
-                                            showSettingsDialog = true
-                                        },
-                                        modifier = Modifier
-                                            .size(40.dp)
-                                            .playerLiquidGlass(CircleShape, elevation = 4.dp)
-                                            .tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.12f)
-                                    ) {
-                                        Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.player_settings_title), tint = Color.White, modifier = Modifier.size(20.dp))
-                                    }
-                                }
-
-                                // Nút chuyển đổi nhanh WebView <-> ExoPlayer
-                                val embedFallback = getEffectiveEmbedFallback()
-                                if (!embedFallback.isNullOrEmpty() && resolvedStream != null && errorMessage == null) {
-                                    IconButton(
-                                        onClick = {
-                                            if (isWebViewMode) {
-                                                isWebViewMode = false
-                                                activeWebView?.loadUrl("about:blank")
-                                                exoPlayerRetryCount = 0
-                                                resolvedStream?.let { exoPlayerManager.prepareStream(it) }
-                                            } else {
-                                                exoPlayerManager.pause()
-                                                webViewUrl = embedFallback
-                                                webViewHeaders = embedHeadersFor(embedFallback, resolvedStream?.headers)
-                                                isWebViewMode = true
-                                            }
-                                        },
-                                        modifier = Modifier
-                                            .size(40.dp)
-                                            .playerLiquidGlass(CircleShape, elevation = 4.dp)
-                                    ) {
-                                        Icon(
-                                            if (isWebViewMode) Icons.Default.PlayCircle else Icons.Default.Language,
-                                            contentDescription = if (isWebViewMode) stringResource(R.string.player_switch_to_native) else stringResource(R.string.player_switch_to_webview),
-                                            tint = Color.White,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-                                }
-                            }
                         }
-
-                        // --- CENTER CONTROLS: Buffering HUD khi chưa phát, hoặc [Tua lùi 10s, Tập trước, Play/Pause/Buffer, Tập sau, Tua tới 10s] ---
-                        if (!isWebViewMode && errorMessage == null) {
-                            val isCenterHudActive = hudType == HudIndicatorType.SEEK_FORWARD ||
-                                    hudType == HudIndicatorType.SEEK_REWIND ||
-                                    hudType == HudIndicatorType.SEEK_GESTURE
-                            val isBufferingActive = isLoading || isPlayerBuffering
-
-                            if (!isPlaybackStartedEffective) {
-                                // Tích hợp Buffering HUD vào chính giữa vùng điều khiển theo Theme Kính Lỏng
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Center,
-                                    modifier = Modifier
-                                        .align(Alignment.Center)
-                                        .fillMaxWidth(0.85f)
-                                        .padding(24.dp)
-                                ) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(46.dp),
-                                        strokeWidth = 3.5.dp,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                    Spacer(modifier = Modifier.height(18.dp))
-                                    Text(
-                                        text = movieName,
-                                        style = MaterialTheme.typography.titleMedium.copy(
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = if (isLandscape) 18.sp else 16.sp
-                                        ),
-                                        color = Color.White,
-                                        textAlign = TextAlign.Center,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    val epAndServer = buildString {
-                                        append(currentEpisode.name)
-                                        if (activeServerName.isNotBlank()) {
-                                            append(" • ")
-                                            append(activeServerName)
-                                        }
-                                    }
-                                    Text(
-                                        text = epAndServer,
-                                        style = MaterialTheme.typography.bodySmall.copy(
-                                            fontSize = if (isLandscape) 13.sp else 12.sp
-                                        ),
-                                        color = Color.White.copy(alpha = 0.7f),
-                                        textAlign = TextAlign.Center,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Spacer(modifier = Modifier.height(14.dp))
-                                    Box(
-                                        modifier = Modifier.playerLiquidGlass(
-                                            shape = RoundedCornerShape(20.dp),
-                                            tint = Color(0xFF10141C).copy(alpha = 0.65f),
-                                            elevation = 6.dp
-                                        )
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(8.dp)
-                                                    .background(MaterialTheme.colorScheme.primary, CircleShape)
-                                            )
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Text(
-                                                text = if (isLoading) stringResource(R.string.player_buffering_connecting) else stringResource(R.string.player_buffering_title),
-                                                color = MaterialTheme.colorScheme.primary,
-                                                fontSize = 12.5.sp,
-                                                fontWeight = FontWeight.SemiBold
-                                            )
-                                        }
-                                    }
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text(
-                                        text = stringResource(R.string.player_buffering_hint),
-                                        color = Color.White.copy(alpha = 0.45f),
-                                        fontSize = 11.sp,
-                                        textAlign = TextAlign.Center
-                                    )
-                                }
-                            } else if (!isBufferingActive && !isCenterHudActive && !isDraggingGesture && !isDraggingSlider) {
-                                Row(
-                                    modifier = Modifier
-                                        .align(Alignment.Center)
-                                        .focusGroup(),
-                                    horizontalArrangement = Arrangement.spacedBy(if (isLandscape) 22.dp else 16.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    // Tập trước
-                                    IconButton(
-                                        onClick = {
-                                            if (activeEpisodes.isNotEmpty() && currentEpisodeIndex > 0) {
-                                                showResumePromptDialog = false
-                                                resumeTargetPositionMs = 0L
-                                                currentEpisodeIndex -= 1
-                                                ActivePlayerSession.currentEpisodeIndex = currentEpisodeIndex
-                                                ActivePlayerSession.currentEpisode = activeEpisodes[currentEpisodeIndex]
-                                            }
-                                        },
-                                        enabled = activeEpisodes.isNotEmpty() && currentEpisodeIndex > 0,
-                                        modifier = Modifier
-                                            .size(46.dp)
-                                            .playerLiquidGlass(CircleShape, elevation = 4.dp)
-                                            .tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.12f)
-                                    ) {
-                                        Icon(
-                                            Icons.Default.SkipPrevious,
-                                            contentDescription = stringResource(R.string.player_prev_episode),
-                                            tint = if (activeEpisodes.isNotEmpty() && currentEpisodeIndex > 0) Color.White else Color.Gray,
-                                            modifier = Modifier.size(30.dp)
-                                        )
-                                    }
-
-                                    // Tua lùi 10s
-                                    IconButton(
-                                        onClick = {
-                                            val target = (exoPlayerManager.player.currentPosition - 10_000).coerceAtLeast(0L)
-                                            exoPlayerManager.player.seekTo(target)
-                                            showHud(HudIndicatorType.SEEK_REWIND, 10f)
-                                        },
-                                        modifier = Modifier
-                                            .size(48.dp)
-                                            .playerLiquidGlass(CircleShape, elevation = 4.dp)
-                                            .tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.12f)
-                                    ) {
-                                        Icon(Icons.Default.Replay10, contentDescription = stringResource(R.string.player_rewind_10s), tint = Color.White, modifier = Modifier.size(32.dp))
-                                    }
-
-                                    // Play / Pause (Tâm điểm Kính lỏng)
-                                    IconButton(
-                                        onClick = {
-                                            if (isPlaying) exoPlayerManager.pause() else exoPlayerManager.play()
-                                        },
-                                        modifier = Modifier
-                                            .size(68.dp)
-                                            .focusRequester(playPauseFocusRequester)
-                                            .playerLiquidGlass(
-                                                shape = CircleShape,
-                                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.58f),
-                                                elevation = 10.dp
-                                            )
-                                            .tvFocusableItem(cornerRadius = 34.dp, focusedScale = 1.12f, focusColor = Color.White)
-                                    ) {
-                                        Icon(
-                                            if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                            contentDescription = if (isPlaying) stringResource(R.string.player_pause) else stringResource(R.string.player_play),
-                                            tint = Color.White,
-                                            modifier = Modifier.size(42.dp)
-                                        )
-                                    }
-
-                                    // Tua tới 10s
-                                    IconButton(
-                                        onClick = {
-                                            val maxDur = exoPlayerManager.player.duration.coerceAtLeast(0L)
-                                            val target = if (maxDur > 0) (exoPlayerManager.player.currentPosition + 10_000).coerceAtMost(maxDur) else exoPlayerManager.player.currentPosition + 10_000
-                                            exoPlayerManager.player.seekTo(target)
-                                            showHud(HudIndicatorType.SEEK_FORWARD, 10f)
-                                        },
-                                        modifier = Modifier
-                                            .size(48.dp)
-                                            .playerLiquidGlass(CircleShape, elevation = 4.dp)
-                                            .tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.12f)
-                                    ) {
-                                        Icon(Icons.Default.Forward10, contentDescription = stringResource(R.string.player_forward_10s), tint = Color.White, modifier = Modifier.size(32.dp))
-                                    }
-
-                                    // Tập sau
-                                    IconButton(
-                                        onClick = {
-                                            if (activeEpisodes.isNotEmpty() && currentEpisodeIndex < activeEpisodes.size - 1) {
-                                                showResumePromptDialog = false
-                                                resumeTargetPositionMs = 0L
-                                                currentEpisodeIndex += 1
-                                                ActivePlayerSession.currentEpisodeIndex = currentEpisodeIndex
-                                                ActivePlayerSession.currentEpisode = activeEpisodes[currentEpisodeIndex]
-                                            }
-                                        },
-                                        enabled = activeEpisodes.isNotEmpty() && currentEpisodeIndex < activeEpisodes.size - 1,
-                                        modifier = Modifier
-                                            .size(46.dp)
-                                            .playerLiquidGlass(CircleShape, elevation = 4.dp)
-                                            .tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.12f)
-                                    ) {
-                                        Icon(
-                                            Icons.Default.SkipNext,
-                                            contentDescription = stringResource(R.string.player_next_episode),
-                                            tint = if (activeEpisodes.isNotEmpty() && currentEpisodeIndex < activeEpisodes.size - 1) Color.White else Color.Gray,
-                                            modifier = Modifier.size(30.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                    // --- BOTTOM BAR (Nuvio Style): Seekbar Slider, Timeline (Current / Total), Centered Pill Actions ---
-                    if (!isWebViewMode) {
-                        Column(
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .fillMaxWidth()
-                                .padding(horizontal = 24.dp, vertical = 10.dp)
-                        ) {
-                            val displayPosition = if (isDraggingSlider) (sliderDragRatio * effectiveTotalDuration).toLong() else currentPosition
-
-                            // 1. Seekbar Timeline
-                            Slider(
-                                value = if (isDraggingSlider) sliderDragRatio else if (effectiveTotalDuration > 0) (currentPosition.toFloat() / effectiveTotalDuration.toFloat()).coerceIn(0f, 1f) else 0f,
-                                onValueChange = { ratio ->
-                                    isDraggingSlider = true
-                                    sliderDragRatio = ratio
-                                    lastInteractionTime = System.currentTimeMillis()
-                                },
-                                onValueChangeFinished = {
-                                    val targetMs = (sliderDragRatio * effectiveTotalDuration).toLong()
-                                    currentPosition = targetMs
-                                    isSeeking = true
-                                    exoPlayerManager.seekTo(targetMs)
-                                    isDraggingSlider = false
-                                    lastInteractionTime = System.currentTimeMillis()
-                                    coroutineScope.launch {
-                                        delay(800)
-                                        isSeeking = false
-                                    }
-                                },
-                                colors = SliderDefaults.colors(
-                                    thumbColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.65f),
-                                    activeTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.65f),
-                                    inactiveTrackColor = Color.White.copy(alpha = 0.25f)
-                                ),
-                                modifier = Modifier.fillMaxWidth().height(24.dp)
-                            )
-
-                            // 2. Timeline Numbers: Left = Nút Play/Stop nhỏ + Current Time, Right = Total Duration & Volume Mute Button
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    IconButton(
-                                        onClick = {
-                                            lastInteractionTime = System.currentTimeMillis()
-                                            if (isPlaying) exoPlayerManager.pause() else exoPlayerManager.play()
-                                        },
-                                        modifier = Modifier.size(28.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                            contentDescription = if (isPlaying) stringResource(R.string.player_pause) else stringResource(R.string.player_play),
-                                            tint = Color.White,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-                                    Text(
-                                        text = formatTime(displayPosition),
-                                        color = Color.White.copy(alpha = 0.9f),
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                }
-
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    Text(
-                                        text = formatTime(effectiveTotalDuration),
-                                        color = Color.White.copy(alpha = 0.9f),
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Medium
-                                    )
-
-                                    val curVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-                                    val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-                                    val isMuted = curVol <= 0
-
-                                    Box(
-                                        modifier = Modifier
-                                            .size(30.dp)
-                                            .playerLiquidGlass(
-                                                shape = CircleShape,
-                                                tint = if (isMuted) Color(0xFFE53935).copy(alpha = 0.70f) else Color.White.copy(alpha = 0.12f),
-                                                elevation = 3.dp
-                                            )
-                                            .clickable {
-                                                lastInteractionTime = System.currentTimeMillis()
-                                                if (curVol > 0) {
-                                                    savedMuteVolume = curVol
-                                                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, 0, 0)
-                                                    showHud(HudIndicatorType.VOLUME, 0f)
-                                                } else {
-                                                    val restore = if (savedMuteVolume > 0) savedMuteVolume else (maxVol / 2)
-                                                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, restore, 0)
-                                                    showHud(HudIndicatorType.VOLUME, restore.toFloat() / maxVol)
-                                                }
-                                            },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = if (isMuted) Icons.Default.VolumeMute else Icons.Default.VolumeUp,
-                                            contentDescription = stringResource(R.string.player_audio_pill_label),
-                                            tint = Color.White,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            // 3. Dàn nút điều khiển Capsule nằm phía dưới Seekbar chuẩn Nuvio Liquid Glass (Kích thước to rõ, Icon + Label)
-                            Box(
-                                modifier = Modifier.fillMaxWidth(),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .playerLiquidGlass(
-                                            shape = RoundedCornerShape(26.dp),
-                                            tint = Color(0xFF10141C).copy(alpha = 0.60f),
-                                            elevation = 8.dp
-                                        )
-                                        .padding(horizontal = 6.dp, vertical = 4.dp)
-                                ) {
-                                    val btnSize = if (isLandscape) 40.dp else 36.dp
-                                    val iconSize = if (isLandscape) 20.dp else 18.dp
-                                    val pillSpacing = if (isLandscape) 6.dp else 4.dp
-
-                                    Row(
-                                        modifier = Modifier
-                                            .horizontalScroll(rememberScrollState())
-                                            .focusGroup(),
-                                        horizontalArrangement = Arrangement.spacedBy(pillSpacing),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        // 3.1. Tỉ lệ khung hình (Resize Mode - Ẩn tiêu đề, chỉ icon)
-                                        val isResizeCustom = resizeModeIndex != 0
-                                        Box(
-                                            modifier = Modifier
-                                                .size(btnSize)
-                                                .clip(CircleShape)
-                                                .background(
-                                                    if (isResizeCustom) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.06f)
-                                                )
-                                                .then(
-                                                    if (isResizeCustom) Modifier.border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.50f), CircleShape) else Modifier
-                                                )
-                                                .focusRequester(capsulePillFocusRequester)
-                                                .tvFocusableItem(cornerRadius = 20.dp, focusedScale = 1.15f)
-                                                .clickable {
-                                                    lastInteractionTime = System.currentTimeMillis()
-                                                    resizeModeIndex = (resizeModeIndex + 1) % resizeModes.size
-                                                    val (mode, label) = resizeModes[resizeModeIndex]
-                                                    activePlayerView?.resizeMode = mode
-                                                    Toast.makeText(context, label, Toast.LENGTH_SHORT).show()
-                                                },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.AspectRatio,
-                                                contentDescription = resizeModes[resizeModeIndex].second,
-                                                tint = if (isResizeCustom) MaterialTheme.colorScheme.primary else Color.White,
-                                                modifier = Modifier.size(iconSize)
-                                            )
-                                        }
-
-                                        // 3.2. Tốc độ phát (Speed - Hiển thị số 1.0x / 1.5x hoặc icon)
-                                        val isSpeedCustom = currentSpeed != 1.0f
-                                        Box(
-                                            modifier = Modifier
-                                                .size(btnSize)
-                                                .clip(CircleShape)
-                                                .background(
-                                                    if (isSpeedCustom) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.06f)
-                                                )
-                                                .then(
-                                                    if (isSpeedCustom) Modifier.border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.50f), CircleShape) else Modifier
-                                                )
-                                                .tvFocusableItem(cornerRadius = 20.dp, focusedScale = 1.15f)
-                                                .clickable {
-                                                    lastInteractionTime = System.currentTimeMillis()
-                                                    val nextIdx = (speeds.indexOf(currentSpeed) + 1) % speeds.size
-                                                    currentSpeed = speeds[nextIdx]
-                                                    exoPlayerManager.setPlaybackSpeed(currentSpeed)
-                                                    Toast.makeText(context, context.getString(R.string.player_speed_toast, "${currentSpeed}x"), Toast.LENGTH_SHORT).show()
-                                                },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            if (isSpeedCustom) {
-                                                Text(
-                                                    text = "${currentSpeed}x",
-                                                    color = MaterialTheme.colorScheme.primary,
-                                                    fontSize = if (isLandscape) 12.sp else 11.sp,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                            } else {
-                                                Icon(
-                                                    imageVector = Icons.Default.Speed,
-                                                    contentDescription = stringResource(R.string.player_speed_title),
-                                                    tint = Color.White,
-                                                    modifier = Modifier.size(iconSize)
-                                                )
-                                            }
-                                        }
-
-                                        // 3.3. Âm thanh (Audio Tracks - Ẩn tiêu đề)
-                                        val hasMultiAudio = audioTracks.size > 1
-                                        val isCustomAudio = selectedAudioTrackId != null
-                                        val isAudioActive = hasMultiAudio || isCustomAudio
-                                        Box(
-                                            modifier = Modifier
-                                                .size(btnSize)
-                                                .clip(CircleShape)
-                                                .background(
-                                                    if (isAudioActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.06f)
-                                                )
-                                                .then(
-                                                    if (isAudioActive) Modifier.border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.50f), CircleShape) else Modifier
-                                                )
-                                                .tvFocusableItem(cornerRadius = 20.dp, focusedScale = 1.15f)
-                                                .clickable {
-                                                    lastInteractionTime = System.currentTimeMillis()
-                                                    audioTracks = exoPlayerManager.getAudioTracks()
-                                                    showAudioSheet = true
-                                                },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Audiotrack,
-                                                contentDescription = stringResource(R.string.player_audio_pill_label),
-                                                tint = if (isAudioActive) MaterialTheme.colorScheme.primary else Color.White,
-                                                modifier = Modifier.size(iconSize)
-                                            )
-                                        }
-
-                                        // 3.4. Phụ đề (Subtitles Panel - Ẩn tiêu đề)
-                                        val hasActiveSub = selectedSubtitleTrackId != "off" && selectedSubtitleTrackId != null
-                                        Box(
-                                            modifier = Modifier
-                                                .size(btnSize)
-                                                .clip(CircleShape)
-                                                .background(
-                                                    if (hasActiveSub) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.06f)
-                                                )
-                                                .then(
-                                                    if (hasActiveSub) Modifier.border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.50f), CircleShape) else Modifier
-                                                )
-                                                .tvFocusableItem(cornerRadius = 20.dp, focusedScale = 1.15f)
-                                                .clickable {
-                                                    lastInteractionTime = System.currentTimeMillis()
-                                                    subtitleTracks = mergeSubtitleTracks(customSubtitleTracks, exoPlayerManager.getSubtitleTracks())
-                                                    if (!hasActiveSub) {
-                                                        selectedLangGroup = "none"
-                                                    }
-                                                    showSubtitleSheet = true
-                                                },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Subtitles,
-                                                contentDescription = stringResource(R.string.player_subtitles_pill_label),
-                                                tint = if (hasActiveSub) MaterialTheme.colorScheme.primary else Color.White,
-                                                modifier = Modifier.size(iconSize)
-                                            )
-                                        }
-
-                                        // 3.5. Thuyết minh AI (TTS - Ẩn tiêu đề)
-                                        Box(
-                                            modifier = Modifier
-                                                .size(btnSize)
-                                                .clip(CircleShape)
-                                                .background(
-                                                    if (isTtsEnabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.06f)
-                                                )
-                                                .then(
-                                                    if (isTtsEnabled) Modifier.border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.50f), CircleShape) else Modifier
-                                                )
-                                                .tvFocusableItem(cornerRadius = 20.dp, focusedScale = 1.15f)
-                                                .clickable {
-                                                    lastInteractionTime = System.currentTimeMillis()
-                                                    val newState = !isTtsEnabled
-                                                    if (newState && currentSubCues.isEmpty()) {
-                                                        Toast.makeText(context, context.getString(R.string.player_subtitles_no_cues_to_sync), Toast.LENGTH_SHORT).show()
-                                                    }
-                                                    settingsManager.setTtsEnabled(newState)
-                                                    val toast = if (newState) {
-                                                        context.getString(R.string.player_tts_active_toast)
-                                                    } else {
-                                                        context.getString(R.string.player_tts_inactive_toast)
-                                                    }
-                                                    Toast.makeText(context, toast, Toast.LENGTH_SHORT).show()
-                                                },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.RecordVoiceOver,
-                                                contentDescription = stringResource(R.string.player_tts_pill_label),
-                                                tint = if (isTtsEnabled) MaterialTheme.colorScheme.primary else Color.White,
-                                                modifier = Modifier.size(iconSize)
-                                            )
-                                        }
-
-                                        // 3.6. Danh sách tập (khi có nhiều tập - Ẩn tiêu đề)
-                                        if (activeEpisodes.size > 1) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(btnSize)
-                                                    .clip(CircleShape)
-                                                    .background(Color.White.copy(alpha = 0.06f))
-                                                    .tvFocusableItem(cornerRadius = 20.dp, focusedScale = 1.15f)
-                                                    .clickable {
-                                                        lastInteractionTime = System.currentTimeMillis()
-                                                        showEpisodesDrawer = true
-                                                    },
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.VideoLibrary,
-                                                    contentDescription = stringResource(R.string.player_episodes_sheet_title),
-                                                    tint = Color.White,
-                                                    modifier = Modifier.size(iconSize)
-                                                )
-                                            }
-                                        }
-
-                                        // 3.7. Nguồn (Sources / Server - Ẩn tiêu đề)
-                                        Box(
-                                            modifier = Modifier
-                                                .size(btnSize)
-                                                .clip(CircleShape)
-                                                .background(Color.White.copy(alpha = 0.06f))
-                                                .tvFocusableItem(cornerRadius = 20.dp, focusedScale = 1.15f)
-                                                .clickable {
-                                                    lastInteractionTime = System.currentTimeMillis()
-                                                    showSourceSelectorDrawer = true
-                                                },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Cloud,
-                                                contentDescription = stringResource(R.string.player_source_pill_label),
-                                                tint = Color.White,
-                                                modifier = Modifier.size(iconSize)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        }
-
-        // 8. Panel Cài Đặt Trình Phát (Right Side Drawer Panel sang trọng)
-        AnimatedVisibility(
-            visible = showSettingsDialog,
-            enter = fadeIn(),
-            exit = fadeOut()
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.5f))
-                    .pointerInput(Unit) {
-                        detectTapGestures { showSettingsDialog = false }
-                    }
-            ) {
-                // Panel trượt từ bên phải
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .fillMaxHeight()
-                        .width(360.dp)
-                        .background(
-                            Color.Black.copy(alpha = 0.65f),
-                            RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp)
-                        )
-                        .pointerInput(Unit) {
-                            // Chặn chạm xuyên qua ra màn hình chính
-                            detectTapGestures { }
-                        }
-                        .padding(20.dp)
-                ) {
-                    LaunchedEffect(showSettingsDialog) {
-                        if (showSettingsDialog) {
-                            delay(60)
-                            try {
-                                settingsDialogInitialFocusRequester.requestFocus()
-                            } catch (_: Exception) {}
-                        }
-                    }
-
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        // Header
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Tune, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text(
-                                    text = stringResource(R.string.player_settings_title),
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    fontSize = 17.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            IconButton(
-                                onClick = { showSettingsDialog = false },
-                                modifier = Modifier
-                                    .focusRequester(settingsDialogInitialFocusRequester)
-                                    .tvFocusableItem(cornerRadius = 18.dp, focusedScale = 1.12f)
-                            ) {
-                                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.common_close), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
-                            }
-                        }
-
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), modifier = Modifier.padding(vertical = 12.dp))
-
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            // Mục 1: Tốc độ phát video
-                            item {
-                                Column {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = stringResource(R.string.player_speed_title).uppercase(),
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            letterSpacing = 1.sp
-                                        )
-                                        Text(
-                                            text = "${currentSpeed}x",
-                                            color = MaterialTheme.colorScheme.primary,
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.height(10.dp))
-                                    // Lưới nút tốc độ phát chia đều 3 cột x 2 hàng
-                                    val speedChunks = speeds.chunked(3)
-                                    speedChunks.forEach { rowSpeeds ->
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            rowSpeeds.forEach { sp ->
-                                                val isSelected = currentSpeed == sp
-                                                Surface(
-                                                    modifier = Modifier
-                                                        .weight(1f)
-                                                        .height(36.dp)
-                                                        .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.08f),
-                                                    shape = ShapeTokens.Button,
-                                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                                                    onClick = {
-                                                        currentSpeed = sp
-                                                        exoPlayerManager.setPlaybackSpeed(sp)
-                                                    }
-                                                ) {
-                                                    Box(contentAlignment = Alignment.Center) {
-                                                        Text(
-                                                            text = "${sp}x",
-                                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                                            fontSize = 13.sp
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                    }
-                                }
-                            }
-
-                            // Mục 2: Chất lượng Video HLS
-                            item {
-                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 4.dp))
-                                Text(
-                                    text = stringResource(R.string.player_quality_title).uppercase(),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    letterSpacing = 1.sp
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                SettingsOptionCard(
-                                    title = stringResource(R.string.player_quality_auto),
-                                    subtitle = stringResource(R.string.player_quality_auto_desc),
-                                    isSelected = selectedVideoTrackId == "auto",
-                                    onClick = {
-                                        selectedVideoTrackId = "auto"
-                                        exoPlayerManager.setVideoTrack(null)
-                                    }
-                                )
-                            }
-
-                            items(videoTracks) { track ->
-                                SettingsOptionCard(
-                                    title = track.label,
-                                    subtitle = if (track.width > 0 && track.height > 0) "${track.width}x${track.height}" else null,
-                                    isSelected = selectedVideoTrackId == track.id,
-                                    onClick = {
-                                        selectedVideoTrackId = track.id
-                                        exoPlayerManager.setVideoTrack(track)
-                                    }
-                                )
-                            }
-
-                            // Mục 3: Luồng âm thanh (Audio Tracks)
-                            if (audioTracks.isNotEmpty()) {
-                                item {
-                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 4.dp))
-                                    Text(
-                                        text = stringResource(R.string.player_audio_title).uppercase(),
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        letterSpacing = 1.sp
-                                    )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                }
-
-                                items(audioTracks) { track ->
-                                    val specs = exoPlayerManager.formatAudioSpecs(track)
-                                    val isSelected = if (selectedAudioTrackId != null) selectedAudioTrackId == track.id else track.isSelected
-                                    SettingsOptionCard(
-                                        title = track.label,
-                                        subtitle = specs.ifBlank { null },
-                                        isSelected = isSelected,
-                                        onClick = {
-                                            selectedAudioTrackId = track.id
-                                            exoPlayerManager.setAudioTrack(track)
-                                            audioTracks = exoPlayerManager.getAudioTracks()
-                                            Toast.makeText(context, context.getString(R.string.player_audio_selected_toast, track.label), Toast.LENGTH_SHORT).show()
-                                        }
-                                    )
-                                }
-                            }
-
-                            item {
-                                Spacer(modifier = Modifier.height(20.dp))
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // 8.1.5 Panel Tùy Chỉnh Phụ Đề Chuẩn Nuvio (3 Cột: Ngôn ngữ | Phụ đề | Kiểu)
-        AnimatedVisibility(
-            visible = showSubtitleSheet,
-            enter = fadeIn(),
-            exit = fadeOut()
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.52f))
-                    .pointerInput(Unit) {
-                        detectTapGestures { showSubtitleSheet = false }
-                    }
-            ) {
-                Box(
-                    modifier = Modifier
-                        .then(
-                            if (isLandscape) {
-                                Modifier
-                                    .align(Alignment.Center)
-                                    .fillMaxWidth(0.78f)
-                                    .fillMaxHeight(0.78f)
-                                    .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(16.dp))
-                                    .padding(horizontal = 16.dp, vertical = 12.dp)
-                            } else {
-                                Modifier
-                                    .align(Alignment.BottomCenter)
-                                    .fillMaxWidth()
-                                    .fillMaxHeight(0.72f)
-                                    .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-                                    .padding(horizontal = 14.dp, vertical = 12.dp)
-                            }
-                        )
-                        .pointerInput(Unit) { detectTapGestures { } }
-                ) {
-                    LaunchedEffect(showSubtitleSheet) {
-                        if (showSubtitleSheet) {
-                            delay(60)
-                            try {
-                                subtitleSheetInitialFocusRequester.requestFocus()
-                            } catch (_: Exception) {}
-                        }
-                    }
-
-                    Column(
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        // Header: Tiêu đề "Phụ đề" & Nút đóng
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = if (isLandscape) 12.dp else 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = stringResource(R.string.player_subtitles_pill_label),
-                                color = Color.White,
-                                fontSize = if (isLandscape) 22.sp else 18.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            IconButton(
-                                onClick = { showSubtitleSheet = false },
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .focusRequester(subtitleSheetInitialFocusRequester)
-                                    .tvFocusableItem(cornerRadius = 18.dp, focusedScale = 1.12f)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = stringResource(R.string.common_close),
-                                    tint = Color.White.copy(alpha = 0.8f)
-                                )
-                            }
-                        }
-
-                        // 3 Cột: Ngôn ngữ | Phụ đề | Kiểu
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f),
-                            horizontalArrangement = Arrangement.spacedBy(if (isLandscape) 16.dp else 8.dp)
-                        ) {
-                            // CỘT 1: Ngôn ngữ
-                            Column(
-                                modifier = Modifier
-                                    .weight(if (isLandscape) 1f else 0.95f)
-                                    .fillMaxHeight()
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.player_subtitles_language_header),
-                                    color = Color.White.copy(alpha = 0.6f),
-                                    fontSize = if (isLandscape) 13.sp else 11.5.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.padding(bottom = if (isLandscape) 10.dp else 6.dp)
-                                )
-
-                                val allActiveLangCodes = remember(configuredSubLanguages, subtitleTracks) {
-                                    val list = mutableListOf<String>()
-                                    if (configuredSubLanguages.contains("vi")) list.add("vi")
-                                    if (configuredSubLanguages.contains("en")) list.add("en")
-                                    configuredSubLanguages.filter { it != "vi" && it != "en" }.sorted().forEach { list.add(it) }
-                                    // Chỉ bổ sung thêm các ngôn ngữ nhúng sẵn trong track stream của video đang phát
-                                    subtitleTracks.mapNotNull { it.language?.lowercase()?.trim() }
-                                        .filter { it.isNotBlank() && !list.contains(it) && it != "und" }
-                                        .distinct()
-                                        .forEach { list.add(it) }
-                                    list
-                                }
-
-                                val col1ItemHeight = if (isLandscape) 42.dp else 36.dp
-                                val col1PaddingH = if (isLandscape) 14.dp else 8.dp
-                                val col1FontSize = if (isLandscape) 13.5.sp else 12.sp
-                                val col1BadgeSize = if (isLandscape) 22.dp else 18.dp
-                                val col1BadgeFontSize = if (isLandscape) 11.sp else 9.5.sp
-
-                                LazyColumn(
-                                    modifier = Modifier.fillMaxSize(),
-                                    verticalArrangement = Arrangement.spacedBy(if (isLandscape) 8.dp else 6.dp)
-                                ) {
-                                    // 1. "Không có"
-                                    item {
-                                        val isNoneSelected = selectedLangGroup == "none" || selectedSubtitleTrackId == "off"
-                                        Surface(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .height(col1ItemHeight)
-                                                .tvFocusableItem(cornerRadius = col1ItemHeight / 2, focusedScale = 1.05f),
-                                            shape = RoundedCornerShape(col1ItemHeight / 2),
-                                            color = if (isNoneSelected && selectedSubtitleTrackId == "off") MaterialTheme.colorScheme.primary else Color.Transparent,
-                                            onClick = {
-                                                selectedLangGroup = "none"
-                                                selectedSubtitleTrackId = "off"
-                                                activeOnlineSubId = null
-                                                isSubtitleDisabled = true
-                                                currentSubCues = emptyList()
-                                                activePlayerView?.subtitleView?.setCues(emptyList())
-                                                exoPlayerManager.setSubtitleTrack(null)
-                                                subtitleManager.cacheManager.saveSavedSubtitleTrack(activeProviderId, activeMovieSlug, currentEpisode.id, "off", tmdbId = movieTmdbId)
-                                            }
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.fillMaxSize().padding(horizontal = col1PaddingH),
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Text(
-                                                    text = stringResource(R.string.player_subtitles_none),
-                                                    color = Color.White,
-                                                    fontSize = col1FontSize,
-                                                    fontWeight = if (isNoneSelected && selectedSubtitleTrackId == "off") FontWeight.Bold else FontWeight.Normal,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                            }
-                                        }
-                                    }
-
-                                    // 2. Danh sách các ngôn ngữ (Được cấu hình + có sẵn trong stream)
-                                    items(allActiveLangCodes) { langCode ->
-                                        val isLangSelected = selectedLangGroup == langCode
-                                        val streamCount = subtitleTracks.count {
-                                            when (langCode) {
-                                                "vi" -> isVietnameseTrack(it)
-                                                "en" -> isEnglishTrack(it)
-                                                else -> it.language?.equals(langCode, true) == true
-                                            }
-                                        }
-                                        val onlineCount = ((stremioAddonSubsMap[langCode] ?: emptyList()) + (onlineSubsMap[langCode] ?: emptyList()))
-                                            .distinctBy { it.downloadUrl ?: it.id }
-                                            .size
-                                        val totalCount = streamCount + onlineCount
-                                        val displayName = com.jkhx.player.core.player.subtitle.model.SubtitleSupportedLanguages.getDisplayName(langCode)
-
-                                        Surface(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .height(col1ItemHeight)
-                                                .tvFocusableItem(cornerRadius = col1ItemHeight / 2, focusedScale = 1.05f),
-                                            shape = RoundedCornerShape(col1ItemHeight / 2),
-                                            color = if (isLangSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                                            onClick = {
-                                                selectedLangGroup = langCode
-                                                if (onlineSubsMap[langCode] == null && loadingSubsMap[langCode] != true) {
-                                                    executeOnlineSubSearch(langCode, force = false)
-                                                }
-                                            }
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.fillMaxSize().padding(horizontal = col1PaddingH),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Text(
-                                                    text = displayName,
-                                                    color = Color.White,
-                                                    fontSize = col1FontSize,
-                                                    fontWeight = if (isLangSelected) FontWeight.Bold else FontWeight.Normal,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    modifier = Modifier.weight(1f, fill = false)
-                                                )
-                                                if (totalCount > 0) {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .size(col1BadgeSize)
-                                                            .background(if (isLangSelected) Color.White.copy(alpha = 0.25f) else MaterialTheme.colorScheme.primary, CircleShape),
-                                                        contentAlignment = Alignment.Center
-                                                    ) {
-                                                        Text(
-                                                            text = "$totalCount",
-                                                            color = Color.White,
-                                                            fontSize = col1BadgeFontSize,
-                                                            fontWeight = FontWeight.Bold
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            // CỘT 2: Phụ đề (Unified Stream + Online Subtitles)
-                            Column(
-                                modifier = Modifier
-                                    .weight(if (isLandscape) 1.35f else 1.3f)
-                                    .fillMaxHeight()
-                            ) {
-                                // Header: Tiêu đề theo nhóm ngôn ngữ + Nút Sửa từ khóa + Nút Làm mới
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(bottom = if (isLandscape) 8.dp else 6.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = when (selectedLangGroup) {
-                                            "vi" -> stringResource(R.string.player_subtitles_vi_header)
-                                            "en" -> stringResource(R.string.player_subtitles_en_header)
-                                            "none" -> stringResource(R.string.player_subtitles_none)
-                                            else -> stringResource(R.string.player_subtitles_stream_header, selectedLangGroup.uppercase())
-                                        },
-                                        color = Color.White.copy(alpha = 0.85f),
-                                        fontSize = if (isLandscape) 13.sp else 11.5.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f, fill = false)
-                                    )
-
-                                    if (selectedLangGroup == "vi" || selectedLangGroup == "en") {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(2.dp)
-                                        ) {
-                                            // Nút sửa từ khóa
-                                            IconButton(
-                                                onClick = {
-                                                    isEditingSubSearchQuery = !isEditingSubSearchQuery
-                                                    if (isEditingSubSearchQuery) {
-                                                        tempSubSearchQuery = customSubSearchQuery ?: ""
-                                                    }
-                                                },
-                                                modifier = Modifier
-                                                    .size(30.dp)
-                                                    .tvFocusableItem(cornerRadius = 15.dp, focusedScale = 1.15f)
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Edit,
-                                                    contentDescription = stringResource(R.string.player_subtitles_edit_query),
-                                                    tint = if (isEditingSubSearchQuery) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.7f),
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                            }
-
-                                            // Nút làm mới danh sách (force refresh online)
-                                            val isLangLoading = (loadingSubsMap[selectedLangGroup] == true) || isStremioSubsLoading
-                                            IconButton(
-                                                onClick = {
-                                                    if (!isLangLoading) {
-                                                        if (selectedLangGroup != "none") {
-                                                            loadStremioAddonSubtitles(force = true)
-                                                            executeOnlineSubSearch(selectedLangGroup, force = true)
-                                                        }
-                                                    }
-                                                },
-                                                enabled = !isLangLoading,
-                                                modifier = Modifier
-                                                    .size(30.dp)
-                                                    .tvFocusableItem(cornerRadius = 15.dp, focusedScale = 1.15f)
-                                            ) {
-                                                if (isLangLoading) {
-                                                    CircularProgressIndicator(
-                                                        modifier = Modifier.size(14.dp),
-                                                        strokeWidth = 2.dp,
-                                                        color = MaterialTheme.colorScheme.primary
-                                                    )
-                                                } else {
-                                                    Icon(
-                                                        imageVector = Icons.Default.Refresh,
-                                                        contentDescription = stringResource(R.string.player_subtitles_refresh),
-                                                        tint = Color.White.copy(alpha = 0.7f),
-                                                        modifier = Modifier.size(16.dp)
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // Ô sửa từ khóa tìm kiếm (khi bật Edit)
-                                if (isEditingSubSearchQuery && selectedLangGroup != "none") {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(bottom = 8.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        BasicTextField(
-                                            value = tempSubSearchQuery,
-                                            onValueChange = { tempSubSearchQuery = it },
-                                            singleLine = true,
-                                            textStyle = androidx.compose.ui.text.TextStyle(
-                                                fontSize = 12.sp,
-                                                color = Color.White,
-                                                fontWeight = FontWeight.Normal
-                                            ),
-                                            cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .height(36.dp),
-                                            decorationBox = { innerTextField ->
-                                                Row(
-                                                    modifier = Modifier
-                                                        .fillMaxSize()
-                                                        .background(Color(0xFF161920), RoundedCornerShape(8.dp))
-                                                        .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
-                                                        .padding(horizontal = 8.dp),
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.Search,
-                                                        contentDescription = null,
-                                                        tint = Color.White.copy(alpha = 0.4f),
-                                                        modifier = Modifier.size(16.dp)
-                                                    )
-                                                    Spacer(modifier = Modifier.width(6.dp))
-                                                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-                                                        if (tempSubSearchQuery.isEmpty()) {
-                                                            Text(
-                                                                stringResource(R.string.player_subtitles_edit_search_hint),
-                                                                fontSize = 11.5.sp,
-                                                                color = Color.White.copy(alpha = 0.35f)
-                                                            )
-                                                        }
-                                                        innerTextField()
-                                                    }
-                                                    if (tempSubSearchQuery.isNotEmpty()) {
-                                                        IconButton(
-                                                            onClick = { tempSubSearchQuery = "" },
-                                                            modifier = Modifier.size(20.dp)
-                                                        ) {
-                                                            Icon(
-                                                                imageVector = Icons.Default.Close,
-                                                                contentDescription = "Clear",
-                                                                tint = Color.White.copy(alpha = 0.5f),
-                                                                modifier = Modifier.size(14.dp)
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        )
-                                        Button(
-                                            onClick = {
-                                                customSubSearchQuery = tempSubSearchQuery.trim()
-                                                isEditingSubSearchQuery = false
-                                                if (selectedLangGroup != "none") {
-                                                    executeOnlineSubSearch(selectedLangGroup, force = true)
-                                                }
-                                            },
-                                            shape = RoundedCornerShape(8.dp),
-                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-                                            modifier = Modifier
-                                                .height(36.dp)
-                                                .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.06f)
-                                        ) {
-                                            Text(stringResource(R.string.player_subtitles_search_action), fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
-                                        }
-                                    }
-                                }
-
-                                // Danh sách các bản phụ đề
-                                val isLangLoading = (loadingSubsMap[selectedLangGroup] == true) || isStremioSubsLoading
-                                val onlineItems = ((stremioAddonSubsMap[selectedLangGroup] ?: emptyList()) + (onlineSubsMap[selectedLangGroup] ?: emptyList()))
-                                    .distinctBy { it.downloadUrl ?: it.id }
-                                val streamItems = remember(subtitleTracks, selectedLangGroup) {
-                                    when (selectedLangGroup) {
-                                        "vi" -> subtitleTracks.filter { isVietnameseTrack(it) }
-                                        "en" -> subtitleTracks.filter { isEnglishTrack(it) }
-                                        "none" -> emptyList()
-                                        else -> subtitleTracks.filter { it.language?.equals(selectedLangGroup, true) == true }
-                                    }
-                                }
-
-                                if (selectedLangGroup == "none") {
-                                    Box(
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = stringResource(R.string.player_subtitle_off),
-                                            color = Color.White.copy(alpha = 0.5f),
-                                            fontSize = 13.sp
-                                        )
-                                    }
-                                } else if (isLangLoading && streamItems.isEmpty() && onlineItems.isEmpty()) {
-                                    Box(
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                            CircularProgressIndicator(modifier = Modifier.size(26.dp), strokeWidth = 2.5.dp, color = MaterialTheme.colorScheme.primary)
-                                            Spacer(modifier = Modifier.height(10.dp))
-                                            Text(
-                                                text = stringResource(R.string.player_subtitles_loading_online),
-                                                color = Color.White.copy(alpha = 0.6f),
-                                                fontSize = 12.sp
-                                            )
-                                        }
-                                    }
-                                } else if (streamItems.isEmpty() && onlineItems.isEmpty()) {
-                                    Box(
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                            Text(
-                                                text = stringResource(R.string.player_subtitles_no_results),
-                                                color = Color.White.copy(alpha = 0.5f),
-                                                fontSize = 12.5.sp,
-                                                textAlign = TextAlign.Center
-                                            )
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                            TextButton(
-                                                onClick = {
-                                                    loadStremioAddonSubtitles(force = true)
-                                                    executeOnlineSubSearch(selectedLangGroup, force = true)
-                                                }
-                                            ) {
-                                                Text(stringResource(R.string.player_subtitles_refresh), color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    LazyColumn(
-                                        modifier = Modifier.fillMaxSize(),
-                                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        // 1. Phụ đề có sẵn từ luồng phát (Stream / Plugin / Custom)
-                                        items(streamItems) { track ->
-                                            val isSelected = selectedSubtitleTrackId == track.id
-                                            Surface(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .tvFocusableItem(cornerRadius = 10.dp, focusedScale = 1.03f),
-                                                shape = RoundedCornerShape(10.dp),
-                                                color = if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFF1E222B),
-                                                border = if (isSelected) null else BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-                                                onClick = {
-                                                    applySubJob?.cancel()
-                                                    isSubtitleDisabled = false
-                                                    selectedSubtitleTrackId = track.id
-                                                    activeOnlineSubId = null
-                                                    val savedOffset = subtitleManager.cacheManager.getSubtitleOffset(activeProviderId, activeMovieSlug, currentEpisode.id, track.id, movieTmdbId)
-                                                    val cues = subtitleCuesMap[track.id] ?: subtitleCuesMap[track.label]
-                                                    if (cues != null && cues.isNotEmpty()) {
-                                                        currentSubCues = cues
-                                                        currentSubOffsetMs = savedOffset
-                                                        exoPlayerManager.player.trackSelectionParameters = exoPlayerManager.player.trackSelectionParameters
-                                                            .buildUpon()
-                                                            .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, true)
-                                                            .build()
-                                                    } else {
-                                                        currentSubCues = emptyList()
-                                                        currentSubOffsetMs = savedOffset
-                                                        activePlayerView?.subtitleView?.setCues(emptyList())
-                                                        exoPlayerManager.setSubtitleTrack(track)
-                                                        resolvedStream?.let { loadStreamSubtitles(it) }
-                                                    }
-                                                    subtitleManager.cacheManager.saveSavedSubtitleTrack(
-                                                        activeProviderId,
-                                                        activeMovieSlug,
-                                                        currentEpisode.id,
-                                                        track.id,
-                                                        label = track.label,
-                                                        language = track.language,
-                                                        tmdbId = movieTmdbId
-                                                    )
-                                                    Toast.makeText(context, context.getString(R.string.player_subtitles_selected_stream_track, track.label), Toast.LENGTH_SHORT).show()
-                                                }
-                                            ) {
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
-                                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Column(modifier = Modifier.weight(1f)) {
-                                                        val badgeText = when {
-                                                            track.label.contains("Gemini", true) -> "✨ [JT-SUBTITLES] Gemini AI"
-                                                            track.label.contains("OpenSubtitles", true) -> "[OpenSubtitles]"
-                                                            track.label.contains("SubDL", true) -> "[SubDL]"
-                                                            track.label.contains("Subsource", true) -> "[Subsource]"
-                                                            else -> stringResource(R.string.player_subtitles_stream_badge)
-                                                        }
-                                                        Text(
-                                                            text = badgeText,
-                                                            color = if (isSelected) Color.White.copy(alpha = 0.9f) else MaterialTheme.colorScheme.primary,
-                                                            fontSize = 10.sp,
-                                                            fontWeight = FontWeight.SemiBold,
-                                                            modifier = Modifier
-                                                                .background(
-                                                                    if (isSelected) Color.White.copy(alpha = 0.2f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
-                                                                    RoundedCornerShape(4.dp)
-                                                                )
-                                                                .padding(horizontal = 5.dp, vertical = 2.dp)
-                                                        )
-                                                        Spacer(modifier = Modifier.height(3.dp))
-                                                        Text(
-                                                            text = track.label,
-                                                            color = Color.White,
-                                                            fontSize = 12.5.sp,
-                                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                                            maxLines = 2,
-                                                            overflow = TextOverflow.Ellipsis
-                                                        )
-                                                    }
-                                                    if (isSelected) {
-                                                        Spacer(modifier = Modifier.width(6.dp))
-                                                        Icon(
-                                                            imageVector = Icons.Default.Check,
-                                                            contentDescription = null,
-                                                            tint = Color.White,
-                                                            modifier = Modifier.size(18.dp)
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        // 2. Phụ đề trực tuyến (Online Subtitles: OpenSubtitles, SubDL, Subsource)
-                                        items(onlineItems) { item ->
-                                            val customItemId = "online_${item.source}_${item.id}"
-                                            val isSelected = (selectedSubtitleTrackId == customItemId) || (activeOnlineSubId == item.id)
-                                            val isDownloadingThis = downloadingSubItemId == item.id
-
-                                            Surface(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .tvFocusableItem(cornerRadius = 10.dp, focusedScale = 1.03f),
-                                                shape = RoundedCornerShape(10.dp),
-                                                color = if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFF1E222B),
-                                                border = if (isSelected) null else BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-                                                onClick = {
-                                                    if (!isDownloadingThis && !isTranslatingWithGemini) {
-                                                        applyOnlineSub(item)
-                                                    }
-                                                }
-                                            ) {
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
-                                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Column(modifier = Modifier.weight(1f)) {
-                                                        Row(
-                                                            verticalAlignment = Alignment.CenterVertically,
-                                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                                        ) {
-                                                            Text(
-                                                                text = "[${item.source}]",
-                                                                color = if (isSelected) Color.White.copy(alpha = 0.95f) else MaterialTheme.colorScheme.primary,
-                                                                fontSize = 10.sp,
-                                                                fontWeight = FontWeight.Bold,
-                                                                modifier = Modifier
-                                                                    .background(
-                                                                        if (isSelected) Color.White.copy(alpha = 0.2f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
-                                                                        RoundedCornerShape(4.dp)
-                                                                    )
-                                                                    .padding(horizontal = 5.dp, vertical = 2.dp)
-                                                            )
-                                                            val dlCount = item.downloadCount
-                                                            if (dlCount != null && dlCount > 0) {
-                                                                Text(
-                                                                    text = "⬇ $dlCount",
-                                                                    color = Color.White.copy(alpha = 0.6f),
-                                                                    fontSize = 10.5.sp
-                                                                )
-                                                            }
-                                                        }
-                                                        Spacer(modifier = Modifier.height(3.dp))
-                                                        Text(
-                                                            text = item.name,
-                                                            color = Color.White,
-                                                            fontSize = 12.5.sp,
-                                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                                            maxLines = 2,
-                                                            overflow = TextOverflow.Ellipsis
-                                                        )
-                                                    }
-
-                                                    Row(
-                                                        verticalAlignment = Alignment.CenterVertically,
-                                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                                    ) {
-                                                        // Nút Dịch AI trực tiếp sang Tiếng Việt cho các bản sub ngoại ngữ
-                                                        if (selectedLangGroup != "vi" && selectedLangGroup != "none") {
-                                                            val isAlreadyTranslated = translatedEnglishSubIds.contains(item.id)
-                                                            if (isAlreadyTranslated) {
-                                                                Surface(
-                                                                    shape = RoundedCornerShape(6.dp),
-                                                                    color = Color(0xFF2E7D32),
-                                                                    modifier = Modifier.tvFocusableItem(cornerRadius = 6.dp, focusedScale = 1.08f),
-                                                                    onClick = {
-                                                                        selectedLangGroup = "vi"
-                                                                    }
-                                                                ) {
-                                                                    Row(
-                                                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
-                                                                        verticalAlignment = Alignment.CenterVertically,
-                                                                        horizontalArrangement = Arrangement.spacedBy(3.dp)
-                                                                    ) {
-                                                                        Icon(
-                                                                            imageVector = Icons.Default.Check,
-                                                                            contentDescription = null,
-                                                                            tint = Color.White,
-                                                                            modifier = Modifier.size(12.dp)
-                                                                        )
-                                                                        Text(
-                                                                            text = "Đã dịch AI",
-                                                                            color = Color.White,
-                                                                            fontSize = 10.5.sp,
-                                                                            fontWeight = FontWeight.Bold
-                                                                        )
-                                                                    }
-                                                                }
-                                                            } else {
-                                                                Surface(
-                                                                    shape = RoundedCornerShape(6.dp),
-                                                                    color = Color(0xFF1565C0),
-                                                                    modifier = Modifier.tvFocusableItem(cornerRadius = 6.dp, focusedScale = 1.08f),
-                                                                    onClick = {
-                                                                        if (!isDownloadingThis && !isTranslatingWithGemini) {
-                                                                            translateOnlineSubWithGemini(item)
-                                                                        }
-                                                                    }
-                                                                ) {
-                                                                    Row(
-                                                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
-                                                                        verticalAlignment = Alignment.CenterVertically,
-                                                                        horizontalArrangement = Arrangement.spacedBy(3.dp)
-                                                                    ) {
-                                                                        Icon(
-                                                                            imageVector = Icons.Default.AutoAwesome,
-                                                                            contentDescription = null,
-                                                                            tint = Color.Yellow,
-                                                                            modifier = Modifier.size(12.dp)
-                                                                        )
-                                                                        Text(
-                                                                            text = stringResource(R.string.player_subtitles_translate_ai),
-                                                                            color = Color.White,
-                                                                            fontSize = 10.5.sp,
-                                                                            fontWeight = FontWeight.Bold
-                                                                        )
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-
-                                                        if (isDownloadingThis) {
-                                                            CircularProgressIndicator(
-                                                                modifier = Modifier.size(18.dp),
-                                                                strokeWidth = 2.dp,
-                                                                color = Color.White
-                                                            )
-                                                        } else if (isSelected) {
-                                                            Icon(
-                                                                imageVector = Icons.Default.Check,
-                                                                contentDescription = null,
-                                                                tint = Color.White,
-                                                                modifier = Modifier.size(18.dp)
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                        // CỘT 3: Kiểu
-                        Column(
-                            modifier = Modifier
-                                .weight(if (isLandscape) 1.2f else 1.15f)
-                                .fillMaxHeight()
-                        ) {
-                            Text(
-                                text = stringResource(R.string.player_subtitles_style_header),
-                                color = Color.White.copy(alpha = 0.6f),
-                                fontSize = if (isLandscape) 13.sp else 11.5.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.padding(bottom = if (isLandscape) 10.dp else 6.dp)
-                            )
-
-                            LazyColumn(
-                                modifier = Modifier.fillMaxSize(),
-                                verticalArrangement = Arrangement.spacedBy(if (isLandscape) 12.dp else 8.dp)
-                            ) {
-                                // 1. Độ trễ phụ đề (Offset)
-                                item {
-                                    Text(
-                                        text = stringResource(R.string.player_subtitles_delay_label),
-                                        color = Color.White.copy(alpha = 0.8f),
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        // Nút Giảm (-) có hỗ trợ nhấn giữ tăng tốc
-                                        RepeatingIconButton(
-                                            onClick = { updateSubOffset(currentSubOffsetMs - 500L) },
-                                            modifier = Modifier
-                                                .size(34.dp)
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .background(Color(0xFF262A34))
-                                                .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.12f)
-                                        ) {
-                                            Icon(Icons.Default.Remove, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                                        }
-
-                                        Box(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .height(34.dp)
-                                                .background(Color(0xFF1E222B), RoundedCornerShape(8.dp)),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                text = "${if (currentSubOffsetMs >= 0) "+" else ""}${String.format(java.util.Locale.US, "%.3f", currentSubOffsetMs / 1000f)}s",
-                                                color = Color.White,
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Medium,
-                                                maxLines = 1
-                                            )
-                                        }
-
-                                        // Nút Tăng (+) có hỗ trợ nhấn giữ tăng tốc
-                                        RepeatingIconButton(
-                                            onClick = { updateSubOffset(currentSubOffsetMs + 500L) },
-                                            modifier = Modifier
-                                                .size(34.dp)
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .background(Color(0xFF262A34))
-                                                .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.12f)
-                                        ) {
-                                            Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.height(5.dp))
-
-                                    Surface(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(30.dp)
-                                            .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.04f),
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = Color(0xFF262A34),
-                                        onClick = { updateSubOffset(0L) }
-                                    ) {
-                                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                            Text(
-                                                text = stringResource(R.string.player_subtitles_offset_reset),
-                                                color = Color.White.copy(alpha = 0.85f),
-                                                fontSize = 11.5.sp,
-                                                fontWeight = FontWeight.Medium
-                                            )
-                                        }
-                                    }
-                                }
-
-                                // 1.2. Tự đồng bộ bằng AI (AI Auto-Sync độc lập)
-                                item {
-                                    Surface(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(38.dp)
-                                            .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.04f),
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = if (isAiSyncing) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else MaterialTheme.colorScheme.primary,
-                                        onClick = {
-                                            if (isAiSyncing) return@Surface
-                                            if (currentSubCues.isEmpty()) {
-                                                Toast.makeText(context, context.getString(R.string.player_subtitles_no_cues_to_sync), Toast.LENGTH_SHORT).show()
-                                                return@Surface
-                                            }
-                                            coroutineScope.launch {
-                                                isAiSyncing = true
-                                                try {
-                                                    val pos = exoPlayerManager.player.currentPosition
-                                                    val currentEffective = pos - currentSubOffsetMs
-                                                    val sortedCues = currentSubCues.sortedBy { kotlin.math.abs(it.startTimeMs - currentEffective) }.take(6)
-
-                                                    var calculatedOffset: Long? = null
-                                                    val apiKey = ttsApiKey.trim()
-
-                                                    if (apiKey.isNotBlank()) {
-                                                        withContext(Dispatchers.IO) {
-                                                            try {
-                                                                val cueContext = sortedCues.joinToString("\n") { "[${it.startTimeMs}ms - ${it.endTimeMs}ms]: ${it.text.replace("\n", " ")}" }
-                                                                val promptText = "You are an expert subtitle timecode synchronizer. A video is currently at playback time $pos ms. Surrounding subtitles:\n$cueContext\nDetermine the exact offset adjustment (current_position - subtitle_start_time) for the subtitle matching $pos ms, and respond ONLY with: OFFSET:<integer_in_ms> (e.g. OFFSET:1200 or OFFSET:-450)"
-                                                                val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey"
-                                                                val reqJson = org.json.JSONObject().apply {
-                                                                    put("contents", org.json.JSONArray().put(org.json.JSONObject().apply {
-                                                                        put("parts", org.json.JSONArray().put(org.json.JSONObject().apply {
-                                                                            put("text", promptText)
-                                                                        }))
-                                                                    }))
-                                                                }
-                                                                val conn = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
-                                                                    requestMethod = "POST"
-                                                                    setRequestProperty("Content-Type", "application/json")
-                                                                    connectTimeout = 4000
-                                                                    readTimeout = 4000
-                                                                    doOutput = true
-                                                                }
-                                                                conn.outputStream.use { it.write(reqJson.toString().toByteArray()) }
-                                                                if (conn.responseCode in 200..299) {
-                                                                    val resp = conn.inputStream.bufferedReader().use { it.readText() }
-                                                                    val jsonResp = org.json.JSONObject(resp)
-                                                                    val text = jsonResp.optJSONArray("candidates")?.optJSONObject(0)
-                                                                        ?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text") ?: ""
-                                                                    val match = Regex("OFFSET:\\s*([+-]?\\d+)").find(text)
-                                                                    if (match != null) {
-                                                                        calculatedOffset = match.groupValues[1].toLongOrNull()
-                                                                    }
-                                                                }
-                                                            } catch (e: Exception) {
-                                                                println("[AI Sub Sync] Gemini API fallback: ${e.message}")
-                                                            }
-                                                        }
-                                                    }
-
-                                                    val finalOffset = calculatedOffset ?: run {
-                                                        val nearestCue = sortedCues.firstOrNull() ?: currentSubCues.minByOrNull { kotlin.math.abs(it.startTimeMs - currentEffective) }
-                                                        if (nearestCue != null) {
-                                                            pos - nearestCue.startTimeMs
-                                                        } else 0L
-                                                    }
-
-                                                    updateSubOffset(finalOffset)
-                                                    val offsetStr = "${if (finalOffset >= 0) "+" else ""}${String.format(java.util.Locale.US, "%.3f", finalOffset / 1000f)}s"
-                                                    Toast.makeText(
-                                                        context,
-                                                        context.getString(R.string.player_subtitles_ai_sync_success, offsetStr),
-                                                        Toast.LENGTH_SHORT
-                                                    ).show()
-                                                } catch (e: Exception) {
-                                                    Toast.makeText(context, "AI Sync: ${e.message}", Toast.LENGTH_SHORT).show()
-                                                } finally {
-                                                    isAiSyncing = false
-                                                }
-                                            }
-                                        }
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
-                                            horizontalArrangement = Arrangement.Center,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            if (isAiSyncing) {
-                                                CircularProgressIndicator(
-                                                    modifier = Modifier.size(16.dp),
-                                                    strokeWidth = 2.dp,
-                                                    color = Color.White
-                                                )
-                                                Spacer(modifier = Modifier.width(8.dp))
-                                                Text(
-                                                    text = stringResource(R.string.player_subtitles_ai_sync_loading),
-                                                    color = Color.White,
-                                                    fontSize = 12.sp,
-                                                    fontWeight = FontWeight.Medium
-                                                )
-                                            } else {
-                                                Icon(
-                                                    imageVector = Icons.Default.AutoAwesome,
-                                                    contentDescription = null,
-                                                    tint = Color(0xFFFFD54F),
-                                                    modifier = Modifier.size(17.dp)
-                                                )
-                                                Spacer(modifier = Modifier.width(8.dp))
-                                                Text(
-                                                    text = stringResource(R.string.player_subtitles_ai_sync_btn),
-                                                    color = Color.White,
-                                                    fontSize = 12.5.sp,
-                                                    fontWeight = FontWeight.SemiBold
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // 1.3. Thuyết minh AI (TTS / Voiceover)
-                                item {
-                                    Divider(color = Color.White.copy(alpha = 0.12f), thickness = 1.dp, modifier = Modifier.padding(vertical = 4.dp))
-
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(
-                                                imageVector = Icons.Default.RecordVoiceOver,
-                                                contentDescription = null,
-                                                tint = if (isTtsEnabled) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.8f),
-                                                modifier = Modifier.size(17.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Text(
-                                                text = stringResource(R.string.player_tts_title),
-                                                color = if (isTtsEnabled) Color.White else Color.White.copy(alpha = 0.8f),
-                                                fontSize = 12.5.sp,
-                                                fontWeight = FontWeight.SemiBold
-                                            )
-                                        }
-
-                                        Switch(
-                                            checked = isTtsEnabled,
-                                            onCheckedChange = { enabled ->
-                                                if (enabled) {
-                                                    if (currentSubCues.isEmpty()) {
-                                                        Toast.makeText(context, context.getString(R.string.player_subtitles_no_cues_to_sync), Toast.LENGTH_SHORT).show()
-                                                    }
-                                                }
-                                                settingsManager.setTtsEnabled(enabled)
-                                            },
-                                            colors = SwitchDefaults.colors(
-                                                checkedThumbColor = Color.White,
-                                                checkedTrackColor = MaterialTheme.colorScheme.primary,
-                                                uncheckedThumbColor = Color.White.copy(alpha = 0.6f),
-                                                uncheckedTrackColor = Color(0xFF262A34)
-                                            ),
-                                            modifier = Modifier
-                                                .scale(0.8f)
-                                                .tvFocusableItem(cornerRadius = 14.dp, focusedScale = 1.15f)
-                                        )
-                                    }
-
-                                    if (isTtsEnabled) {
-                                        Spacer(modifier = Modifier.height(6.dp))
-
-
-                                        // Giọng đọc (Voice)
-                                        Text(
-                                            text = stringResource(R.string.player_tts_voice_header),
-                                            color = Color.White.copy(alpha = 0.65f),
-                                            fontSize = 11.5.sp,
-                                            fontWeight = FontWeight.Medium
-                                        )
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        val voiceOptions = com.jkhx.player.core.player.tts.model.TtsVoices.ALL
-                                        val activeNormVoice = com.jkhx.player.core.player.tts.model.TtsVoices.normalizeVoiceId(ttsVoice)
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                        ) {
-                                            voiceOptions.take(3).forEach { opt ->
-                                                val isSelected = activeNormVoice == opt.id
-                                                Surface(
-                                                    modifier = Modifier
-                                                        .weight(1f)
-                                                        .height(36.dp)
-                                                        .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.08f),
-                                                    shape = RoundedCornerShape(8.dp),
-                                                    color = if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFF262A34),
-                                                    onClick = {
-                                                        settingsManager.setTtsVoice(opt.id)
-                                                    }
-                                                ) {
-                                                    Box(
-                                                        modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp),
-                                                        contentAlignment = Alignment.Center
-                                                    ) {
-                                                        Text(
-                                                            text = opt.name,
-                                                            color = Color.White,
-                                                            fontSize = 11.5.sp,
-                                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                                            maxLines = 1,
-                                                            overflow = TextOverflow.Ellipsis
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                        ) {
-                                            voiceOptions.drop(3).forEach { opt ->
-                                                val isSelected = activeNormVoice == opt.id
-                                                Surface(
-                                                    modifier = Modifier
-                                                        .weight(1f)
-                                                        .height(36.dp)
-                                                        .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.08f),
-                                                    shape = RoundedCornerShape(8.dp),
-                                                    color = if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFF262A34),
-                                                    onClick = {
-                                                        settingsManager.setTtsVoice(opt.id)
-                                                    }
-                                                ) {
-                                                    Box(
-                                                        modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp),
-                                                        contentAlignment = Alignment.Center
-                                                    ) {
-                                                        Text(
-                                                            text = opt.name,
-                                                            color = Color.White,
-                                                            fontSize = 11.5.sp,
-                                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                                            maxLines = 1,
-                                                            overflow = TextOverflow.Ellipsis
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        Spacer(modifier = Modifier.height(6.dp))
-
-                                        // Âm lượng phim nền (Ducking)
-                                        Text(
-                                            text = "${stringResource(R.string.player_tts_ducking_header)}: ${(ttsDuckingVolume * 100).toInt()}%",
-                                            color = Color.White.copy(alpha = 0.65f),
-                                            fontSize = 11.5.sp,
-                                            fontWeight = FontWeight.Medium
-                                        )
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
-                                            listOf(0.20f to "20%", 0.35f to "35%", 0.50f to "50%").forEach { (vol, label) ->
-                                                val isSelected = kotlin.math.abs(ttsDuckingVolume - vol) < 0.05f
-                                                Surface(
-                                                    modifier = Modifier
-                                                        .weight(1f)
-                                                        .height(28.dp)
-                                                        .tvFocusableItem(cornerRadius = 6.dp, focusedScale = 1.08f),
-                                                    shape = RoundedCornerShape(6.dp),
-                                                    color = if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFF262A34),
-                                                    onClick = { settingsManager.setTtsDuckingVolume(vol) }
-                                                ) {
-                                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                                        Text(
-                                                            text = label,
-                                                            color = Color.White,
-                                                            fontSize = 11.sp,
-                                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        Spacer(modifier = Modifier.height(6.dp))
-
-                                        // Tốc độ đọc (Speech rate)
-                                        Text(
-                                            text = "${stringResource(R.string.player_tts_speech_rate_header)}: ${ttsSpeechRate}x",
-                                            color = Color.White.copy(alpha = 0.65f),
-                                            fontSize = 11.5.sp,
-                                            fontWeight = FontWeight.Medium
-                                        )
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
-                                            listOf(1.0f to "1.0x", 1.15f to "1.15x", 1.25f to "1.25x", 1.4f to "1.4x").forEach { (rate, label) ->
-                                                val isSelected = kotlin.math.abs(ttsSpeechRate - rate) < 0.05f
-                                                Surface(
-                                                    modifier = Modifier
-                                                        .weight(1f)
-                                                        .height(28.dp)
-                                                        .tvFocusableItem(cornerRadius = 6.dp, focusedScale = 1.08f),
-                                                    shape = RoundedCornerShape(6.dp),
-                                                    color = if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFF262A34),
-                                                    onClick = { settingsManager.setTtsSpeechRate(rate) }
-                                                ) {
-                                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                                        Text(
-                                                            text = label,
-                                                            color = Color.White,
-                                                            fontSize = 11.sp,
-                                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    Divider(color = Color.White.copy(alpha = 0.12f), thickness = 1.dp, modifier = Modifier.padding(vertical = 4.dp))
-                                }
-
-                                // 2. Cỡ chữ
-                                item {
-                                    Text(
-                                        text = stringResource(R.string.player_subtitles_font_size_label),
-                                        color = Color.White.copy(alpha = 0.8f),
-                                        fontSize = 12.5.sp,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Surface(
-                                            modifier = Modifier
-                                                .size(36.dp)
-                                                .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.12f),
-                                            shape = RoundedCornerShape(8.dp),
-                                            color = Color(0xFF262A34),
-                                            onClick = {
-                                                val newSize = (subtitleTextSize - 2f).coerceAtLeast(12f)
-                                                settingsManager.setSubtitleTextSize(newSize)
-                                            }
-                                        ) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                Icon(Icons.Default.Remove, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                                            }
-                                        }
-
-                                        Box(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .height(36.dp)
-                                                .background(Color(0xFF1E222B), RoundedCornerShape(8.dp)),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                text = "${subtitleTextSize.toInt()}sp",
-                                                color = Color.White,
-                                                fontSize = 13.sp,
-                                                fontWeight = FontWeight.Medium
-                                            )
-                                        }
-
-                                        Surface(
-                                            modifier = Modifier
-                                                .size(36.dp)
-                                                .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.12f),
-                                            shape = RoundedCornerShape(8.dp),
-                                            color = Color(0xFF262A34),
-                                            onClick = {
-                                                val newSize = (subtitleTextSize + 2f).coerceAtMost(36f)
-                                                settingsManager.setSubtitleTextSize(newSize)
-                                            }
-                                        ) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // 3. In đậm
-                                item {
-                                    Text(
-                                        text = stringResource(R.string.player_subtitles_bold_label),
-                                        color = Color.White.copy(alpha = 0.8f),
-                                        fontSize = 12.5.sp,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    Surface(
-                                        modifier = Modifier
-                                            .height(34.dp)
-                                            .tvFocusableItem(cornerRadius = 17.dp, focusedScale = 1.06f),
-                                        shape = RoundedCornerShape(17.dp),
-                                        color = if (subtitleIsBold) MaterialTheme.colorScheme.primary else Color(0xFF262A34),
-                                        onClick = { settingsManager.setSubtitleIsBold(!subtitleIsBold) }
-                                    ) {
-                                        Box(modifier = Modifier.padding(horizontal = 18.dp), contentAlignment = Alignment.Center) {
-                                            Text(
-                                                text = if (subtitleIsBold) stringResource(R.string.player_subtitles_btn_on) else stringResource(R.string.player_subtitles_btn_off),
-                                                color = Color.White,
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
-                                    }
-                                }
-
-                                // 4. Màu sắc
-                                item {
-                                    Text(
-                                        text = stringResource(R.string.player_subtitles_color_label),
-                                        color = Color.White.copy(alpha = 0.8f),
-                                        fontSize = 12.5.sp,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    val textColors = listOf(
-                                        0xFFFFFFFF.toInt(),
-                                        0xFFFFEB3B.toInt(),
-                                        0xFF00E5FF.toInt(),
-                                        0xFFFF5252.toInt(),
-                                        0xFF00E676.toInt(),
-                                        0xFFE040FB.toInt(),
-                                        0xFFFF9100.toInt()
-                                    )
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        textColors.forEach { col ->
-                                            val isSelected = subtitleTextColor == col
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(26.dp)
-                                                    .background(Color(col), CircleShape)
-                                                    .border(
-                                                        width = if (isSelected) 2.5.dp else 1.dp,
-                                                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.5f),
-                                                        shape = CircleShape
-                                                    )
-                                                    .tvFocusableItem(cornerRadius = 13.dp, focusedScale = 1.25f)
-                                                    .clickable { settingsManager.setSubtitleTextColor(col) }
-                                            )
-                                        }
-                                    }
-                                }
-
-                                // 5. Độ mờ chữ
-                                item {
-                                    Text(
-                                        text = stringResource(R.string.player_subtitles_opacity_label),
-                                        color = Color.White.copy(alpha = 0.8f),
-                                        fontSize = 12.5.sp,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Surface(
-                                            modifier = Modifier
-                                                .size(36.dp)
-                                                .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.12f),
-                                            shape = RoundedCornerShape(8.dp),
-                                            color = Color(0xFF262A34),
-                                            onClick = {
-                                                val newOp = (subtitleTextOpacity - 10).coerceAtLeast(20)
-                                                settingsManager.setSubtitleTextOpacity(newOp)
-                                            }
-                                        ) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                Icon(Icons.Default.Remove, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                                            }
-                                        }
-
-                                        Box(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .height(36.dp)
-                                                .background(Color(0xFF1E222B), RoundedCornerShape(8.dp)),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                text = "${subtitleTextOpacity}%",
-                                                color = Color.White,
-                                                fontSize = 13.sp,
-                                                fontWeight = FontWeight.Medium
-                                            )
-                                        }
-
-                                        Surface(
-                                            modifier = Modifier
-                                                .size(36.dp)
-                                                .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.12f),
-                                            shape = RoundedCornerShape(8.dp),
-                                            color = Color(0xFF262A34),
-                                            onClick = {
-                                                val newOp = (subtitleTextOpacity + 10).coerceAtMost(100)
-                                                settingsManager.setSubtitleTextOpacity(newOp)
-                                            }
-                                        ) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // 6. Viền chữ
-                                item {
-                                    Text(
-                                        text = stringResource(R.string.player_subtitles_outline_label),
-                                        color = Color.White.copy(alpha = 0.8f),
-                                        fontSize = 12.5.sp,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    Surface(
-                                        modifier = Modifier
-                                            .height(34.dp)
-                                            .tvFocusableItem(cornerRadius = 17.dp, focusedScale = 1.06f),
-                                        shape = RoundedCornerShape(17.dp),
-                                        color = if (subtitleIsOutline) MaterialTheme.colorScheme.primary else Color(0xFF262A34),
-                                        onClick = { settingsManager.setSubtitleIsOutline(!subtitleIsOutline) }
-                                    ) {
-                                        Box(modifier = Modifier.padding(horizontal = 18.dp), contentAlignment = Alignment.Center) {
-                                            Text(
-                                                text = if (subtitleIsOutline) stringResource(R.string.player_subtitles_btn_on) else stringResource(R.string.player_subtitles_btn_off),
-                                                color = Color.White,
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
-                                    }
-                                }
-
-                                // 7. Màu viền
-                                item {
-                                    Text(
-                                        text = stringResource(R.string.player_subtitles_outline_color_label),
-                                        color = Color.White.copy(alpha = 0.8f),
-                                        fontSize = 12.5.sp,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    val outlineColors = listOf(
-                                        0xFF000000.toInt(),
-                                        0xFFFFFFFF.toInt(),
-                                        0xFF00E5FF.toInt(),
-                                        0xFFFF5252.toInt()
-                                    )
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        outlineColors.forEach { col ->
-                                            val isSelected = subtitleOutlineColor == col
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(26.dp)
-                                                    .background(Color(col), CircleShape)
-                                                    .border(
-                                                        width = if (isSelected) 2.5.dp else 1.dp,
-                                                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.5f),
-                                                        shape = CircleShape
-                                                    )
-                                                    .tvFocusableItem(cornerRadius = 13.dp, focusedScale = 1.25f)
-                                                    .clickable { settingsManager.setSubtitleOutlineColor(col) }
-                                            )
-                                        }
-                                    }
-                                }
-
-                                // 8. Khoảng cách lề dưới (Bottom Margin - càng tăng càng đẩy lên cao)
-                                item {
-                                    Text(
-                                        text = stringResource(R.string.player_subtitles_bottom_margin_label),
-                                        color = Color.White.copy(alpha = 0.8f),
-                                        fontSize = 12.5.sp,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = stringResource(R.string.player_subtitles_bottom_margin_hint),
-                                        color = Color.White.copy(alpha = 0.5f),
-                                        fontSize = 11.sp
-                                    )
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Surface(
-                                            modifier = Modifier
-                                                .size(36.dp)
-                                                .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.12f),
-                                            shape = RoundedCornerShape(8.dp),
-                                            color = Color(0xFF262A34),
-                                            onClick = {
-                                                val newMargin = (subtitleBottomMargin - 5).coerceAtLeast(0)
-                                                settingsManager.setSubtitleBottomMargin(newMargin)
-                                            }
-                                        ) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                Icon(Icons.Default.Remove, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                                            }
-                                        }
-
-                                        Box(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .height(36.dp)
-                                                .background(Color(0xFF1E222B), RoundedCornerShape(8.dp)),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                text = "$subtitleBottomMargin",
-                                                color = Color.White,
-                                                fontSize = 13.sp,
-                                                fontWeight = FontWeight.Medium
-                                            )
-                                        }
-
-                                        Surface(
-                                            modifier = Modifier
-                                                .size(36.dp)
-                                                .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.12f),
-                                            shape = RoundedCornerShape(8.dp),
-                                            color = Color(0xFF262A34),
-                                            onClick = {
-                                                val newMargin = (subtitleBottomMargin + 5).coerceAtMost(100)
-                                                settingsManager.setSubtitleBottomMargin(newMargin)
-                                            }
-                                        ) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // 9. Đặt lại mặc định
-                                item {
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Button(
-                                        onClick = { settingsManager.resetSubtitleStyleDefaults() },
-                                        shape = RoundedCornerShape(8.dp),
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = Color(0xFF262A34),
-                                            contentColor = Color.White
-                                        ),
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(36.dp)
-                                            .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.04f)
-                                    ) {
-                                        Text(stringResource(R.string.player_subtitles_reset_defaults), fontSize = 12.sp)
-                                    }
-                                    Spacer(modifier = Modifier.height(16.dp))
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-        // 8.1.6 Panel Chọn Luồng Âm Thanh Phong Cách Nuvio (Audio Tracks Sheet)
-        AnimatedVisibility(
-            visible = showAudioSheet,
-            enter = fadeIn(),
-            exit = fadeOut()
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.52f))
-                    .pointerInput(Unit) {
-                        detectTapGestures { showAudioSheet = false }
-                    }
-            ) {
-                Box(
-                    modifier = Modifier
-                        .then(
-                            if (isLandscape) {
-                                Modifier
-                                    .align(Alignment.Center)
-                                    .fillMaxWidth(0.55f)
-                                    .fillMaxHeight(0.70f)
-                                    .background(Color.Black.copy(alpha = 0.70f), RoundedCornerShape(16.dp))
-                                    .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)), RoundedCornerShape(16.dp))
-                                    .padding(horizontal = 20.dp, vertical = 16.dp)
-                            } else {
-                                Modifier
-                                    .align(Alignment.BottomCenter)
-                                    .fillMaxWidth()
-                                    .fillMaxHeight(0.55f)
-                                    .background(Color.Black.copy(alpha = 0.70f), RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-                                    .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)), RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-                                    .padding(horizontal = 16.dp, vertical = 16.dp)
-                            }
-                        )
-                        .pointerInput(Unit) { detectTapGestures { } }
-                ) {
-                    LaunchedEffect(showAudioSheet) {
-                        if (showAudioSheet) {
-                            delay(60)
-                            try {
-                                audioSheetInitialFocusRequester.requestFocus()
-                            } catch (_: Exception) {}
-                        }
-                    }
-
-                    Column(
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        // Header: Tiêu đề "Luồng Âm Thanh" & Nút đóng
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.Audiotrack,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text(
-                                    text = stringResource(R.string.player_audio_title),
-                                    color = Color.White,
-                                    fontSize = if (isLandscape) 20.sp else 18.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                if (audioTracks.isNotEmpty()) {
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Surface(
-                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
-                                        shape = RoundedCornerShape(6.dp)
-                                    ) {
-                                        Text(
-                                            text = "${audioTracks.size}",
-                                            color = MaterialTheme.colorScheme.primary,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
-                                    }
-                                }
-                            }
-                            IconButton(
-                                onClick = { showAudioSheet = false },
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .focusRequester(audioSheetInitialFocusRequester)
-                                    .tvFocusableItem(cornerRadius = 18.dp, focusedScale = 1.12f)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = stringResource(R.string.common_close),
-                                    tint = Color.White.copy(alpha = 0.8f)
-                                )
-                            }
-                        }
-
-                        HorizontalDivider(
-                            color = Color.White.copy(alpha = 0.12f),
-                            modifier = Modifier.padding(bottom = 10.dp)
-                        )
-
-                        if (audioTracks.isEmpty()) {
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxWidth(),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Icon(
-                                        imageVector = Icons.Default.Audiotrack,
-                                        contentDescription = null,
-                                        tint = Color.White.copy(alpha = 0.35f),
-                                        modifier = Modifier.size(46.dp)
-                                    )
-                                    Spacer(modifier = Modifier.height(10.dp))
-                                    Text(
-                                        text = stringResource(R.string.player_audio_auto),
-                                        color = Color.White.copy(alpha = 0.85f),
-                                        fontSize = 15.sp,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = stringResource(R.string.player_audio_auto_desc),
-                                        color = Color.White.copy(alpha = 0.5f),
-                                        fontSize = 12.sp
-                                    )
-                                }
-                            }
-                        } else {
-                            LazyColumn(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxWidth(),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                // Danh sách các luồng âm thanh chi tiết
-                                items(audioTracks) { track ->
-                                    val isTrackSelected = if (selectedAudioTrackId != null) selectedAudioTrackId == track.id else track.isSelected
-                                    val specs = exoPlayerManager.formatAudioSpecs(track)
-                                    val isDubbed = (track.roleFlags and androidx.media3.common.C.ROLE_FLAG_DUB) != 0
-                                    val isOriginal = (track.roleFlags and androidx.media3.common.C.ROLE_FLAG_MAIN) != 0
-
-                                    Surface(
-                                        onClick = {
-                                            selectedAudioTrackId = track.id
-                                            exoPlayerManager.setAudioTrack(track)
-                                            audioTracks = exoPlayerManager.getAudioTracks()
-                                            showAudioSheet = false
-                                            Toast.makeText(
-                                                context,
-                                                context.getString(R.string.player_audio_selected_toast, track.label),
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        },
-                                        shape = RoundedCornerShape(10.dp),
-                                        color = if (isTrackSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else Color(0xFF1E222B),
-                                        border = BorderStroke(
-                                            width = 1.dp,
-                                            color = if (isTrackSelected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.08f)
-                                        ),
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .tvFocusableItem(cornerRadius = 10.dp, focusedScale = 1.03f)
-                                    ) {
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(horizontal = 14.dp, vertical = 12.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Text(
-                                                        text = track.label,
-                                                        color = if (isTrackSelected) MaterialTheme.colorScheme.primary else Color.White,
-                                                        fontWeight = if (isTrackSelected) FontWeight.Bold else FontWeight.Medium,
-                                                        fontSize = 14.5.sp
-                                                    )
-                                                    if (isDubbed) {
-                                                        Spacer(modifier = Modifier.width(8.dp))
-                                                        Surface(
-                                                            color = Color(0xFFFF9800).copy(alpha = 0.22f),
-                                                            shape = RoundedCornerShape(4.dp)
-                                                        ) {
-                                                            Text(
-                                                                text = stringResource(R.string.player_audio_dubbed_badge),
-                                                                color = Color(0xFFFFB74D),
-                                                                fontSize = 10.sp,
-                                                                fontWeight = FontWeight.SemiBold,
-                                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                                                            )
-                                                        }
-                                                    } else if (isOriginal) {
-                                                        Spacer(modifier = Modifier.width(8.dp))
-                                                        Surface(
-                                                            color = Color(0xFF4CAF50).copy(alpha = 0.22f),
-                                                            shape = RoundedCornerShape(4.dp)
-                                                        ) {
-                                                            Text(
-                                                                text = stringResource(R.string.player_audio_original_badge),
-                                                                color = Color(0xFF81C784),
-                                                                fontSize = 10.sp,
-                                                                fontWeight = FontWeight.SemiBold,
-                                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                                if (specs.isNotBlank()) {
-                                                    Spacer(modifier = Modifier.height(3.dp))
-                                                    Text(
-                                                        text = specs,
-                                                        color = Color.White.copy(alpha = 0.65f),
-                                                        fontSize = 12.sp
-                                                    )
-                                                }
-                                            }
-                                            if (isTrackSelected) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Check,
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.size(20.dp)
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // 8.1.8 Dialog Xác Nhận Tiếp Tục Xem Hoặc Xem Từ Đầu
-        if (showResumePromptDialog && resumeTargetPositionMs > 0L) {
-            AlertDialog(
-                onDismissRequest = { showResumePromptDialog = false },
-                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
-                modifier = Modifier.fillMaxWidth(if (isLandscape) 0.55f else 0.9f),
-                containerColor = Color.Black.copy(alpha = 0.85f),
-                shape = RoundedCornerShape(16.dp),
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.PlayCircle,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = stringResource(R.string.player_resume_dialog_title),
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 17.sp
-                        )
+                    } catch (e: Exception) {
+                        println("[PlayerScreen] Lỗi vào PiP: ${e.message}")
                     }
                 },
-                text = {
-                    Text(
-                        text = stringResource(R.string.player_resume_dialog_msg, formatTime(resumeTargetPositionMs)),
-                        color = Color.White.copy(alpha = 0.85f),
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp
-                    )
+                activeEpisodes = activeEpisodes,
+                currentEpisodeIndex = currentEpisodeIndex,
+                onSelectEpisodeIndex = { currentEpisodeIndex = it },
+                showEpisodesDrawer = showEpisodesDrawer,
+                onOpenEpisodesDrawer = {
+                    lastInteractionTime = System.currentTimeMillis()
+                    showEpisodesDrawer = true
                 },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            showResumePromptDialog = false
-                            exoPlayerManager.seekTo(resumeTargetPositionMs)
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = Color.White
-                        ),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Text(
-                            text = stringResource(R.string.player_resume_continue, formatTime(resumeTargetPositionMs)),
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 13.sp
-                        )
+                onOpenSettings = {
+                    videoTracks = exoPlayerManager.getVideoTracks()
+                    audioTracks = exoPlayerManager.getAudioTracks()
+                    showSettingsDialog = true
+                },
+                showSourceSelectorDrawer = showSourceSelectorDrawer,
+                onOpenSourceDrawer = {
+                    lastInteractionTime = System.currentTimeMillis()
+                    showSourceSelectorDrawer = true
+                },
+                embedFallback = embedFallback,
+                onSwitchToWebView = {
+                    exoPlayerManager.pause()
+                    errorMessage = null
+                    webViewUrl = embedFallback
+                    webViewHeaders = embedHeadersFor(embedFallback ?: "", resolvedStream?.headers)
+                    isWebViewMode = true
+                },
+                isPlaybackStartedEffective = isPlaybackStartedEffective,
+                isLoading = isLoading,
+                isPlayerBuffering = isPlayerBuffering,
+                hudType = hudType,
+                isDraggingGesture = isDraggingGesture,
+                isPlaying = isPlaying,
+                exoPlayerManager = exoPlayerManager,
+                currentPosition = currentPosition,
+                onCurrentPositionChange = { currentPosition = it },
+                effectiveTotalDuration = effectiveTotalDuration,
+                isDraggingSlider = isDraggingSlider,
+                onDraggingSliderChange = { isDraggingSlider = it },
+                sliderDragRatio = sliderDragRatio,
+                onSliderDragRatioChange = { sliderDragRatio = it },
+                isSeeking = isSeeking,
+                onSeekingChange = { isSeeking = it },
+                coroutineScope = coroutineScope,
+                isMuted = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC) <= 0,
+                onMuteToggle = {
+                    lastInteractionTime = System.currentTimeMillis()
+                    val curVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                    val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                    if (curVol > 0) {
+                        savedMuteVolume = curVol
+                        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, 0, 0)
+                        showHud(HudIndicatorType.VOLUME, 0f)
+                    } else {
+                        val restore = if (savedMuteVolume > 0) savedMuteVolume else (maxVol / 2)
+                        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, restore, 0)
+                        showHud(HudIndicatorType.VOLUME, restore.toFloat() / maxVol)
                     }
                 },
-                dismissButton = {
-                    OutlinedButton(
-                        onClick = {
-                            showResumePromptDialog = false
-                            exoPlayerManager.seekTo(0L)
-                        },
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = Color.White.copy(alpha = 0.8f)
-                        )
-                    ) {
-                        Text(
-                            text = stringResource(R.string.player_resume_restart),
-                            fontSize = 13.sp
-                        )
+                resizeModes = resizeModes,
+                resizeModeIndex = resizeModeIndex,
+                onResizeModeIndexChange = { resizeModeIndex = it },
+                activePlayerView = activePlayerView,
+                capsulePillFocusRequester = capsulePillFocusRequester,
+                speeds = speeds,
+                currentSpeed = currentSpeed,
+                onSpeedChange = { currentSpeed = it },
+                selectedAudioTrackId = selectedAudioTrackId,
+                showAudioSheet = showAudioSheet,
+                onOpenAudioSheet = {
+                    showAudioSheet = true
+                    lastInteractionTime = System.currentTimeMillis()
+                },
+                selectedSubtitleTrackId = selectedSubtitleTrackId,
+                showSubtitleSheet = showSubtitleSheet,
+                onOpenSubtitleSheet = {
+                    showSubtitleSheet = true
+                    lastInteractionTime = System.currentTimeMillis()
+                },
+                isAiDubbingEnabled = isTtsEnabled,
+                onToggleAiDubbing = {
+                    val newState = !isTtsEnabled
+                    if (newState && currentSubCues.isEmpty()) {
+                        Toast.makeText(context, context.getString(R.string.player_subtitles_no_cues_to_sync), Toast.LENGTH_SHORT).show()
                     }
+                    settingsManager.setTtsEnabled(newState)
+                    val toast = if (newState) {
+                        context.getString(R.string.player_tts_active_toast)
+                    } else {
+                        context.getString(R.string.player_tts_inactive_toast)
+                    }
+                    Toast.makeText(context, toast, Toast.LENGTH_SHORT).show()
+                },
+                onUserInteraction = {
+                    lastInteractionTime = System.currentTimeMillis()
                 }
             )
         }
-
-
-        // 8.2 Panel Chọn Nguồn Phát & Server (Right Side Drawer) - Phong cách Nuvio đồng nhất (Hình 3)
-        AnimatedVisibility(
-            visible = showSourceSelectorDrawer,
-            enter = fadeIn(),
-            exit = fadeOut()
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.20f))
-                    .pointerInput(Unit) {
-                        detectTapGestures { showSourceSelectorDrawer = false }
-                    }
-            ) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .fillMaxHeight()
-                        .widthIn(min = 340.dp, max = 460.dp)
-                        .background(
-                            Color.Black.copy(alpha = 0.52f),
-                            RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp)
-                        )
-                        .border(
-                            BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
-                            RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp)
-                        )
-                        .pointerInput(Unit) {
-                            detectTapGestures { }
-                        }
-                        .padding(horizontal = 18.dp, vertical = 16.dp)
-                ) {
-                    val effectiveDrawerStreams = remember(drawerStreams, activeUnifiedStream, activeProviderId, activeServerName, resolvedStream, currentEpisode, movieName) {
-                        val baseList = if (drawerStreams.isNotEmpty()) {
-                            if (activeUnifiedStream != null && drawerStreams.none { it.id == activeUnifiedStream?.id || (it.providerId == activeUnifiedStream?.providerId && it.streamUrl == activeUnifiedStream?.streamUrl) }) {
-                                listOf(activeUnifiedStream!!) + drawerStreams
-                            } else {
-                                drawerStreams
-                            }
-                        } else if (activeUnifiedStream != null) {
-                            listOf(activeUnifiedStream!!)
-                        } else {
-                            val pName = pluginManager.getPluginName(activeProviderId)
-                            val sUrl = resolvedStream?.url ?: currentEpisode.id
-                            listOf(
-                                UnifiedStreamItem(
-                                    id = "${activeProviderId}_${activeServerName}_${currentEpisode.id}",
-                                    groupName = pName,
-                                    providerName = pName,
-                                    serverName = activeServerName.ifBlank { "Mặc định" },
-                                    title = "$movieName - ${currentEpisode.name}",
-                                    techInfo = if (resolvedStream?.type == "hls") "⚡ HLS Direct (M3U8)" else "⚡ Direct Stream",
-                                    qualityBadge = "HD",
-                                    streamUrl = sUrl,
-                                    streamType = resolvedStream?.type ?: "hls",
-                                    headers = resolvedStream?.headers ?: emptyMap(),
-                                    subtitles = resolvedStream?.subtitles ?: emptyList(),
-                                    providerId = activeProviderId,
-                                    targetEpisode = currentEpisode
-                                )
-                            )
-                        }
-                        baseList
-                    }
-
-                    val playingStreamId = remember(effectiveDrawerStreams, activeUnifiedStream, activeProviderId, activeServerName, resolvedStream) {
-                        effectiveDrawerStreams.firstOrNull {
-                            activeUnifiedStream != null && it.id == activeUnifiedStream?.id
-                        }?.id ?: effectiveDrawerStreams.firstOrNull {
-                            activeUnifiedStream != null && it.providerId == activeProviderId && it.serverName == activeServerName && it.streamUrl == activeUnifiedStream?.streamUrl
-                        }?.id ?: effectiveDrawerStreams.firstOrNull {
-                            resolvedStream != null && it.streamUrl.isNotBlank() && it.streamUrl == resolvedStream?.url && it.providerId == activeProviderId
-                        }?.id ?: effectiveDrawerStreams.firstOrNull {
-                            it.providerId == activeProviderId && it.serverName.equals(activeServerName, ignoreCase = true)
-                        }?.id ?: effectiveDrawerStreams.firstOrNull {
-                            it.providerId == activeProviderId
-                        }?.id
-                    }
-
-                    val orderedDrawerStreams = remember(effectiveDrawerStreams, playingStreamId) {
-                        if (playingStreamId == null) effectiveDrawerStreams
-                        else {
-                            val playing = effectiveDrawerStreams.filter { it.id == playingStreamId }
-                            val others = effectiveDrawerStreams.filterNot { it.id == playingStreamId }
-                            playing + others
-                        }
-                    }
-
-                    val availableSourceGroups = remember(orderedDrawerStreams) {
-                        orderedDrawerStreams.map { it.groupName }.distinct()
-                    }
-                    val displayedStreams = remember(orderedDrawerStreams, selectedSourceFilter) {
-                        if (selectedSourceFilter == null) orderedDrawerStreams
-                        else orderedDrawerStreams.filter { it.groupName == selectedSourceFilter }
-                    }
-
-                    LaunchedEffect(showSourceSelectorDrawer) {
-                        if (showSourceSelectorDrawer) {
-                            delay(60)
-                            try {
-                                sourceSelectorInitialFocusRequester.requestFocus()
-                            } catch (_: Exception) {}
-                        }
-                    }
-
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        // 1. Header trên cùng: Tiêu đề "Nguồn phát & Máy chủ" & Nút "Đóng" (Hình 3)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = stringResource(R.string.player_sources_title),
-                                color = Color.White,
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Surface(
-                                shape = RoundedCornerShape(16.dp),
-                                color = Color.White.copy(alpha = 0.12f),
-                                modifier = Modifier
-                                    .focusRequester(sourceSelectorInitialFocusRequester)
-                                    .tvFocusableItem(cornerRadius = 16.dp, focusedScale = 1.08f),
-                                onClick = { showSourceSelectorDrawer = false }
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.common_close),
-                                    color = Color.White.copy(alpha = 0.85f),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
-                                )
-                            }
-                        }
-
-                        // 2. Subtitle: Tên phim hiện tại & badge TMDB nếu có (Hình 3)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 4.dp, bottom = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = movieName,
-                                color = Color.White.copy(alpha = 0.70f),
-                                fontSize = 13.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f, fill = false)
-                            )
-                            if (!movieTmdbId.isNullOrBlank()) {
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Surface(
-                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.20f),
-                                    shape = RoundedCornerShape(6.dp)
-                                ) {
-                                    Text(
-                                        text = "TMDB #${movieTmdbId}",
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
-                            }
-                        }
-
-                        // 3. Hàng lọc Filter Chips ngang: [Refresh quay] + [Tất cả] + [Torrentio] + [Ytztvio]... (Hình 3)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Nút tròn Reload quét lại nguồn
-                            Surface(
-                                shape = CircleShape,
-                                color = Color.White.copy(alpha = 0.10f),
-                                modifier = Modifier
-                                    .padding(end = 8.dp)
-                                    .size(36.dp)
-                                    .tvFocusableItem(cornerRadius = 18.dp, focusedScale = 1.15f)
-                                    .clickable(enabled = !isScanningSources) { refreshSourcesKey++ }
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.Default.Refresh,
-                                        contentDescription = stringResource(R.string.streams_reload),
-                                        tint = if (isScanningSources) MaterialTheme.colorScheme.primary else Color.White,
-                                        modifier = Modifier
-                                            .size(18.dp)
-                                            .rotate(sourceRotationAngle)
-                                    )
-                                }
-                            }
-
-                            LazyRow(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.weight(1f).focusGroup()
-                            ) {
-                                // Chip "Tất cả"
-                                item {
-                                    FilterChip(
-                                        selected = selectedSourceFilter == null,
-                                        onClick = { selectedSourceFilter = null },
-                                        modifier = Modifier.tvFocusableItem(cornerRadius = 16.dp, focusedScale = 1.08f),
-                                        label = {
-                                            Text(
-                                                stringResource(R.string.streams_all_filter),
-                                                fontSize = 12.sp,
-                                                fontWeight = if (selectedSourceFilter == null) FontWeight.Bold else FontWeight.Normal
-                                            )
-                                        },
-                                        colors = FilterChipDefaults.filterChipColors(
-                                            selectedContainerColor = MaterialTheme.colorScheme.primary,
-                                            selectedLabelColor = Color.White,
-                                            containerColor = Color.White.copy(alpha = 0.08f),
-                                            labelColor = Color.White.copy(alpha = 0.75f)
-                                        ),
-                                        shape = RoundedCornerShape(16.dp),
-                                        border = null
-                                    )
-                                }
-
-                                // Chips theo từng Provider / Addon
-                                items(availableSourceGroups) { groupName ->
-                                    val isSelected = selectedSourceFilter == groupName
-                                    FilterChip(
-                                        selected = isSelected,
-                                        onClick = {
-                                            selectedSourceFilter = if (isSelected) null else groupName
-                                        },
-                                        modifier = Modifier.tvFocusableItem(cornerRadius = 16.dp, focusedScale = 1.08f),
-                                        label = {
-                                            Text(
-                                                text = groupName,
-                                                fontSize = 12.sp,
-                                                maxLines = 1,
-                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                            )
-                                        },
-                                        colors = FilterChipDefaults.filterChipColors(
-                                            selectedContainerColor = MaterialTheme.colorScheme.primary,
-                                            selectedLabelColor = Color.White,
-                                            containerColor = Color.White.copy(alpha = 0.08f),
-                                            labelColor = Color.White.copy(alpha = 0.75f)
-                                        ),
-                                        shape = RoundedCornerShape(16.dp),
-                                        border = null
-                                    )
-                                }
-                            }
-                        }
-
-                        // Trạng thái quét nguồn phát
-                        if (isScanningSources) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(14.dp),
-                                    strokeWidth = 1.8.dp,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = stringResource(R.string.player_sources_searching),
-                                    color = Color.LightGray,
-                                    fontSize = 11.5.sp
-                                )
-                            }
-                        }
-
-                        // 4. Danh sách các máy chủ & luồng phát dạng Cards hiển thị đầy đủ thông số chi tiết + Nút Copy
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            items(
-                                items = displayedStreams,
-                                key = { it.id }
-                            ) { item ->
-                                val isThisStreamPlaying = item.id == playingStreamId
-
-                                Surface(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .tvFocusableItem(cornerRadius = 12.dp, focusedScale = 1.02f),
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = if (isThisStreamPlaying) MaterialTheme.colorScheme.primary.copy(alpha = 0.20f) else Color.White.copy(alpha = 0.08f),
-                                    border = if (isThisStreamPlaying) BorderStroke(1.2.dp, MaterialTheme.colorScheme.primary) else BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
-                                    onClick = {
-                                        switchToUnifiedStream(item)
-                                    }
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 14.dp, vertical = 11.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Column(
-                                            modifier = Modifier.weight(1f)
-                                        ) {
-                                            // Dòng 1: Icon + Tên Provider + Badge Đang phát
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                            ) {
-                                                Icon(
-                                                    imageVector = if (isThisStreamPlaying) Icons.Default.PlayCircle else Icons.Default.Tv,
-                                                    contentDescription = null,
-                                                    tint = if (isThisStreamPlaying) MaterialTheme.colorScheme.primary else Color.White,
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                                Text(
-                                                    text = item.providerName,
-                                                    color = Color.White,
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 13.5.sp,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    modifier = Modifier.weight(1f, fill = false)
-                                                )
-                                                if (isThisStreamPlaying) {
-                                                    Surface(
-                                                        color = MaterialTheme.colorScheme.primary,
-                                                        shape = RoundedCornerShape(4.dp)
-                                                    ) {
-                                                        Text(
-                                                            text = stringResource(R.string.player_sources_current_badge),
-                                                            color = Color.Black,
-                                                            fontSize = 9.5.sp,
-                                                            fontWeight = FontWeight.Bold,
-                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                        )
-                                                    }
-                                                }
-                                            }
-
-                                            // Dòng 2: Tên Server / Audio (Vietsub #1, Thuyết Minh...)
-                                            if (item.serverName.isNotBlank() && !item.serverName.equals(item.providerName, ignoreCase = true)) {
-                                                Spacer(modifier = Modifier.height(2.dp))
-                                                Text(
-                                                    text = item.serverName,
-                                                    color = Color.White.copy(alpha = 0.9f),
-                                                    fontSize = 12.sp,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                            }
-
-                                            // Dòng 3: Tiêu đề chi tiết tập phim
-                                            if (item.title.isNotBlank()) {
-                                                Spacer(modifier = Modifier.height(2.dp))
-                                                Text(
-                                                    text = item.title,
-                                                    color = Color.White.copy(alpha = 0.78f),
-                                                    fontSize = 11.5.sp,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                            }
-
-                                            Spacer(modifier = Modifier.height(4.dp))
-
-                                            // Dòng 4: Thông tin kết nối kỹ thuật + Huy hiệu chất lượng (FHD, HD, 4K, WEB)
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                            ) {
-                                                Text(
-                                                    text = item.techInfo,
-                                                    fontSize = 11.sp,
-                                                    color = Color.LightGray,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    modifier = Modifier.weight(1f, fill = false)
-                                                )
-
-                                                if (item.qualityBadge != null) {
-                                                    Surface(
-                                                        shape = RoundedCornerShape(4.dp),
-                                                        color = Color.White.copy(alpha = 0.10f),
-                                                        border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.25f))
-                                                    ) {
-                                                        Text(
-                                                            text = item.qualityBadge,
-                                                            fontSize = 8.5.sp,
-                                                            fontWeight = FontWeight.Bold,
-                                                            color = Color.White,
-                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        // Bên phải: Tên nhóm nguồn + Nút Copy link luồng phát
-                                        Column(
-                                            horizontalAlignment = Alignment.End,
-                                            verticalArrangement = Arrangement.Center,
-                                            modifier = Modifier.padding(start = 10.dp)
-                                        ) {
-                                            Text(
-                                                text = item.groupName,
-                                                fontSize = 10.sp,
-                                                color = Color.White.copy(alpha = 0.55f),
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.widthIn(max = 110.dp)
-                                            )
-
-                                            Spacer(modifier = Modifier.height(6.dp))
-
-                                            IconButton(
-                                                onClick = { onCopyStreamUrl(item.streamUrl) },
-                                                modifier = Modifier
-                                                    .size(32.dp)
-                                                    .background(
-                                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
-                                                        shape = CircleShape
-                                                    )
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.ContentCopy,
-                                                    contentDescription = stringResource(R.string.stream_copied_toast),
-                                                    tint = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            if (!isScanningSources && displayedStreams.isEmpty()) {
-                                item {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(top = 24.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = stringResource(R.string.player_sources_no_other_found),
-                                            color = Color.Gray,
-                                            fontSize = 12.sp,
-                                            textAlign = TextAlign.Center
-                                        )
-                                    }
-                                }
-                            }
-
-                            item {
-                                Spacer(modifier = Modifier.height(24.dp))
-                            }
-                        }
-                    }
-                }
+        // 8. Panel Cài Đặt Trình Phát (Right Side Drawer Panel sang trọng)
+        PlayerSettingsPanel(
+            visible = showSettingsDialog,
+            onDismiss = { showSettingsDialog = false },
+            initialFocusRequester = settingsDialogInitialFocusRequester,
+            currentSpeed = currentSpeed,
+            speeds = speeds,
+            onSpeedSelected = { speed ->
+                currentSpeed = speed
+                exoPlayerManager.setPlaybackSpeed(speed)
+                Toast.makeText(context, context.getString(R.string.player_speed_toast, "${speed}x"), Toast.LENGTH_SHORT).show()
+            },
+            videoTracks = videoTracks,
+            selectedVideoTrackId = selectedVideoTrackId,
+            onVideoTrackSelected = { track ->
+                selectedVideoTrackId = track?.id
+                exoPlayerManager.setVideoTrack(track)
+                showSettingsDialog = false
+            },
+            audioTracks = audioTracks,
+            selectedAudioTrackId = selectedAudioTrackId,
+            formatAudioSpecs = { opt -> exoPlayerManager.formatAudioSpecs(opt) },
+            onAudioTrackSelected = { track ->
+                selectedAudioTrackId = track.id
+                exoPlayerManager.setAudioTrack(track)
+                showSettingsDialog = false
             }
-        }
+        )
 
-        // 8.3 Panel Danh Sách Tập Phim (Right Side Drawer cho Phim Bộ)
-        AnimatedVisibility(
-            visible = showEpisodesDrawer,
-            enter = fadeIn(),
-            exit = fadeOut()
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.55f))
-                    .pointerInput(Unit) {
-                        detectTapGestures { showEpisodesDrawer = false }
-                    }
-            ) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .fillMaxHeight()
-                        .width(360.dp)
-                        .background(
-                            Color.Black.copy(alpha = 0.75f),
-                            RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp)
-                        )
-                        .pointerInput(Unit) {
-                            detectTapGestures { }
-                        }
-                        .padding(20.dp)
-                ) {
-                    LaunchedEffect(showEpisodesDrawer) {
-                        if (showEpisodesDrawer) {
-                            delay(60)
-                            try {
-                                episodesDrawerInitialFocusRequester.requestFocus()
-                            } catch (_: Exception) {}
-                        }
-                    }
+        // 8.1. Panel Danh Sách Phụ Đề Nuvio 3 Cột Hiện Đại
+        PlayerSubtitlePanel(
+            visible = showSubtitleSheet,
+            onDismiss = { showSubtitleSheet = false },
+            isLandscape = isLandscape,
+            initialFocusRequester = subtitleSheetInitialFocusRequester,
+            configuredSubLanguages = settingsManager.subtitleSearchLanguages.value,
+            selectedLangGroup = selectedLangGroup,
+            onSelectLangGroup = { selectedLangGroup = it },
+            onSelectNoneTrack = {
+                selectedSubtitleTrackId = null
+                activeOnlineSubId = null
+                ttsManager.stopAudio()
+                currentSubCues = emptyList()
+                exoPlayerManager.setSubtitleTrack(null)
+            },
+            subtitleTracks = subtitleTracks,
+            selectedSubtitleTrackId = selectedSubtitleTrackId,
+            activeOnlineSubId = activeOnlineSubId,
+            stremioAddonSubsMap = stremioAddonSubsMap,
+            onlineSubsMap = onlineSubsMap,
+            loadingSubsMap = loadingSubsMap,
+            isStremioSubsLoading = isStremioSubsLoading,
+            customSubSearchQuery = customSubSearchQuery,
+            onSearchQuerySubmit = { q ->
+                customSubSearchQuery = q
+                executeOnlineSubSearch(selectedLangGroup, force = true)
+            },
+            onRefreshOnlineSubs = { lang, force ->
+                executeOnlineSubSearch(lang, force)
+            },
+            onSelectStreamTrack = { opt ->
+                selectedSubtitleTrackId = opt.id
+                activeOnlineSubId = null
+                ttsManager.stopAudio()
+                currentSubCues = emptyList()
+                exoPlayerManager.setSubtitleTrack(opt)
+            },
+            downloadingSubItemId = downloadingSubItemId,
+            translatedEnglishSubIds = translatedEnglishSubIds,
+            isTranslatingWithGemini = isTranslatingWithGemini,
+            onApplyOnlineSub = { item ->
+                applyOnlineSub(item)
+            },
+            onTranslateWithGemini = { item ->
+                translateOnlineSubWithGemini(item)
+            },
+            currentSubCues = currentSubCues,
+            currentSubOffsetMs = currentSubOffsetMs,
+            onUpdateSubOffset = { offset ->
+                updateSubOffset(offset)
+            },
+            isAiSyncing = isAiSyncing,
+            onAiSync = {
+                if (isAiSyncing) return@PlayerSubtitlePanel
+                if (currentSubCues.isEmpty()) {
+                    Toast.makeText(context, context.getString(R.string.player_subtitles_no_cues_to_sync), Toast.LENGTH_SHORT).show()
+                    return@PlayerSubtitlePanel
+                }
+                coroutineScope.launch {
+                    isAiSyncing = true
+                    try {
+                        val pos = exoPlayerManager.player.currentPosition
+                        val currentEffective = pos - currentSubOffsetMs
+                        val sortedCues = currentSubCues.sortedBy { kotlin.math.abs(it.startTimeMs - currentEffective) }.take(6)
 
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        // Header: Title + Close Button
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.VideoLibrary, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text(
-                                    text = stringResource(R.string.player_episodes_sheet_title),
-                                    color = Color.White,
-                                    fontSize = 17.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            IconButton(
-                                onClick = { showEpisodesDrawer = false },
-                                modifier = Modifier
-                                    .focusRequester(episodesDrawerInitialFocusRequester)
-                                    .tvFocusableItem(cornerRadius = 18.dp, focusedScale = 1.12f)
-                            ) {
-                                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.common_close), tint = Color.White.copy(alpha = 0.8f))
-                            }
-                        }
+                        var calculatedOffset: Long? = null
+                        val apiKey = ttsApiKey.trim()
 
-                        // Info row: Movie Name & Episode Count
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 4.dp, bottom = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = movieName,
-                                color = Color.Gray,
-                                fontSize = 12.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f, fill = false)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Surface(
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                                shape = RoundedCornerShape(6.dp)
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.player_episodes_count, activeEpisodes.size),
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
-
-                        // Server tabs (nếu có nhiều server trong availableServers)
-                        if (availableServers.size > 1) {
-                            LazyRow(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = 10.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                items(availableServers) { srv ->
-                                    val isSelected = srv.serverName == activeServerName
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.08f),
-                                        border = BorderStroke(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.15f)),
-                                        modifier = Modifier
-                                            .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.06f)
-                                            .clickable {
-                                            if (srv.serverName != activeServerName) {
-                                                activeServerName = srv.serverName
-                                                activeEpisodes = srv.episodes
-                                                val matchedIdx = srv.episodes.indexOfFirst { it.number == currentEpisode.number }.takeIf { it >= 0 } ?: 0
-                                                currentEpisodeIndex = matchedIdx
-                                                ActivePlayerSession.currentServerName = srv.serverName
-                                                ActivePlayerSession.episodes = srv.episodes
-                                                ActivePlayerSession.currentEpisodeIndex = matchedIdx
-                                                ActivePlayerSession.currentEpisode = srv.episodes.getOrNull(matchedIdx) ?: currentEpisode
-                                            }
-                                        }
-                                    ) {
-                                        Text(
-                                            text = srv.serverName,
-                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else Color.White,
-                                            fontSize = 12.sp,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.12f), modifier = Modifier.padding(bottom = 12.dp))
-
-                        // Grid danh sách các tập phim
-                        val episodeListState = rememberLazyGridState()
-                        LaunchedEffect(showEpisodesDrawer) {
-                            if (showEpisodesDrawer && currentEpisodeIndex >= 0) {
+                        if (apiKey.isNotBlank()) {
+                            withContext(Dispatchers.IO) {
                                 try {
-                                    episodeListState.scrollToItem(currentEpisodeIndex.coerceAtLeast(0))
-                                } catch (_: Exception) {}
-                            }
-                        }
-
-                        LazyVerticalGrid(
-                            columns = GridCells.Adaptive(minSize = 64.dp),
-                            state = episodeListState,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxSize()
-                        ) {
-                            itemsIndexed(activeEpisodes, key = { idx, ep -> "${ep.id}_$idx" }) { idx, ep ->
-                                val isCurrent = idx == currentEpisodeIndex
-                                Surface(
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = if (isCurrent) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.08f),
-                                    border = BorderStroke(
-                                        width = if (isCurrent) 1.5.dp else 1.dp,
-                                        color = if (isCurrent) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.12f)
-                                    ),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .tvFocusableItem(cornerRadius = 10.dp, focusedScale = 1.08f)
-                                        .clickable {
-                                            if (idx != currentEpisodeIndex) {
-                                                showResumePromptDialog = false
-                                                resumeTargetPositionMs = 0L
-                                                currentEpisodeIndex = idx
-                                                ActivePlayerSession.currentEpisodeIndex = idx
-                                                ActivePlayerSession.currentEpisode = ep
-                                                showEpisodesDrawer = false
-                                            }
-                                        }
-                                ) {
-                                    Column(
-                                        modifier = Modifier.padding(vertical = 10.dp, horizontal = 4.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.Center
-                                    ) {
-                                        Text(
-                                            text = ep.name.ifBlank { "Tập ${idx + 1}" },
-                                            color = if (isCurrent) MaterialTheme.colorScheme.onPrimary else Color.White,
-                                            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
-                                            fontSize = 12.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        if (isCurrent) {
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                            Text(
-                                                text = stringResource(R.string.player_episodes_playing),
-                                                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f),
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.SemiBold
-                                            )
+                                    val cueContext = sortedCues.joinToString("\n") { "[${it.startTimeMs}ms - ${it.endTimeMs}ms]: ${it.text.replace("\n", " ")}" }
+                                    val promptText = "You are an expert subtitle timecode synchronizer. A video is currently at playback time " + pos + " ms. Surrounding subtitles:\n" + cueContext + "\nDetermine the exact offset adjustment (current_position - subtitle_start_time) for the subtitle matching " + pos + " ms, and respond ONLY with: OFFSET:<integer_in_ms> (e.g. OFFSET:1200 or OFFSET:-450)"
+                                    val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + apiKey
+                                    val reqJson = org.json.JSONObject().apply {
+                                        put("contents", org.json.JSONArray().put(org.json.JSONObject().apply {
+                                            put("parts", org.json.JSONArray().put(org.json.JSONObject().apply {
+                                                put("text", promptText)
+                                            }))
+                                        }))
+                                    }
+                                    val conn = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                                        requestMethod = "POST"
+                                        setRequestProperty("Content-Type", "application/json")
+                                        connectTimeout = 4000
+                                        readTimeout = 4000
+                                        doOutput = true
+                                    }
+                                    conn.outputStream.use { it.write(reqJson.toString().toByteArray()) }
+                                    if (conn.responseCode in 200..299) {
+                                        val resp = conn.inputStream.bufferedReader().use { it.readText() }
+                                        val jsonResp = org.json.JSONObject(resp)
+                                        val text = jsonResp.optJSONArray("candidates")?.optJSONObject(0)
+                                            ?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text") ?: ""
+                                        val match = Regex("OFFSET:\\s*([+-]?\\d+)").find(text)
+                                        if (match != null) {
+                                            calculatedOffset = match.groupValues[1].toLongOrNull()
                                         }
                                     }
+                                } catch (e: Exception) {
+                                    println("[AI Sub Sync] Gemini API fallback: ${e.message}")
                                 }
                             }
                         }
+
+                        val finalOffset = calculatedOffset ?: run {
+                            val nearestCue = sortedCues.firstOrNull() ?: currentSubCues.minByOrNull { kotlin.math.abs(it.startTimeMs - currentEffective) }
+                            if (nearestCue != null) {
+                                pos - nearestCue.startTimeMs
+                            } else 0L
+                        }
+
+                        updateSubOffset(finalOffset)
+                        val offsetStr = "${if (finalOffset >= 0) "+" else ""}${String.format(java.util.Locale.US, "%.3f", finalOffset / 1000f)}s"
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.player_subtitles_ai_sync_success, offsetStr),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "AI Sync: ${e.message}", Toast.LENGTH_SHORT).show()
+                    } finally {
+                        isAiSyncing = false
                     }
                 }
-            }
-        }
+            },
+            isTtsEnabled = isTtsEnabled,
+            ttsVoice = ttsVoice,
+            ttsSpeechRate = ttsSpeechRate,
+            ttsDuckingVolume = ttsDuckingVolume,
+            ttsApiKey = ttsApiKey,
+            subtitleTextSize = subtitleTextSize,
+            subtitleIsBold = subtitleIsBold,
+            subtitleTextColor = subtitleTextColor,
+            subtitleTextOpacity = subtitleTextOpacity,
+            subtitleIsOutline = subtitleIsOutline,
+            subtitleOutlineColor = subtitleOutlineColor,
+            subtitleBottomMargin = subtitleBottomMargin,
+            settingsManager = settingsManager
+        )
 
+        // 8.2. Panel Chọn Track Âm Thanh
+        PlayerAudioPanel(
+            visible = showAudioSheet,
+            onDismiss = { showAudioSheet = false },
+            isLandscape = isLandscape,
+            initialFocusRequester = audioSheetInitialFocusRequester,
+            audioTracks = audioTracks,
+            selectedAudioTrackId = selectedAudioTrackId,
+            formatAudioSpecs = { opt -> exoPlayerManager.formatAudioSpecs(opt) },
+            onAudioTrackSelected = { track ->
+                selectedAudioTrackId = track.id
+                exoPlayerManager.setAudioTrack(track)
+                showAudioSheet = false
+            }
+        )
+
+        // 8.3. Multi-source Server Selection Panel
+        PlayerSourcePanel(
+            visible = showSourceSelectorDrawer,
+            onDismiss = { showSourceSelectorDrawer = false },
+            initialFocusRequester = sourceSelectorInitialFocusRequester,
+            movieName = movieName,
+            movieTmdbId = movieTmdbId,
+            drawerStreams = drawerStreams,
+            activeUnifiedStream = activeUnifiedStream,
+            activeProviderId = activeProviderId,
+            activeServerName = activeServerName,
+            resolvedStream = resolvedStream,
+            currentEpisode = currentEpisode,
+            getPluginName = { id -> pluginManager.getPluginName(id) },
+            isScanningSources = isScanningSources,
+            sourceRotationAngle = sourceRotationAngle,
+            onRefreshSources = {
+                refreshSourcesKey++
+            },
+            onSelectStream = { item ->
+                switchToUnifiedStream(item)
+                showSourceSelectorDrawer = false
+            },
+            onCopyStreamUrl = onCopyStreamUrl
+        )
+
+        // 8.4. Panel Danh Sách Tập
+        PlayerEpisodesPanel(
+            visible = showEpisodesDrawer,
+            onDismiss = { showEpisodesDrawer = false },
+            initialFocusRequester = episodesDrawerInitialFocusRequester,
+            movieName = movieName,
+            activeEpisodes = activeEpisodes,
+            currentEpisodeIndex = currentEpisodeIndex,
+            availableServers = availableServers,
+            activeServerName = activeServerName,
+            onServerSelect = { srv ->
+                activeServerName = srv.serverName
+                activeEpisodes = srv.episodes
+                val matchedIdx = srv.episodes.indexOfFirst { it.number == currentEpisode.number }.takeIf { it >= 0 } ?: 0
+                currentEpisodeIndex = matchedIdx
+                ActivePlayerSession.currentServerName = srv.serverName
+                ActivePlayerSession.episodes = srv.episodes
+                ActivePlayerSession.currentEpisodeIndex = matchedIdx
+                ActivePlayerSession.currentEpisode = srv.episodes.getOrNull(matchedIdx) ?: currentEpisode
+            },
+            onEpisodeSelect = { idx, ep ->
+                showResumePromptDialog = false
+                resumeTargetPositionMs = 0L
+                currentEpisodeIndex = idx
+                ActivePlayerSession.currentEpisodeIndex = idx
+                ActivePlayerSession.currentEpisode = ep
+                showEpisodesDrawer = false
+            }
+        )
+
+        // 8.5. Dialog xác nhận Resume
+        PlayerResumeDialog(
+            visible = showResumePromptDialog,
+            resumeTargetPositionMs = resumeTargetPositionMs,
+            isLandscape = isLandscape,
+            onResume = {
+                showResumePromptDialog = false
+                currentPosition = resumeTargetPositionMs
+                exoPlayerManager.seekTo(resumeTargetPositionMs)
+                Toast.makeText(context, context.getString(R.string.player_resume_toast, formatTime(resumeTargetPositionMs)), Toast.LENGTH_SHORT).show()
+            },
+            onRestart = {
+                showResumePromptDialog = false
+                resumeTargetPositionMs = 0L
+                currentPosition = 0L
+                exoPlayerManager.seekTo(0L)
+            },
+            onDismiss = {
+                showResumePromptDialog = false
+            }
+        )
         // 9. Thông báo lỗi nếu có
         if (errorMessage != null) {
-            Column(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = errorMessage ?: "",
-                    color = Color.White,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-
-                val embedFallback = getEffectiveEmbedFallback()
-                if (!embedFallback.isNullOrEmpty()) {
-                    Button(
-                        onClick = {
-                            errorMessage = null
-                            webViewUrl = embedFallback
-                            webViewHeaders = embedHeadersFor(embedFallback, resolvedStream?.headers)
-                            isWebViewMode = true
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
-                    ) {
-                        Icon(Icons.Default.Language, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(stringResource(R.string.player_switch_to_webview))
-                    }
-                    Spacer(modifier = Modifier.height(10.dp))
-                }
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Button(
-                        onClick = {
-                            errorMessage = null
-                            reloadStreamTrigger++
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                    ) {
-                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(stringResource(R.string.common_retry))
-                    }
-
-                    OutlinedButton(onClick = onBack) {
-                        Text(stringResource(R.string.common_back), color = Color.White)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SettingsOptionCard(
-    title: String,
-    subtitle: String? = null,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 3.dp)
-            .tvFocusableItem(cornerRadius = 12.dp, focusedScale = 1.02f),
-        shape = ShapeTokens.Card,
-        color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-        border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
-        onClick = onClick
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                    fontSize = 14.sp
-                )
-                if (!subtitle.isNullOrBlank()) {
-                    Text(
-                        text = subtitle,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 11.sp
-                    )
-                }
-            }
-            if (isSelected) {
-                Icon(
-                    Icons.Default.Check,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
+            val embedFallback = getEffectiveEmbedFallback()
+            PlayerErrorOverlay(
+                errorMessage = errorMessage!!,
+                embedFallback = embedFallback,
+                onSwitchToWebView = {
+                    errorMessage = null
+                    webViewUrl = embedFallback
+                    webViewHeaders = embedHeadersFor(embedFallback ?: "", resolvedStream?.headers)
+                    isWebViewMode = true
+                },
+                onRetry = {
+                    errorMessage = null
+                    reloadStreamTrigger++
+                },
+                onBack = onBack,
+                videoBackdrop = videoBackdrop
+            )
         }
     }
 }
