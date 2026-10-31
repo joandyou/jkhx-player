@@ -94,12 +94,26 @@ fun BoxScope.PlayerHudOverlays(
     showControls: Boolean,
     onUnlock: () -> Unit
 ) {
-    // 1. Nuvio-style Buffering / Loading Overlay Backdrop
+    // Hiệu ứng chữ "Đang tải bộ đệm..." nhấp nháy êm dịu (pulsing alpha) chuẩn phong cách streaming cao cấp Nuvio
+    val infiniteTransition = rememberInfiniteTransition(label = "buffering_pulse")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 800, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "buffering_alpha"
+    )
+
+    // 1. Nuvio-style Opening Overlay (Màn hình đầu phim khi chưa bắt đầu phát) & Mid-stream Buffering Overlay
     if (!isWebViewMode && errorMessage == null && !isPlaybackStartedEffective) {
+        // Lớp phủ đầu phim: Backdrop poster làm mờ + Gradient tối + Thông tin phim & Capsule nhấp nháy đồng bộ
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black)
+                .background(Color.Black),
+            contentAlignment = Alignment.Center
         ) {
             if (!movieThumb.isNullOrBlank()) {
                 AsyncImage(
@@ -126,97 +140,30 @@ fun BoxScope.PlayerHudOverlays(
                         )
                     )
             )
+
+            BufferingInfoContent(
+                movieName = movieName,
+                currentEpisodeName = currentEpisodeName,
+                activeServerName = activeServerName,
+                isLandscape = isLandscape,
+                pulseAlpha = pulseAlpha
+            )
         }
     } else if (!isWebViewMode && errorMessage == null && isPlaybackStartedEffective && (isLoading || isPlayerBuffering) && !showControls) {
         // Buffer mid-stream sau khi phim đã bắt đầu phát (chỉ hiển thị khi Controls ẩn để triệt tiêu hoàn toàn trùng lặp 2 vòng xoay)
-        // Hiệu ứng chữ "Đang tải bộ đệm..." nhấp nháy êm dịu (pulsing alpha) chuẩn phong cách streaming cao cấp
-        val infiniteTransition = rememberInfiniteTransition(label = "buffering_pulse")
-        val pulseAlpha by infiniteTransition.animateFloat(
-            initialValue = 0.35f,
-            targetValue = 1.0f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 800, easing = LinearEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "buffering_alpha"
-        )
-
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.42f)),
             contentAlignment = Alignment.Center
         ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-                modifier = Modifier
-                    .fillMaxWidth(0.85f)
-                    .padding(24.dp)
-            ) {
-                Text(
-                    text = movieName,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = if (isLandscape) 18.sp else 16.sp
-                    ),
-                    color = Color.White,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                val epAndServer = buildString {
-                    append(currentEpisodeName)
-                    if (activeServerName.isNotBlank()) {
-                        append(" • ")
-                        append(activeServerName)
-                    }
-                }
-                Text(
-                    text = epAndServer,
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontSize = if (isLandscape) 13.sp else 12.sp
-                    ),
-                    color = Color.White.copy(alpha = 0.7f),
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.height(18.dp))
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = Color.Black.copy(alpha = 0.75f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f * pulseAlpha)),
-                    shadowElevation = 6.dp,
-                    modifier = Modifier.graphicsLayer { alpha = pulseAlpha }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .background(MaterialTheme.colorScheme.primary, CircleShape)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = stringResource(R.string.player_buffering_title),
-                            color = MaterialTheme.colorScheme.primary,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = stringResource(R.string.player_buffering_hint),
-                    color = Color.White.copy(alpha = 0.55f),
-                    fontSize = 11.sp,
-                    textAlign = TextAlign.Center
-                )
-            }
+            BufferingInfoContent(
+                movieName = movieName,
+                currentEpisodeName = currentEpisodeName,
+                activeServerName = activeServerName,
+                isLandscape = isLandscape,
+                pulseAlpha = pulseAlpha
+            )
         }
     }
 
@@ -467,4 +414,89 @@ fun BoxScope.PlayerHudOverlays(
         }
     }
 }
+
+/**
+ * Khối thông tin phim và capsule chữ "Đang tải bộ đệm..." nhấp nháy đồng bộ dùng chung
+ * cho cả lớp phủ mở màn đầu phim (Opening Overlay) và lớp phủ đệm giữa phim (Mid-stream Buffering).
+ */
+@Composable
+private fun BufferingInfoContent(
+    movieName: String,
+    currentEpisodeName: String,
+    activeServerName: String,
+    isLandscape: Boolean,
+    pulseAlpha: Float
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+        modifier = Modifier
+            .fillMaxWidth(0.85f)
+            .padding(24.dp)
+    ) {
+        Text(
+            text = movieName,
+            style = MaterialTheme.typography.titleMedium.copy(
+                fontWeight = FontWeight.Bold,
+                fontSize = if (isLandscape) 18.sp else 16.sp
+            ),
+            color = Color.White,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        val epAndServer = buildString {
+            append(currentEpisodeName)
+            if (activeServerName.isNotBlank()) {
+                append(" • ")
+                append(activeServerName)
+            }
+        }
+        Text(
+            text = epAndServer,
+            style = MaterialTheme.typography.bodySmall.copy(
+                fontSize = if (isLandscape) 13.sp else 12.sp
+            ),
+            color = Color.White.copy(alpha = 0.7f),
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Spacer(modifier = Modifier.height(18.dp))
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = Color.Black.copy(alpha = 0.75f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f * pulseAlpha)),
+            shadowElevation = 6.dp,
+            modifier = Modifier.graphicsLayer { alpha = pulseAlpha }
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .background(MaterialTheme.colorScheme.primary, CircleShape)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = stringResource(R.string.player_buffering_title),
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = stringResource(R.string.player_buffering_hint),
+            color = Color.White.copy(alpha = 0.55f),
+            fontSize = 11.sp,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
 

@@ -58,6 +58,10 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -313,86 +317,9 @@ fun BoxScope.PlayerControlsOverlay(
                         hudType == HudIndicatorType.SEEK_GESTURE
                 val isBufferingActive = isLoading || isPlayerBuffering
 
-                if (!isPlaybackStartedEffective) {
-                    // Tích hợp Buffering HUD vào chính giữa vùng điều khiển theo Theme Kính Lỏng
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .fillMaxWidth(0.85f)
-                            .padding(24.dp)
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(46.dp),
-                            strokeWidth = 3.5.dp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.height(18.dp))
-                        Text(
-                            text = movieName,
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = if (isLandscape) 18.sp else 16.sp
-                            ),
-                            color = Color.White,
-                            textAlign = TextAlign.Center,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        val epAndServer = buildString {
-                            append(currentEpisode.name)
-                            if (activeServerName.isNotBlank()) {
-                                append(" • ")
-                                append(activeServerName)
-                            }
-                        }
-                        Text(
-                            text = epAndServer,
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontSize = if (isLandscape) 13.sp else 12.sp
-                            ),
-                            color = Color.White.copy(alpha = 0.7f),
-                            textAlign = TextAlign.Center,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(modifier = Modifier.height(14.dp))
-                        Box(
-                            modifier = Modifier.playerLiquidGlass(
-                                shape = RoundedCornerShape(20.dp),
-                                tint = Color(0xFF10141C).copy(alpha = 0.65f),
-                                elevation = 6.dp
-                            )
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .background(MaterialTheme.colorScheme.primary, CircleShape)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = stringResource(R.string.player_buffering_title),
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontSize = 12.5.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = stringResource(R.string.player_buffering_hint),
-                            color = Color.White.copy(alpha = 0.55f),
-                            fontSize = 11.sp,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                } else {
+                // Chỉ hiển thị cụm nút điều khiển trung tâm (Tua, Tập trước/sau, Play/Pause) khi video đã bắt đầu phát.
+                // Khi phim đang tải đầu luồng (!isPlaybackStartedEffective), lớp phủ Opening Overlay tại PlayerHudOverlays đảm nhiệm hiển thị đồng bộ.
+                if (isPlaybackStartedEffective) {
                     Row(
                         modifier = Modifier.align(Alignment.Center),
                         horizontalArrangement = Arrangement.spacedBy(if (isLandscape) 36.dp else 24.dp),
@@ -539,18 +466,27 @@ fun BoxScope.PlayerControlsOverlay(
                         .fillMaxWidth()
                         .padding(horizontal = 24.dp, vertical = 10.dp)
                 ) {
-                    val displayPosition = if (isDraggingSlider) (sliderDragRatio * effectiveTotalDuration).toLong() else currentPosition
+                    val currentPlaybackRatio = if (effectiveTotalDuration > 0L) {
+                        (currentPosition.toFloat() / effectiveTotalDuration.toFloat()).coerceIn(0f, 1f)
+                    } else 0f
+                    var localSliderRatio by remember { mutableFloatStateOf(0f) }
+                    if (!isDraggingSlider) {
+                        localSliderRatio = currentPlaybackRatio
+                    }
 
-                    // 1. Seekbar Timeline
+                    val displayPosition = if (isDraggingSlider) (localSliderRatio * effectiveTotalDuration).toLong() else currentPosition
+
+                    // 1. Seekbar Timeline (Hỗ trợ chạm 1 lần nhảy thời gian tức thì & kéo trượt mượt mà)
                     Slider(
-                        value = if (isDraggingSlider) sliderDragRatio else if (effectiveTotalDuration > 0) (currentPosition.toFloat() / effectiveTotalDuration.toFloat()).coerceIn(0f, 1f) else 0f,
+                        value = if (isDraggingSlider) localSliderRatio else currentPlaybackRatio,
                         onValueChange = { ratio ->
+                            localSliderRatio = ratio
                             onDraggingSliderChange(true)
                             onSliderDragRatioChange(ratio)
                             onUserInteraction()
                         },
                         onValueChangeFinished = {
-                            val targetMs = (sliderDragRatio * effectiveTotalDuration).toLong()
+                            val targetMs = (localSliderRatio * effectiveTotalDuration).toLong().coerceIn(0L, effectiveTotalDuration)
                             onCurrentPositionChange(targetMs)
                             onSeekingChange(true)
                             exoPlayerManager.seekTo(targetMs)
@@ -566,7 +502,9 @@ fun BoxScope.PlayerControlsOverlay(
                             activeTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.65f),
                             inactiveTrackColor = Color.White.copy(alpha = 0.25f)
                         ),
-                        modifier = Modifier.fillMaxWidth().height(24.dp)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(32.dp)
                     )
 
                     // 2. Timeline Numbers: Left = Nút Play/Stop nhỏ + Current Time, Right = Total Duration & Volume Mute Button
