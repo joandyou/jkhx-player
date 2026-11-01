@@ -92,6 +92,9 @@ fun BoxScope.PlayerHudOverlays(
     isLocked: Boolean,
     isPipMode: Boolean,
     showControls: Boolean,
+    downloadSpeedText: String = "",
+    bufferedStatsText: String = "",
+    bufferProgress: Float = 0f,
     onUnlock: () -> Unit
 ) {
     // Hiệu ứng chữ "Đang tải bộ đệm..." nhấp nháy êm dịu (pulsing alpha) chuẩn phong cách streaming cao cấp Nuvio
@@ -146,7 +149,10 @@ fun BoxScope.PlayerHudOverlays(
                 currentEpisodeName = currentEpisodeName,
                 activeServerName = activeServerName,
                 isLandscape = isLandscape,
-                pulseAlpha = pulseAlpha
+                pulseAlpha = pulseAlpha,
+                downloadSpeedText = downloadSpeedText,
+                bufferedStatsText = bufferedStatsText,
+                bufferProgress = bufferProgress
             )
         }
     } else if (!isWebViewMode && errorMessage == null && isPlaybackStartedEffective && (isLoading || isPlayerBuffering) && !showControls) {
@@ -162,7 +168,10 @@ fun BoxScope.PlayerHudOverlays(
                 currentEpisodeName = currentEpisodeName,
                 activeServerName = activeServerName,
                 isLandscape = isLandscape,
-                pulseAlpha = pulseAlpha
+                pulseAlpha = pulseAlpha,
+                downloadSpeedText = downloadSpeedText,
+                bufferedStatsText = bufferedStatsText,
+                bufferProgress = bufferProgress
             )
         }
     }
@@ -425,7 +434,10 @@ private fun BufferingInfoContent(
     currentEpisodeName: String,
     activeServerName: String,
     isLandscape: Boolean,
-    pulseAlpha: Float
+    pulseAlpha: Float,
+    downloadSpeedText: String = "",
+    bufferedStatsText: String = "",
+    bufferProgress: Float = 0f
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -481,19 +493,49 @@ private fun BufferingInfoContent(
                         .background(MaterialTheme.colorScheme.primary, CircleShape)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
+                val titleText = if (downloadSpeedText.isNotBlank() && downloadSpeedText != "0 KB/s") {
+                    stringResource(R.string.player_buffering_speed_format, downloadSpeedText)
+                } else {
+                    stringResource(R.string.player_buffering_title)
+                }
                 Text(
-                    text = stringResource(R.string.player_buffering_title),
+                    text = titleText,
                     color = MaterialTheme.colorScheme.primary,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
         }
+
+        // Mini Buffer Progress Bar mảnh chuẩn Nuvio P2pLoadingStatus
+        Spacer(modifier = Modifier.height(14.dp))
+        val barWidth = if (isLandscape) 220.dp else 180.dp
+        Box(
+            modifier = Modifier
+                .width(barWidth)
+                .height(3.5.dp)
+                .background(
+                    color = Color.White.copy(alpha = 0.18f),
+                    shape = RoundedCornerShape(2.dp)
+                )
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(barWidth * bufferProgress.coerceIn(0.04f, 1f))
+                    .height(3.5.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.primary,
+                        shape = RoundedCornerShape(2.dp)
+                    )
+            )
+        }
+
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = stringResource(R.string.player_buffering_hint),
-            color = Color.White.copy(alpha = 0.55f),
-            fontSize = 11.sp,
+            text = if (bufferedStatsText.isNotBlank()) bufferedStatsText else stringResource(R.string.player_buffering_hint),
+            color = Color.White.copy(alpha = 0.75f),
+            fontSize = 11.5.sp,
+            fontWeight = FontWeight.Medium,
             textAlign = TextAlign.Center
         )
     }

@@ -109,6 +109,7 @@ fun HomeScreen(
 
     var enabledPlugins by remember { mutableStateOf<List<InstalledPluginRecord>>(emptyList()) }
     var selectedProviderId by rememberSaveable { mutableStateOf<String?>(settingsManager.lastSelectedProvider.value) }
+    var lastLoadedProviderId by remember { mutableStateOf<String?>(null) }
     var showProviderDropdown by remember { mutableStateOf(false) }
 
     val sections = remember { mutableStateListOf<HomeSection>() }
@@ -230,7 +231,6 @@ fun HomeScreen(
 
     // 2. Load feed whenever selected provider changes with task cancellation & cache support
     fun loadProviderFeed(providerId: String?, forceRefresh: Boolean = false) {
-        loadJob?.cancel()
         val targetId = providerId?.ifBlank { null }
             ?: selectedProviderId?.ifBlank { null }
             ?: settingsManager.lastSelectedProvider.value?.ifBlank { null }
@@ -244,13 +244,18 @@ fun HomeScreen(
             }?.manifest?.id
 
         if (targetId.isNullOrBlank()) {
+            loadJob?.cancel()
             sections.clear()
+            quickCategories.clear()
             menuItems.clear()
             selectedMenuIndex = 0
             expandedMenuIndex = null
             isLoading = false
             return
         }
+
+        // Đánh dấu provider đã được gọi nạp để LaunchedEffect(selectedProviderId) không gọi lặp
+        lastLoadedProviderId = targetId
 
         if (selectedProviderId != targetId) {
             selectedProviderId = targetId
@@ -263,6 +268,7 @@ fun HomeScreen(
         if (!forceRefresh) {
             val cached = SessionCacheManager.getHomeFeed(targetId)
             if (cached != null && cached.sections.isNotEmpty()) {
+                loadJob?.cancel()
                 sections.clear()
                 sections.addAll(cached.sections)
                 quickCategories.clear()
@@ -279,9 +285,18 @@ fun HomeScreen(
             SessionCacheManager.removeHomeFeed(targetId)
         }
 
-        val currentName = enabledPlugins.find { it.manifest.id == targetId }?.manifest?.name ?: targetId
+        // NẾU KHÔNG CÓ TRONG CACHE HOẶC LÀM MỚI (forceRefresh):
+        // Xóa ngay lập tức dữ liệu cũ (0ms Transition) để không hiển thị UI cũ của plugin trước!
+        loadJob?.cancel()
+        sections.clear()
+        quickCategories.clear()
+        menuItems.clear()
+        selectedMenuIndex = 0
+        expandedMenuIndex = null
         isLoading = true
         errorMessage = null
+
+        val currentName = enabledPlugins.find { it.manifest.id == targetId }?.manifest?.name ?: targetId
         loadJob = coroutineScope.launch {
             try {
                 val plugin = pluginManager.getPlugin(targetId)
@@ -415,14 +430,18 @@ fun HomeScreen(
     }
 
     LaunchedEffect(selectedProviderId) {
-        selectedProviderId?.let { loadProviderFeed(it) }
+        val pid = selectedProviderId
+        if (!pid.isNullOrBlank() && pid != lastLoadedProviderId) {
+            loadProviderFeed(pid)
+        }
     }
 
     // Listen to Home button tap from Navigation Bar / Navigation Rail
     LaunchedEffect(Unit) {
         com.jkhx.player.HomeRefreshNotifier.reloadTrigger.collect {
             listState.animateScrollToItem(0)
-            loadProviderFeed(selectedProviderId, forceRefresh = true)
+            val activeId = selectedProviderId ?: enabledPlugins.firstOrNull()?.manifest?.id
+            loadProviderFeed(activeId, forceRefresh = true)
         }
     }
 
@@ -524,8 +543,11 @@ fun HomeScreen(
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        val activeProviderId = selectedProviderId
+                            ?: enabledPlugins.firstOrNull()?.manifest?.id
                         Button(
-                            onClick = { loadProviderFeed(selectedProviderId, forceRefresh = true) },
+                            onClick = { loadProviderFeed(activeProviderId, forceRefresh = true) },
+                            enabled = !isLoading,
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                             shape = ShapeTokens.Button
                         ) {
@@ -552,8 +574,11 @@ fun HomeScreen(
                         textAlign = TextAlign.Center
                     )
                     Spacer(modifier = Modifier.height(12.dp))
+                    val activeProviderId = selectedProviderId
+                        ?: enabledPlugins.firstOrNull()?.manifest?.id
                     Button(
-                        onClick = { loadProviderFeed(selectedProviderId, forceRefresh = true) },
+                        onClick = { loadProviderFeed(activeProviderId, forceRefresh = true) },
+                        enabled = !isLoading,
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                         shape = ShapeTokens.Button
                     ) {
@@ -821,80 +846,33 @@ fun HomeScreen(
                             }
                         }
 
-                        DropdownMenu(
-                            expanded = showProviderDropdown,
+                        ProviderSelectorModal(
+                            visible = showProviderDropdown,
                             onDismissRequest = { showProviderDropdown = false },
-                            modifier = Modifier.background(MaterialTheme.colorScheme.surface)
-                        ) {
-                            if (enabledPlugins.isEmpty()) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.home_no_providers), color = MaterialTheme.colorScheme.onSurface) },
-                                    onClick = {
-                                        showProviderDropdown = false
-                                        onOpenPluginsClick()
-                                    }
-                                )
-                            } else {
-                                enabledPlugins.forEach { record ->
-                                    val isSelected = record.manifest.id == selectedProviderId
-                                    DropdownMenuItem(
-                                        text = {
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Text(
-                                                    text = record.manifest.name,
-                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    modifier = Modifier.weight(1f)
-                                                )
-                                                Spacer(modifier = Modifier.width(8.dp))
-                                                val (badgeBg, badgeText) = when (record.manifest.categoryType) {
-                                                    "stremio" -> MaterialTheme.colorScheme.primary to stringResource(R.string.plugins_stremio_badge)
-                                                    "adult" -> PluginCategoryAdult to stringResource(R.string.home_tag_adult)
-                                                    "comic" -> PluginCategoryComic to stringResource(R.string.home_tag_comic)
-                                                    "novel" -> PluginCategoryNovel to stringResource(R.string.home_tag_novel_badge)
-                                                    "live" -> PluginCategoryLive to stringResource(R.string.home_tag_live_badge)
-                                                    else -> PluginCategoryMovie to stringResource(R.string.home_tag_movie_badge)
-                                                }
-                                                Surface(
-                                                    color = badgeBg,
-                                                    shape = ShapeTokens.Badge
-                                                ) {
-                                                    Text(
-                                                        text = badgeText,
-                                                        fontSize = 9.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = Color.White,
-                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                                    )
-                                                }
-                                            }
-                                        },
-                                        modifier = Modifier.widthIn(min = 180.dp, max = 250.dp),
-                                        onClick = {
-                                            val newId = record.manifest.id
-                                            showProviderDropdown = false
-                                            if (newId != selectedProviderId) {
-                                                selectedProviderId = newId
-                                                settingsManager.setLastSelectedProvider(newId)
-                                                loadProviderFeed(newId)
-                                            } else {
-                                                loadProviderFeed(newId, forceRefresh = true)
-                                            }
-                                        }
-                                    )
+                            enabledPlugins = enabledPlugins,
+                            selectedProviderId = selectedProviderId,
+                            onSelectProvider = { record ->
+                                val newId = record.manifest.id
+                                showProviderDropdown = false
+                                if (newId != selectedProviderId) {
+                                    selectedProviderId = newId
+                                    settingsManager.setLastSelectedProvider(newId)
+                                    loadProviderFeed(newId, forceRefresh = false)
+                                } else {
+                                    loadProviderFeed(newId, forceRefresh = true)
                                 }
+                            },
+                            onOpenPluginsClick = {
+                                showProviderDropdown = false
+                                onOpenPluginsClick()
                             }
-                        }
+                        )
                     }
 
                     // Refresh button (Kích thước icon 24dp đồng bộ bottom bar)
+                    val activeTopBarProviderId = selectedProviderId ?: enabledPlugins.firstOrNull()?.manifest?.id
                     IconButton(
-                        onClick = { loadProviderFeed(selectedProviderId, forceRefresh = true) },
+                        onClick = { loadProviderFeed(activeTopBarProviderId, forceRefresh = true) },
                         enabled = !isLoading && enabledPlugins.isNotEmpty(),
                         modifier = Modifier.size(38.dp)
                     ) {

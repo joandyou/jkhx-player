@@ -4,10 +4,22 @@ import kotlinx.serialization.Serializable
 
 enum class TtsEngineType(val id: String, val displayName: String, val isCloud: Boolean) {
     OFFLINE_SYSTEM("system", "Google TTS (Offline - Tích hợp máy)", false),
+    OPENAI_TTS("openai-tts", "OpenAI TTS (Cloud / Gateway)", true),
     GEMINI_38_FLASH_TTS("gemini-3.8-flash-tts", "Gemini 3.8 Flash TTS (Studio Voice)", true),
     GEMINI_38_FLASH_LITE_TTS("gemini-3.8-flash-lite-tts", "Gemini 3.8 Flash Lite TTS (Siêu nhanh)", true),
     GEMINI_31_FLASH_TTS("gemini-3.1-flash-tts", "Gemini 3.1 Flash TTS (Tự nhiên)", true),
-    GEMINI_35_LIVE_TRANSLATE("gemini-3.5-live-translate", "Gemini 3.5 Live Translate (Dịch & Thuyết minh)", true)
+    GEMINI_35_LIVE_TRANSLATE("gemini-3.5-live-translate", "Gemini 3.5 Live Translate (Dịch & Thuyết minh)", true);
+
+    companion object {
+        fun fromId(id: String): TtsEngineType {
+            return when (id.lowercase().trim()) {
+                "system", "offline" -> OFFLINE_SYSTEM
+                "openai", "openai-tts", "openai_tts", "gateway" -> OPENAI_TTS
+                "gemini-3.8-flash-tts" -> OPENAI_TTS
+                else -> values().firstOrNull { it.id.equals(id, ignoreCase = true) } ?: OFFLINE_SYSTEM
+            }
+        }
+    }
 }
 
 data class TtsVoiceOption(
@@ -47,7 +59,7 @@ object TtsVoices {
 
 data class TtsConfig(
     val isEnabled: Boolean = false,
-    val engineType: TtsEngineType = TtsEngineType.GEMINI_38_FLASH_TTS,
+    val engineType: TtsEngineType = TtsEngineType.OPENAI_TTS,
     val voiceId: String = "bao_nam", // bao_nam, minh_quang, tuan_khang, phuong_vy, mai_chi, anh_duong
     val speechRate: Float = 1.15f,
     val duckingVolume: Float = 0.35f, // Âm lượng phim gốc khi có thuyết minh (20% - 50%)

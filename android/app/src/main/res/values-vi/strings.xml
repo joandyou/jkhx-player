@@ -251,6 +251,26 @@
     <string name="reader_novel_theme_sepia">Nền vàng giấy</string>
     <string name="reader_novel_theme_light">Nền sáng</string>
     <string name="reader_novel_progress">Tiến độ đọc: %d%%</string>
+    <string name="reader_tts_start">Nghe truyện (TTS)</string>
+    <string name="reader_tts_stop">Dừng đọc</string>
+    <string name="reader_tts_prev_paragraph">Đoạn trước</string>
+    <string name="reader_tts_next_paragraph">Đoạn sau</string>
+    <string name="reader_tts_paragraph_label">Đoạn %1$d/%2$d</string>
+    <string name="reader_tts_channel_name">Đọc truyện (TTS)</string>
+    <string name="reader_tts_channel_desc">Thông báo phát âm thanh đọc truyện chữ</string>
+    <string name="reader_tts_default_chapter">Chương truyện</string>
+    <string name="reader_tts_reading_novel">Đang đọc truyện chữ</string>
+    <string name="reader_tts_speed">Tốc độ: %sx</string>
+    <string name="reader_tts_voice">Giọng đọc</string>
+    <string name="reader_tts_timer">Hẹn giờ</string>
+    <string name="reader_tts_timer_off">Tắt hẹn giờ</string>
+    <string name="reader_tts_timer_15">15 phút</string>
+    <string name="reader_tts_timer_30">30 phút</string>
+    <string name="reader_tts_timer_45">45 phút</string>
+    <string name="reader_tts_timer_60">60 phút</string>
+    <string name="reader_tts_timer_end_chapter">Hết chương này</string>
+    <string name="reader_tts_timer_remaining">Tắt sau: %s</string>
+    <string name="reader_tts_settings_title">Cài đặt giọng đọc &amp; TTS</string>
     <string name="reader_error">Lỗi khi tải trang truyện</string>
     <string name="reader_no_images">Không tìm thấy trang truyện nào cho chương này</string>
     <string name="reader_prev_chapter">Chap trước</string>
@@ -667,6 +687,9 @@
     <string name="player_buffering_title">Đang tải bộ đệm…</string>
     <string name="player_buffering_connecting">Đang kết nối luồng phát…</string>
     <string name="player_buffering_hint">Đang tải trước nội dung để phát mượt mà</string>
+    <string name="player_buffering_speed_format">Đang tải bộ đệm… • %s</string>
+    <string name="player_buffering_stats_format">Đã nạp %1$s (%2$s) / %3$s • %4$s</string>
+    <string name="player_buffering_stats_simple">Đã nạp %1$s / %2$s • %3$s</string>
 
     <!-- In-App Updater Strings -->
     <string name="settings_check_update_title">Kiểm tra bản cập nhật</string>
@@ -682,4 +705,10 @@
     <string name="settings_update_already_latest">Bạn đang sử dụng phiên bản mới nhất (%s)</string>
     <string name="settings_update_error">Lỗi kiểm tra cập nhật: %s</string>
     <string name="settings_update_download_failed">Tải bản cập nhật thất bại: %s</string>
+
+    <!-- Provider Selector Modal Strings -->
+    <string name="home_provider_modal_title">Chọn nguồn nội dung</string>
+    <string name="home_search_provider_placeholder">Tìm kiếm nguồn / addon…</string>
+    <string name="home_provider_tab_all">Tất cả</string>
+    <string name="home_provider_empty_filter">Không tìm thấy nguồn phù hợp</string>
 </resources>

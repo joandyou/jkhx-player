@@ -1380,6 +1380,96 @@ private fun PluginSettingsDialog(
                                         }
                                     }
                                 }
+                                "link", "url" -> {
+                                    val targetUrl = (currentVal.ifBlank { item.defaultValue }).trim()
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        if (targetUrl.isNotEmpty()) {
+                                            Surface(
+                                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
+                                                shape = ShapeTokens.Card,
+                                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Text(
+                                                    text = targetUrl,
+                                                    fontSize = 12.sp,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    maxLines = 2,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.padding(8.dp)
+                                                )
+                                            }
+                                        }
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Button(
+                                                onClick = {
+                                                    if (targetUrl.isNotBlank()) {
+                                                        try {
+                                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl))
+                                                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                            context.startActivity(intent)
+                                                        } catch (e: Exception) {
+                                                            Toast.makeText(context, "Không thể mở trình duyệt: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    }
+                                                },
+                                                modifier = Modifier.weight(1f),
+                                                shape = ShapeTokens.Card,
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                                            ) {
+                                                Icon(Icons.Default.OpenInBrowser, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(text = "Mở 1-Click (Trình duyệt)", fontSize = 12.5.sp, maxLines = 1)
+                                            }
+
+                                            OutlinedButton(
+                                                onClick = {
+                                                    if (targetUrl.isNotBlank()) {
+                                                        val clipMgr = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                                                        clipMgr?.setPrimaryClip(android.content.ClipData.newPlainText("Link", targetUrl))
+                                                        Toast.makeText(context, "Đã sao chép liên kết vào bộ nhớ tạm", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                },
+                                                shape = ShapeTokens.Card,
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                                            ) {
+                                                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(text = "Sao chép", fontSize = 12.5.sp, maxLines = 1)
+                                            }
+                                        }
+                                    }
+                                }
+                                "info", "readonly" -> {
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                                        shape = ShapeTokens.Card,
+                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(10.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Info,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = currentVal.ifBlank { item.defaultValue },
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+                                    }
+                                }
                                 else -> {
                                     var textInput by remember(currentVal) { mutableStateOf(currentVal) }
                                     OutlinedTextField(

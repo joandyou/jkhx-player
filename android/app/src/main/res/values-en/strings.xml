@@ -251,6 +251,26 @@
     <string name="reader_novel_theme_sepia">Sepia Paper</string>
     <string name="reader_novel_theme_light">Light Theme</string>
     <string name="reader_novel_progress">Reading progress: %d%%</string>
+    <string name="reader_tts_start">Audiobook (TTS)</string>
+    <string name="reader_tts_stop">Stop reading</string>
+    <string name="reader_tts_prev_paragraph">Previous paragraph</string>
+    <string name="reader_tts_next_paragraph">Next paragraph</string>
+    <string name="reader_tts_paragraph_label">Para %1$d/%2$d</string>
+    <string name="reader_tts_channel_name">Novel Audiobook (TTS)</string>
+    <string name="reader_tts_channel_desc">Novel audiobook playback notification</string>
+    <string name="reader_tts_default_chapter">Chapter</string>
+    <string name="reader_tts_reading_novel">Playing novel audiobook</string>
+    <string name="reader_tts_speed">Speed: %sx</string>
+    <string name="reader_tts_voice">Voice</string>
+    <string name="reader_tts_timer">Sleep Timer</string>
+    <string name="reader_tts_timer_off">Timer Off</string>
+    <string name="reader_tts_timer_15">15 minutes</string>
+    <string name="reader_tts_timer_30">30 minutes</string>
+    <string name="reader_tts_timer_45">45 minutes</string>
+    <string name="reader_tts_timer_60">60 minutes</string>
+    <string name="reader_tts_timer_end_chapter">End of chapter</string>
+    <string name="reader_tts_timer_remaining">Sleep in: %s</string>
+    <string name="reader_tts_settings_title">TTS Voice Settings</string>
     <string name="reader_error">Error loading chapter pages</string>
     <string name="reader_no_images">No images found for this chapter</string>
     <string name="reader_prev_chapter">Prev Chapter</string>
@@ -667,6 +687,9 @@
     <string name="player_buffering_title">Buffering…</string>
     <string name="player_buffering_connecting">Connecting stream…</string>
     <string name="player_buffering_hint">Preloading content for smooth playback</string>
+    <string name="player_buffering_speed_format">Buffering… • %s</string>
+    <string name="player_buffering_stats_format">Buffered %1$s (%2$s) / %3$s • %4$s</string>
+    <string name="player_buffering_stats_simple">Buffered %1$s / %2$s • %3$s</string>
 
     <!-- In-App Updater Strings -->
     <string name="settings_check_update_title">Check for Updates</string>
@@ -682,4 +705,10 @@
     <string name="settings_update_already_latest">You are on the latest version (%s)</string>
     <string name="settings_update_error">Error checking for updates: %s</string>
     <string name="settings_update_download_failed">Failed to download update: %s</string>
+
+    <!-- Provider Selector Modal Strings -->
+    <string name="home_provider_modal_title">Select Content Source</string>
+    <string name="home_search_provider_placeholder">Search sources / addons…</string>
+    <string name="home_provider_tab_all">All</string>
+    <string name="home_provider_empty_filter">No matching sources found</string>
 </resources>

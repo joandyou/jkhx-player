@@ -9,7 +9,10 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
+import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.TransferListener
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
@@ -19,6 +22,8 @@ import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
+import androidx.media3.exoplayer.upstream.BandwidthMeter
+import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
@@ -69,6 +74,12 @@ data class AudioTrackOption(
     val isSelected: Boolean,
     val groupIndex: Int,
     val trackIndex: Int
+)
+
+data class BufferedStats(
+    val bufferedDurationMs: Long,
+    val bufferedBytes: Long,
+    val progress: Float
 )
 
 class ExoPlayerManager(
@@ -172,6 +183,45 @@ class ExoPlayerManager(
     private var exoPlayer: ExoPlayer? = null
     private var trackSelector: DefaultTrackSelector? = null
 
+    val bandwidthMeter: DefaultBandwidthMeter by lazy {
+        DefaultBandwidthMeter.Builder(context).build()
+    }
+    private var bytesTransferredInWindow = 0L
+    private var lastTransferWindowTimestamp = System.currentTimeMillis()
+    var currentDownloadSpeedBytesPerSec: Long = 0L
+        private set
+
+    private val internalTransferListener = object : TransferListener {
+        override fun onTransferInitializing(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) {
+            bandwidthMeter.onTransferInitializing(source, dataSpec, isNetwork)
+        }
+
+        override fun onTransferStart(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) {
+            bandwidthMeter.onTransferStart(source, dataSpec, isNetwork)
+        }
+
+        override fun onBytesTransferred(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean, bytesTransferred: Int) {
+            bandwidthMeter.onBytesTransferred(source, dataSpec, isNetwork, bytesTransferred)
+            bytesTransferredInWindow += bytesTransferred
+            val now = System.currentTimeMillis()
+            val elapsed = now - lastTransferWindowTimestamp
+            if (elapsed >= 400) {
+                currentDownloadSpeedBytesPerSec = (bytesTransferredInWindow * 1000L) / elapsed
+                bytesTransferredInWindow = 0L
+                lastTransferWindowTimestamp = now
+            }
+        }
+
+        override fun onTransferEnd(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) {
+            bandwidthMeter.onTransferEnd(source, dataSpec, isNetwork)
+            val now = System.currentTimeMillis()
+            val elapsed = now - lastTransferWindowTimestamp
+            if (elapsed > 0 && bytesTransferredInWindow > 0) {
+                currentDownloadSpeedBytesPerSec = (bytesTransferredInWindow * 1000L) / elapsed
+            }
+        }
+    }
+
     val player: ExoPlayer
         get() = exoPlayer ?: initializePlayer()
 
@@ -200,12 +250,71 @@ class ExoPlayerManager(
             exoPlayer = ExoPlayer.Builder(context)
                 .setTrackSelector(trackSelector!!)
                 .setLoadControl(loadControl)
+                .setBandwidthMeter(bandwidthMeter)
                 .build().apply {
                     playWhenReady = true
                     repeatMode = Player.REPEAT_MODE_OFF
                 }
         }
         return exoPlayer!!
+    }
+
+    fun getDownloadSpeedBytesPerSec(): Long {
+        val now = System.currentTimeMillis()
+        if (now - lastTransferWindowTimestamp > 2500L && bytesTransferredInWindow == 0L) {
+            currentDownloadSpeedBytesPerSec = 0L
+        }
+        if (currentDownloadSpeedBytesPerSec > 0L) {
+            return currentDownloadSpeedBytesPerSec
+        }
+        val estimate = bandwidthMeter.bitrateEstimate
+        return if (estimate > 0L) estimate / 8L else 0L
+    }
+
+    fun getDownloadSpeedFormatted(): String {
+        return formatSpeed(getDownloadSpeedBytesPerSec())
+    }
+
+    fun formatSpeed(bytesPerSec: Long): String {
+        if (bytesPerSec <= 0L) return "0 KB/s"
+        val kb = bytesPerSec / 1024.0
+        val mb = kb / 1024.0
+        return if (mb >= 1.0) {
+            String.format(java.util.Locale.US, "%.1f MB/s", mb)
+        } else {
+            String.format(java.util.Locale.US, "%d KB/s", kb.toLong())
+        }
+    }
+
+    fun getBufferedStats(targetBufferMs: Long = 15_000L): BufferedStats {
+        val p = exoPlayer ?: return BufferedStats(0L, 0L, 0f)
+        val bufferedDurationMs = p.totalBufferedDuration.coerceAtLeast(0L)
+        val videoBitrate = p.videoFormat?.bitrate?.takeIf { it > 0 }
+            ?: p.currentTracks.groups.asSequence()
+                .filter { it.type == C.TRACK_TYPE_VIDEO && it.isSelected }
+                .flatMap { group -> (0 until group.length).map { group.getTrackFormat(it) } }
+                .map { it.bitrate }
+                .firstOrNull { it > 0 }
+            ?: (bandwidthMeter.bitrateEstimate.takeIf { it > 0L }?.toInt() ?: 2_500_000)
+
+        val bufferedBytes = (bufferedDurationMs * (videoBitrate / 8L)) / 1000L
+        val progress = (bufferedDurationMs.toFloat() / targetBufferMs.toFloat()).coerceIn(0f, 1f)
+        return BufferedStats(
+            bufferedDurationMs = bufferedDurationMs,
+            bufferedBytes = bufferedBytes,
+            progress = progress
+        )
+    }
+
+    fun formatBytes(bytes: Long): String {
+        if (bytes <= 0L) return "0 MB"
+        val mb = bytes / (1024.0 * 1024.0)
+        return if (mb >= 1.0) {
+            String.format(java.util.Locale.US, "%.1f MB", mb)
+        } else {
+            val kb = bytes / 1024L
+            "$kb KB"
+        }
     }
 
     private var currentStream: EpisodeStream? = null
@@ -219,6 +328,9 @@ class ExoPlayerManager(
         currentStream = stream
         dynamicSubtitles.clear()
         subtitleOffsetMs = 0L
+        bytesTransferredInWindow = 0L
+        currentDownloadSpeedBytesPerSec = 0L
+        lastTransferWindowTimestamp = System.currentTimeMillis()
 
         // Configure custom DataSourceFactory with spoofed headers (Referer, User-Agent, Origin, Cookie)
         // Wrapped in DefaultDataSource.Factory to support data:, file:, and http(s): streams
@@ -280,9 +392,11 @@ class ExoPlayerManager(
         val httpDataSourceFactory = OkHttpDataSource.Factory(okHttpClient).apply {
             setUserAgent(finalUserAgent)
             setDefaultRequestProperties(requestHeaders)
+            setTransferListener(internalTransferListener)
         }
 
         val upstreamDataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
+            .setTransferListener(internalTransferListener)
 
         val extractorsFactory = DefaultExtractorsFactory()
             .setConstantBitrateSeekingEnabled(true)

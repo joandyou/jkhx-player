@@ -1,7 +1,13 @@
 package com.jkhx.player.ui.screens.reader
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -9,9 +15,11 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -35,6 +43,9 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material.icons.filled.ZoomOut
+import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.graphicsLayer
@@ -62,13 +73,18 @@ import com.jkhx.player.core.database.entity.HistoryEntity
 import com.jkhx.player.core.database.entity.PlaybackProgressEntity
 import com.jkhx.player.core.model.EpisodeData
 import com.jkhx.player.core.model.EpisodeStream
+import com.jkhx.player.core.player.tts.model.TtsConfig
+import com.jkhx.player.core.player.tts.model.TtsEngineType
+import com.jkhx.player.core.player.tts.novel.NovelTtsManager
+import com.jkhx.player.service.NovelAudioService
+import com.jkhx.player.settings.SettingsManager
 import com.jkhx.player.ui.theme.AppTheme
 import com.jkhx.player.ui.theme.ShapeTokens
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ReaderScreen(
     providerId: String,
@@ -106,7 +122,7 @@ fun ReaderScreen(
     var resolvedStream by remember { mutableStateOf<EpisodeStream?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-    var showControls by remember { mutableStateOf(false) }
+    var showControls by remember { mutableStateOf(true) }
     var showChapterSheet by remember { mutableStateOf(false) }
     var chapterSearchQuery by remember { mutableStateOf("") }
     var isSheetSortDescending by remember { mutableStateOf(false) }
@@ -116,9 +132,80 @@ fun ReaderScreen(
     var zoomOffsetY by remember { mutableFloatStateOf(0f) }
     val isZoomed = zoomScale > 1.05f
 
-    // Novel Reader settings state: Font size (sp) & Reading theme (Dark, Sepia, Light)
-    var novelFontSize by remember { mutableIntStateOf(18) }
-    var novelThemeIndex by remember { mutableIntStateOf(0) } // 0: Dark AMOLED, 1: Sepia, 2: Light
+    val okHttpClient = remember { (context.applicationContext as JkhxApplication).okHttpClient }
+    val settingsManager = remember { SettingsManager.getInstance(context) }
+    val novelTtsManager = remember { NovelTtsManager.getInstance(context, okHttpClient) }
+
+    // Novel Reader settings state: Font size (sp) & Reading theme (Dark, Sepia, Light) - persist via SettingsManager
+    val novelFontSize by settingsManager.novelFontSize.collectAsState()
+    val novelThemeIndex by settingsManager.novelThemeIndex.collectAsState()
+
+    val ttsVoice by settingsManager.ttsVoice.collectAsState()
+    val ttsSpeechRate by settingsManager.ttsSpeechRate.collectAsState()
+    val ttsEngine by settingsManager.ttsEngine.collectAsState()
+    val ttsApiEndpoint by settingsManager.ttsApiEndpoint.collectAsState()
+    val ttsApiKey by settingsManager.ttsApiKey.collectAsState()
+    val ttsAudioFormat by settingsManager.ttsAudioFormat.collectAsState()
+    val geminiApiKey by settingsManager.geminiApiKey.collectAsState()
+
+    var isTtsActive by remember { mutableStateOf(novelTtsManager.isPlaying.value) }
+    var showTtsSettingsSheet by remember { mutableStateOf(false) }
+    val ttsParagraphIndex by novelTtsManager.currentParagraphIndex.collectAsState()
+    val isTtsPlaying by novelTtsManager.isPlaying.collectAsState()
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            NovelAudioService.start(context)
+        }
+    }
+
+    val requestNotificationAndStartService = {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                NovelAudioService.start(context)
+            }
+        } else {
+            NovelAudioService.start(context)
+        }
+    }
+
+    LaunchedEffect(ttsVoice, ttsSpeechRate, ttsEngine, ttsApiEndpoint, ttsApiKey, geminiApiKey, ttsAudioFormat) {
+        val engineType = TtsEngineType.fromId(ttsEngine)
+        val effectiveKey = if (ttsApiKey.isNotBlank()) ttsApiKey else geminiApiKey
+        novelTtsManager.updateConfig(
+            TtsConfig(
+                isEnabled = true,
+                engineType = engineType,
+                voiceId = ttsVoice,
+                speechRate = ttsSpeechRate,
+                apiEndpoint = ttsApiEndpoint,
+                apiKey = effectiveKey,
+                audioFormat = ttsAudioFormat
+            )
+        )
+    }
+
+    DisposableEffect(novelTtsManager, currentEpisodeIndex, sessionEpisodes.size) {
+        novelTtsManager.onChapterFinishedListener = {
+            val hasNext = sessionEpisodes.isNotEmpty() && currentEpisodeIndex < sessionEpisodes.size - 1
+            if (hasNext) {
+                val nextIdx = currentEpisodeIndex + 1
+                currentEpisodeIndex = nextIdx
+                sessionEpisodes.getOrNull(nextIdx)?.let { ep ->
+                    currentEpisode = ep
+                    ActivePlayerSession.currentEpisodeIndex = nextIdx
+                    ActivePlayerSession.currentEpisode = ep
+                }
+            }
+        }
+        onDispose {
+            novelTtsManager.onChapterFinishedListener = null
+        }
+    }
 
     val listState = rememberLazyListState()
 
@@ -182,13 +269,36 @@ fun ReaderScreen(
         }
     }
 
-    val isNovelMode = !resolvedStream?.content.isNullOrBlank()
+    val isNovelMode = (resolvedStream?.type == "novel" || resolvedStream?.type == "text" || pluginManager.isNovelProvider(providerId)) || !resolvedStream?.content.isNullOrBlank()
     val novelText = resolvedStream?.content ?: ""
     val paragraphs = remember(novelText) {
         if (novelText.isBlank()) emptyList()
         else novelText.split("\n\n", "\r\n\r\n", "\n")
             .map { it.trim() }
             .filter { it.isNotBlank() }
+    }
+
+    // Khi đang bật chế độ TTS và chương mới được tải thành công, tự động tiếp tục đọc
+    LaunchedEffect(currentEpisode.id, paragraphs.size) {
+        if (isTtsActive && paragraphs.isNotEmpty()) {
+            novelTtsManager.setChapter(
+                storyTitle = movieName,
+                chapterTitle = currentEpisode.name,
+                paragraphsList = paragraphs,
+                startIndex = 0,
+                autoPlay = true
+            )
+            requestNotificationAndStartService()
+        }
+    }
+
+    // Tự động cuộn theo đoạn văn đang được đọc
+    LaunchedEffect(ttsParagraphIndex, isTtsActive, isTtsPlaying) {
+        if (isTtsActive && isTtsPlaying && ttsParagraphIndex in paragraphs.indices) {
+            try {
+                listState.animateScrollToItem(maxOf(0, ttsParagraphIndex + 1))
+            } catch (_: Exception) {}
+        }
     }
 
     // Khôi phục vị trí trang / đoạn văn đã dừng hoặc cuộn về đầu nếu chưa đọc
@@ -452,12 +562,11 @@ fun ReaderScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(novelBgColor)
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onTap = {
-                                showControls = !showControls
-                            }
-                        )
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        showControls = !showControls
                     }
             ) {
                 LazyColumn(
@@ -478,21 +587,55 @@ fun ReaderScreen(
                             color = novelTextColor,
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) {
+                                    showControls = !showControls
+                                }
                                 .padding(bottom = AppTheme.dimens.space24),
                             textAlign = TextAlign.Center
                         )
                     }
 
                     itemsIndexed(paragraphs) { pIdx, paragraph ->
-                        Text(
-                            text = paragraph,
-                            fontSize = novelFontSize.sp,
-                            lineHeight = (novelFontSize * 1.6f).sp,
-                            color = novelTextColor,
+                        val isHighlighted = isTtsActive && isTtsPlaying && ttsParagraphIndex == pIdx
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isHighlighted) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent,
+                            border = if (isHighlighted) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)) else null,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(bottom = AppTheme.dimens.space14)
-                        )
+                                .combinedClickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    onClick = {
+                                        if (isTtsActive) {
+                                            novelTtsManager.seekToParagraph(pIdx)
+                                        } else {
+                                            showControls = !showControls
+                                        }
+                                    },
+                                    onLongClick = {
+                                        showControls = !showControls
+                                    }
+                                )
+                        ) {
+                            Text(
+                                text = paragraph,
+                                fontSize = novelFontSize.sp,
+                                lineHeight = (novelFontSize * 1.6f).sp,
+                                color = if (isHighlighted) MaterialTheme.colorScheme.primary else novelTextColor,
+                                fontWeight = if (isHighlighted) FontWeight.SemiBold else FontWeight.Normal,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(
+                                        horizontal = if (isHighlighted) AppTheme.dimens.space8 else 0.dp,
+                                        vertical = if (isHighlighted) AppTheme.dimens.space6 else 0.dp
+                                    )
+                            )
+                        }
                     }
 
                     item {
@@ -506,7 +649,14 @@ fun ReaderScreen(
                             fontSize = 13.sp,
                             color = novelTextColor.copy(alpha = 0.5f),
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) {
+                                    showControls = !showControls
+                                }
                         )
                         Spacer(modifier = Modifier.height(AppTheme.dimens.space32))
                     }
@@ -662,9 +812,21 @@ fun ReaderScreen(
                         )
                     }
 
-                    val isNovelMode = !resolvedStream?.content.isNullOrBlank()
+                    val isNovelMode = (resolvedStream?.type == "novel" || resolvedStream?.type == "text" || pluginManager.isNovelProvider(providerId)) || !resolvedStream?.content.isNullOrBlank()
 
-                    if (!isNovelMode) {
+                    if (isNovelMode) {
+                        IconButton(
+                            onClick = {
+                                showTtsSettingsSheet = true
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Headphones,
+                                contentDescription = stringResource(R.string.reader_tts_settings_title),
+                                tint = if (isTtsActive && isTtsPlaying) MaterialTheme.colorScheme.primary else Color.White
+                            )
+                        }
+                    } else {
                         IconButton(
                             onClick = {
                                 if (isZoomed) {
@@ -745,9 +907,13 @@ fun ReaderScreen(
             enter = fadeIn(animationSpec = tween(180)),
             exit = fadeOut(animationSpec = tween(400)),
             modifier = Modifier
-                .align(Alignment.BottomEnd)
+                .align(if (isNovelMode) Alignment.BottomStart else Alignment.BottomEnd)
                 .navigationBarsPadding()
-                .padding(end = AppTheme.dimens.space16, bottom = AppTheme.dimens.space16)
+                .padding(
+                    start = if (isNovelMode) AppTheme.dimens.space16 else 0.dp,
+                    end = if (!isNovelMode) AppTheme.dimens.space16 else 0.dp,
+                    bottom = AppTheme.dimens.space16
+                )
         ) {
             Surface(
                 shape = ShapeTokens.Chip,
@@ -770,6 +936,96 @@ fun ReaderScreen(
                     modifier = Modifier.padding(horizontal = AppTheme.dimens.space12, vertical = AppTheme.dimens.space6)
                 )
             }
+        }
+
+        // Floating Quick TTS Button: Nút tai nghe nhanh khi ẩn controls trong chế độ đọc truyện chữ
+        AnimatedVisibility(
+            visible = isNovelMode && !isTtsActive && !showControls && paragraphs.isNotEmpty(),
+            enter = fadeIn(animationSpec = tween(200)),
+            exit = fadeOut(animationSpec = tween(200)),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .navigationBarsPadding()
+                .padding(end = AppTheme.dimens.space16, bottom = AppTheme.dimens.space16)
+        ) {
+            Surface(
+                onClick = {
+                    isTtsActive = true
+                    val startIdx = (currentNovelItemIndex - 1).coerceIn(0, maxOf(0, paragraphs.size - 1))
+                    novelTtsManager.setChapter(
+                        storyTitle = movieName,
+                        chapterTitle = currentEpisode.name,
+                        paragraphsList = paragraphs,
+                        startIndex = startIdx,
+                        autoPlay = true
+                    )
+                    requestNotificationAndStartService()
+                },
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)),
+                shadowElevation = 6.dp
+            ) {
+                Box(
+                    modifier = Modifier.size(44.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Headphones,
+                        contentDescription = stringResource(R.string.reader_tts_start),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+        }
+
+        // Floating Novel TTS Control Bar: Hiện khi người dùng bật chế độ nghe truyện (TTS)
+        AnimatedVisibility(
+            visible = isTtsActive && isNovelMode,
+            enter = fadeIn(tween(180)) + slideInVertically(initialOffsetY = { it }),
+            exit = fadeOut(tween(180)) + slideOutVertically(targetOffsetY = { it }),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = if (showControls) 80.dp else AppTheme.dimens.space12)
+        ) {
+            NovelTtsControlBar(
+                novelTtsManager = novelTtsManager,
+                settingsManager = settingsManager,
+                onClose = {
+                    isTtsActive = false
+                    novelTtsManager.stop()
+                    NovelAudioService.stop(context)
+                }
+            )
+        }
+
+        // Modal BottomSheet Cài đặt TTS khi nhấn vào icon tai nghe TopBar
+        if (showTtsSettingsSheet) {
+            NovelTtsSettingsSheet(
+                novelTtsManager = novelTtsManager,
+                settingsManager = settingsManager,
+                isPlaying = isTtsPlaying,
+                onStartPlay = {
+                    if (!isTtsActive || !isTtsPlaying) {
+                        isTtsActive = true
+                        val startIdx = (currentNovelItemIndex - 1).coerceIn(0, maxOf(0, paragraphs.size - 1))
+                        novelTtsManager.setChapter(
+                            storyTitle = movieName,
+                            chapterTitle = currentEpisode.name,
+                            paragraphsList = paragraphs,
+                            startIndex = startIdx,
+                            autoPlay = true
+                        )
+                        requestNotificationAndStartService()
+                    } else {
+                        novelTtsManager.togglePlayPause()
+                    }
+                    showTtsSettingsSheet = false
+                },
+                onDismissRequest = { showTtsSettingsSheet = false }
+            )
         }
 
         // Overlay: Bottom Controls (Chapter Navigation & Chapter List Selector)
@@ -799,7 +1055,7 @@ fun ReaderScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     // Điều khiển dành riêng cho Truyện Chữ (Novel Reader): Tùy chỉnh Font Size (A- / A+) & Đổi Theme Đọc
-                    val isNovelMode = !resolvedStream?.content.isNullOrBlank()
+                    val isNovelMode = (resolvedStream?.type == "novel" || resolvedStream?.type == "text" || pluginManager.isNovelProvider(providerId)) || !resolvedStream?.content.isNullOrBlank()
                     if (isNovelMode) {
                         Surface(
                             shape = ShapeTokens.Chip,
@@ -820,7 +1076,7 @@ fun ReaderScreen(
                                     color = Color.White,
                                     modifier = Modifier
                                         .clickable {
-                                            if (novelFontSize > 14) novelFontSize -= 2
+                                            if (novelFontSize > 14) settingsManager.setNovelFontSize(novelFontSize - 2)
                                         }
                                         .padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
@@ -839,7 +1095,7 @@ fun ReaderScreen(
                                     color = Color.White,
                                     modifier = Modifier
                                         .clickable {
-                                            if (novelFontSize < 32) novelFontSize += 2
+                                            if (novelFontSize < 32) settingsManager.setNovelFontSize(novelFontSize + 2)
                                         }
                                         .padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
@@ -850,35 +1106,35 @@ fun ReaderScreen(
                                 Box(
                                     modifier = Modifier
                                         .size(20.dp)
-                                        .background(Color(0xFF1E1E1E), shape = androidx.compose.foundation.shape.CircleShape)
+                                        .background(Color(0xFF1E1E1E), shape = CircleShape)
                                         .border(
                                             width = if (novelThemeIndex == 0) 2.dp else 1.dp,
                                             color = if (novelThemeIndex == 0) MaterialTheme.colorScheme.primary else Color.Gray,
-                                            shape = androidx.compose.foundation.shape.CircleShape
+                                            shape = CircleShape
                                         )
-                                        .clickable { novelThemeIndex = 0 }
+                                        .clickable { settingsManager.setNovelThemeIndex(0) }
                                 )
                                 Box(
                                     modifier = Modifier
                                         .size(20.dp)
-                                        .background(Color(0xFFFBF0D9), shape = androidx.compose.foundation.shape.CircleShape)
+                                        .background(Color(0xFFFBF0D9), shape = CircleShape)
                                         .border(
                                             width = if (novelThemeIndex == 1) 2.dp else 1.dp,
                                             color = if (novelThemeIndex == 1) MaterialTheme.colorScheme.primary else Color.Gray,
-                                            shape = androidx.compose.foundation.shape.CircleShape
+                                            shape = CircleShape
                                         )
-                                        .clickable { novelThemeIndex = 1 }
+                                        .clickable { settingsManager.setNovelThemeIndex(1) }
                                 )
                                 Box(
                                     modifier = Modifier
                                         .size(20.dp)
-                                        .background(Color(0xFFFFFFFF), shape = androidx.compose.foundation.shape.CircleShape)
+                                        .background(Color(0xFFFFFFFF), shape = CircleShape)
                                         .border(
                                             width = if (novelThemeIndex == 2) 2.dp else 1.dp,
                                             color = if (novelThemeIndex == 2) MaterialTheme.colorScheme.primary else Color.Gray,
-                                            shape = androidx.compose.foundation.shape.CircleShape
+                                            shape = CircleShape
                                         )
-                                        .clickable { novelThemeIndex = 2 }
+                                        .clickable { settingsManager.setNovelThemeIndex(2) }
                                 )
                             }
                         }

@@ -142,9 +142,9 @@ data class EpisodeServer(
 
 @Serializable
 data class Subtitle(
-    val label: String,
+    val label: String = "",
     val language: String = "vi",
-    val url: String,
+    val url: String = "",
     val format: String = "vtt" // vtt, srt
 )
 

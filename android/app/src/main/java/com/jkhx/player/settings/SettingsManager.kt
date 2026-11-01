@@ -582,12 +582,12 @@ class SettingsManager(context: Context) {
     }
 
     private val _ttsSpeechRate = MutableStateFlow(
-        prefs.getFloat(KEY_TTS_SPEECH_RATE, 1.15f)
+        prefs.getFloat(KEY_TTS_SPEECH_RATE, 1.0f).coerceIn(0.95f, 1.25f)
     )
     val ttsSpeechRate: StateFlow<Float> = _ttsSpeechRate.asStateFlow()
 
     fun setTtsSpeechRate(rate: Float) {
-        val clamped = rate.coerceIn(0.5f, 2.0f)
+        val clamped = rate.coerceIn(0.95f, 1.25f)
         prefs.edit().putFloat(KEY_TTS_SPEECH_RATE, clamped).apply()
         _ttsSpeechRate.value = clamped
     }
@@ -640,6 +640,28 @@ class SettingsManager(context: Context) {
         return _ttsApiKey.value.trim()
     }
 
+    private val _novelFontSize = MutableStateFlow(
+        prefs.getInt(KEY_NOVEL_FONT_SIZE, 18)
+    )
+    val novelFontSize: StateFlow<Int> = _novelFontSize.asStateFlow()
+
+    fun setNovelFontSize(size: Int) {
+        val clamped = size.coerceIn(12, 36)
+        prefs.edit().putInt(KEY_NOVEL_FONT_SIZE, clamped).apply()
+        _novelFontSize.value = clamped
+    }
+
+    private val _novelThemeIndex = MutableStateFlow(
+        prefs.getInt(KEY_NOVEL_THEME_INDEX, 0)
+    )
+    val novelThemeIndex: StateFlow<Int> = _novelThemeIndex.asStateFlow()
+
+    fun setNovelThemeIndex(index: Int) {
+        val clamped = index.coerceIn(0, 2)
+        prefs.edit().putInt(KEY_NOVEL_THEME_INDEX, clamped).apply()
+        _novelThemeIndex.value = clamped
+    }
+
     companion object {
         private const val KEY_IS_ADULT_ENABLED = "pref_is_adult_enabled"
         private const val KEY_IS_COMIC_ENABLED = "pref_is_comic_enabled"
@@ -657,6 +679,8 @@ class SettingsManager(context: Context) {
         private const val KEY_MOVIE_EPISODE_SORT_DESCENDING = "pref_movie_episode_sort_descending"
         private const val KEY_COMIC_EPISODE_SORT_DESCENDING = "pref_comic_episode_sort_descending"
         private const val KEY_NOVEL_EPISODE_SORT_DESCENDING = "pref_novel_episode_sort_descending"
+        private const val KEY_NOVEL_FONT_SIZE = "pref_novel_font_size"
+        private const val KEY_NOVEL_THEME_INDEX = "pref_novel_theme_index"
         private const val KEY_SUBTITLE_TEXT_SIZE = "pref_subtitle_text_size"
         private const val KEY_SUBTITLE_STYLE_KEY = "pref_subtitle_style_key"
         private const val KEY_SUBTITLE_POSITION_KEY = "pref_subtitle_position_key"

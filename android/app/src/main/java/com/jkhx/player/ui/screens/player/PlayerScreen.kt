@@ -221,17 +221,10 @@ fun PlayerScreen(
     }
 
     var currentEpisodeIndex by remember {
-        mutableStateOf(
-            if (activeEpisodes.isNotEmpty()) {
-                val foundIdx = activeEpisodes.indexOfFirst { it.id == episode.id }
-                if (foundIdx >= 0) foundIdx else ActivePlayerSession.currentEpisodeIndex
-            } else 0
-        )
+        mutableStateOf(if (activeEpisodes.isNotEmpty()) activeEpisodes.indexOfFirst { it.id == episode.id }.takeIf { it >= 0 } ?: ActivePlayerSession.currentEpisodeIndex else 0)
     }
     var currentEpisode by remember(currentEpisodeIndex, activeEpisodes) {
-        mutableStateOf(
-            activeEpisodes.getOrNull(currentEpisodeIndex) ?: episode
-        )
+        mutableStateOf(activeEpisodes.getOrNull(currentEpisodeIndex) ?: episode)
     }
 
     // Trích xuất link embed gốc từ episode.data (nếu có) để làm fallback
@@ -249,8 +242,11 @@ fun PlayerScreen(
     var resolvedStream by remember { mutableStateOf<EpisodeStream?>(null) }
 
     fun getEffectiveEmbedFallback(): String? {
-        val activeStreamUrl = resolvedStream?.url?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
-        return rawEmbedUrl ?: fallbackEmbedFromData ?: activeStreamUrl
+        if (!rawEmbedUrl.isNullOrBlank()) return rawEmbedUrl
+        if (!fallbackEmbedFromData.isNullOrBlank()) return fallbackEmbedFromData
+        val stream = resolvedStream ?: return null
+        val isDirectMedia = stream.url.contains(".m3u8", true) || stream.url.contains(".mp4", true) || stream.url.contains(".mkv", true)
+        return if (stream.type.equals("embed", true) && !isDirectMedia) stream.url else null
     }
     var isLoading by remember { mutableStateOf(true) }
     var isPlayerBuffering by remember { mutableStateOf(false) }
@@ -281,6 +277,9 @@ fun PlayerScreen(
     var sliderDragRatio by remember { mutableFloatStateOf(0f) }
     var isSeeking by remember { mutableStateOf(false) }
     var exoPlayerRetryCount by remember { mutableIntStateOf(0) }
+    var downloadSpeedText by remember { mutableStateOf("0 KB/s") }
+    var bufferedStatsText by remember { mutableStateOf("") }
+    var bufferProgress by remember { mutableFloatStateOf(0f) }
 
     // Controls Overlay
     var showControls by remember { mutableStateOf(true) }
@@ -1328,12 +1327,13 @@ fun PlayerScreen(
                     return
                 }
 
-                if (exoPlayerRetryCount < 2) {
+                val maxRetries = 5
+                if (exoPlayerRetryCount < maxRetries) {
                     exoPlayerRetryCount++
-                    val retryDelayMs = if (exoPlayerRetryCount == 1) 1500L else 3000L
-                    println("[PlayerScreen] Đang thử phục hồi ExoPlayer (lần $exoPlayerRetryCount sau ${retryDelayMs}ms)...")
+                    val retryDelayMs = (exoPlayerRetryCount + 1) * 1000L
+                    println("[PlayerScreen] Đang thử phục hồi ExoPlayer (lần $exoPlayerRetryCount/$maxRetries sau ${retryDelayMs}ms)...")
                     coroutineScope.launch {
-                        Toast.makeText(context, "Đang thử kết nối lại luồng phát (lần $exoPlayerRetryCount/2)...", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Máy chủ đang nạp bộ đệm (lần $exoPlayerRetryCount/$maxRetries)... Vui lòng đợi", Toast.LENGTH_SHORT).show()
                         delay(retryDelayMs)
                         val currentPos = exoPlayerManager.player.currentPosition.coerceAtLeast(0L)
                         exoPlayerManager.player.seekTo(currentPos)
@@ -1376,6 +1376,27 @@ fun PlayerScreen(
             }
         }
         exoPlayerManager.player.addListener(listener)
+    }
+
+    // Coroutine đo tốc độ tải về và tiến độ bộ đệm real-time khi phim đang buffer
+    LaunchedEffect(exoPlayerManager, isLoading, isPlayerBuffering, isPlaybackStartedEffective) {
+        if (isLoading || isPlayerBuffering || !isPlaybackStartedEffective) {
+            while (isActive) {
+                val speed = exoPlayerManager.getDownloadSpeedFormatted()
+                val stats = exoPlayerManager.getBufferedStats(targetBufferMs = 15_000L)
+                downloadSpeedText = speed
+                bufferProgress = stats.progress
+                val durSec = stats.bufferedDurationMs / 1000.0
+                val durSecStr = if (durSec >= 10.0) "${durSec.toInt()}s" else String.format(java.util.Locale.US, "%.1fs", durSec)
+                val mbStr = exoPlayerManager.formatBytes(stats.bufferedBytes)
+                bufferedStatsText = if (stats.bufferedBytes > 0L) {
+                    context.getString(R.string.player_buffering_stats_format, durSecStr, mbStr, "15s", speed)
+                } else {
+                    context.getString(R.string.player_buffering_stats_simple, durSecStr, "15s", speed)
+                }
+                delay(400)
+            }
+        }
     }
 
     // Coroutine cập nhật vị trí phát, thời lượng và tự động lưu Watch Progress định kỳ
@@ -2510,6 +2531,9 @@ fun PlayerScreen(
             isLocked = isLocked,
             isPipMode = isPipMode,
             showControls = showControls,
+            downloadSpeedText = downloadSpeedText,
+            bufferedStatsText = bufferedStatsText,
+            bufferProgress = bufferProgress,
             onUnlock = {
                 isLocked = false
                 showControls = true
