@@ -84,10 +84,11 @@ private enum class ProviderCategoryTab {
     ADULT;
 
     fun matches(categoryType: String?): Boolean {
-        val norm = categoryType?.lowercase()?.trim() ?: "movie"
+        val norm = categoryType?.lowercase()?.trim().orEmpty()
         return when (this) {
             ALL -> true
-            MOVIE -> norm == "movie" || norm.isBlank()
+            MOVIE -> norm == "movie" || norm == "movie_tv" || norm.isBlank() ||
+                    (norm != "stremio" && norm != "comic" && norm != "novel" && norm != "live" && norm != "adult")
             STREMIO -> norm == "stremio"
             COMIC_NOVEL -> norm == "comic" || norm == "novel"
             LIVE -> norm == "live"
