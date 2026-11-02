@@ -245,7 +245,8 @@ fun PlayerScreen(
         if (!rawEmbedUrl.isNullOrBlank()) return rawEmbedUrl
         if (!fallbackEmbedFromData.isNullOrBlank()) return fallbackEmbedFromData
         val stream = resolvedStream ?: return null
-        val isDirectMedia = stream.url.contains(".m3u8", true) || stream.url.contains(".mp4", true) || stream.url.contains(".mkv", true)
+        val isKkphimEmbed = stream.url.contains("player.phimapi.com/player/?url=")
+        val isDirectMedia = (stream.url.contains(".m3u8", true) || stream.url.contains(".mp4", true) || stream.url.contains(".mkv", true)) && !isKkphimEmbed
         return if (stream.type.equals("embed", true) && !isDirectMedia) stream.url else null
     }
     var isLoading by remember { mutableStateOf(true) }
@@ -1874,7 +1875,8 @@ fun PlayerScreen(
                 }
             }
 
-            if (stream.type == "embed" && !stream.url.contains(".m3u8") && !stream.url.contains(".mp4")) {
+            val isKkphimEmbed = stream.url.contains("player.phimapi.com/player/?url=")
+            if (stream.type == "embed" && (isKkphimEmbed || (!stream.url.contains(".m3u8") && !stream.url.contains(".mp4")))) {
                 println("[PlayerScreen] Stream type là embed -> Chuyển sang WebView: ${stream.url}")
                 webViewUrl = stream.url
                 webViewHeaders = stream.headers

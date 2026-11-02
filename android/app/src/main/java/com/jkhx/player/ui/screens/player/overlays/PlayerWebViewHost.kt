@@ -87,6 +87,7 @@ fun PlayerWebViewPlayer(
                         @Suppress("DEPRECATION")
                         databaseEnabled = true
                         mediaPlaybackRequiresUserGesture = false
+                        mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                         loadWithOverviewMode = false
                         useWideViewPort = false
                         allowContentAccess = true
@@ -206,6 +207,11 @@ fun PlayerWebViewPlayer(
                             request: WebResourceRequest?
                         ): WebResourceResponse? {
                             val reqUrl = request?.url?.toString() ?: return null
+
+                            // Bỏ qua đánh chặn đối với domain player KKPhim để Chromium WebView nạp native
+                            if (reqUrl.contains("player.phimapi.com")) {
+                                return super.shouldInterceptRequest(view, request)
+                            }
 
                             // 0. HLS / DIRECT MEDIA STREAM PROXY INTERCEPTION:
                             // Khi WebView đang đóng vai trò trình phát HTML5 + hls.js cho luồng HLS/Direct video,
@@ -363,8 +369,12 @@ fun PlayerWebViewPlayer(
                                         val respHeaders = mutableMapOf<String, String>()
                                         for (i in 0 until okRes.headers.size) {
                                             val hName = okRes.headers.name(i)
-                                            if (!hName.equals("content-security-policy", ignoreCase = true) &&
-                                                !hName.equals("x-frame-options", ignoreCase = true)) {
+                                            val hLower = hName.lowercase()
+                                            if (hLower != "content-security-policy" &&
+                                                hLower != "x-frame-options" &&
+                                                hLower != "content-encoding" &&
+                                                hLower != "content-length" &&
+                                                hLower != "transfer-encoding") {
                                                 respHeaders[hName] = okRes.headers.value(i)
                                             }
                                         }
@@ -422,8 +432,12 @@ fun PlayerWebViewPlayer(
                                         val respHeaders = mutableMapOf<String, String>()
                                         for (i in 0 until subRes.headers.size) {
                                             val hName = subRes.headers.name(i)
-                                            if (!hName.equals("content-security-policy", ignoreCase = true) &&
-                                                !hName.equals("x-frame-options", ignoreCase = true)) {
+                                            val hLower = hName.lowercase()
+                                            if (hLower != "content-security-policy" &&
+                                                hLower != "x-frame-options" &&
+                                                hLower != "content-encoding" &&
+                                                hLower != "content-length" &&
+                                                hLower != "transfer-encoding") {
                                                 respHeaders[hName] = subRes.headers.value(i)
                                             }
                                         }
