@@ -1917,18 +1917,11 @@ fun PlayerScreen(
                 }
 
                 withContext(Dispatchers.Main) {
-                    exoPlayerRetryCount = 0
-                    hasInitialSubSelected = false
-                    hasAutoAppliedInitialSub = false
-                    activeOnlineSubId = null
-                    isSubtitleDisabled = false
-                    customSubtitleTracks.clear()
-                    subtitleCuesMap.clear()
-                    currentSubCues = emptyList()
-                    currentSubOffsetMs = 0L
+                    exoPlayerRetryCount = 0; hasInitialSubSelected = false; hasAutoAppliedInitialSub = false
+                    activeOnlineSubId = null; isSubtitleDisabled = false; currentSubCues = emptyList(); currentSubOffsetMs = 0L
+                    customSubtitleTracks.clear(); subtitleCuesMap.clear(); stremioAddonSubsMap.clear()
                     exoPlayerManager.prepareStream(stream, startPositionMs = startPos)
                     exoPlayerManager.setPlaybackSpeed(currentSpeed)
-                    stremioAddonSubsMap.clear()
                     loadStreamSubtitles(stream)
                     loadStremioAddonSubtitles(force = false)
 
@@ -1943,9 +1936,7 @@ fun PlayerScreen(
                         activePlayerView?.subtitleView?.setCues(emptyList())
                         exoPlayerManager.setSubtitleTrack(null)
                         exoPlayerManager.player.trackSelectionParameters = exoPlayerManager.player.trackSelectionParameters
-                            .buildUpon()
-                            .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, true)
-                            .build()
+                            .buildUpon().setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, true).build()
                         subRestored = true
                     } else if (savedTrackId != null) {
                         if (savedTrackId.startsWith("cached_gemini_") || savedTrackId.startsWith("custom_gemini_")) {
@@ -2079,9 +2070,7 @@ fun PlayerScreen(
                                 activeOnlineSubId = null
                                 selectedLangGroup = "vi"
                                 exoPlayerManager.player.trackSelectionParameters = exoPlayerManager.player.trackSelectionParameters
-                                    .buildUpon()
-                                    .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, true)
-                                    .build()
+                                    .buildUpon().setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, true).build()
                             }
                         } else if (viSub != null) {
                             // Tự động ưu tiên phụ đề tiếng Việt từ luồng phát (như VSMov)
@@ -2090,9 +2079,7 @@ fun PlayerScreen(
                             if (cues != null && cues.isNotEmpty()) {
                                 currentSubCues = cues
                                 exoPlayerManager.player.trackSelectionParameters = exoPlayerManager.player.trackSelectionParameters
-                                    .buildUpon()
-                                    .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, true)
-                                    .build()
+                                    .buildUpon().setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, true).build()
                             }
                             currentSubOffsetMs = subtitleManager.cacheManager.getSubtitleOffset(activeProviderId, activeMovieSlug, currentEpisode.id, viSub.url, movieTmdbId)
                             subRestored = true
@@ -2353,14 +2340,9 @@ fun PlayerScreen(
         Modifier
     }
 
-    val rootPlayerFocusRequester = remember { FocusRequester() }
-    val playPauseFocusRequester = remember { FocusRequester() }
-    val capsulePillFocusRequester = remember { FocusRequester() }
-    val sourceSelectorInitialFocusRequester = remember { FocusRequester() }
-    val episodesDrawerInitialFocusRequester = remember { FocusRequester() }
-    val subtitleSheetInitialFocusRequester = remember { FocusRequester() }
-    val audioSheetInitialFocusRequester = remember { FocusRequester() }
-    val settingsDialogInitialFocusRequester = remember { FocusRequester() }
+    val (rootPlayerFocusRequester, playPauseFocusRequester, capsulePillFocusRequester) = remember { Triple(FocusRequester(), FocusRequester(), FocusRequester()) }
+    val (sourceSelectorInitialFocusRequester, episodesDrawerInitialFocusRequester) = remember { Pair(FocusRequester(), FocusRequester()) }
+    val (subtitleSheetInitialFocusRequester, audioSheetInitialFocusRequester, settingsDialogInitialFocusRequester) = remember { Triple(FocusRequester(), FocusRequester(), FocusRequester()) }
 
     LaunchedEffect(showControls, isPlaybackStartedEffective, isAnyOverlayOpen, isLoading, isPlayerBuffering) {
         if (isAnyOverlayOpen) return@LaunchedEffect
@@ -2933,9 +2915,7 @@ fun PlayerScreen(
             getPluginName = { id -> pluginManager.getPluginName(id) },
             isScanningSources = isScanningSources,
             sourceRotationAngle = sourceRotationAngle,
-            onRefreshSources = {
-                refreshSourcesKey++
-            },
+            onRefreshSources = { refreshSourcesKey++ },
             onSelectStream = { item ->
                 switchToUnifiedStream(item)
                 showSourceSelectorDrawer = false
@@ -2990,9 +2970,7 @@ fun PlayerScreen(
                 currentPosition = 0L
                 exoPlayerManager.seekTo(0L)
             },
-            onDismiss = {
-                showResumePromptDialog = false
-            }
+            onDismiss = { showResumePromptDialog = false }
         )
         // 9. Thông báo lỗi nếu có
         if (errorMessage != null) {
@@ -3006,10 +2984,7 @@ fun PlayerScreen(
                     webViewHeaders = embedHeadersFor(embedFallback ?: "", resolvedStream?.headers)
                     isWebViewMode = true
                 },
-                onRetry = {
-                    errorMessage = null
-                    reloadStreamTrigger++
-                },
+                onRetry = { errorMessage = null; reloadStreamTrigger++ },
                 onBack = onBack,
                 videoBackdrop = videoBackdrop
             )

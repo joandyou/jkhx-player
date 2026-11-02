@@ -126,16 +126,33 @@ fun PlayerWebViewPlayer(
                     """.trimIndent()
 
                     val currentUrl = webViewUrl
-                    val currentUrlHost = try { Uri.parse(currentUrl).host?.lowercase() } catch (_: Exception) { null }
+                    val parsedCurrentUri = try { Uri.parse(currentUrl) } catch (_: Exception) { null }
+                    val currentUrlHost = parsedCurrentUri?.host?.lowercase()
+                    val cleanPath = parsedCurrentUri?.path?.lowercase() ?: ""
+                    val hasDirectMediaExtension = cleanPath.endsWith(".m3u8") ||
+                        cleanPath.endsWith(".mp4") ||
+                        cleanPath.endsWith(".mkv") ||
+                        cleanPath.endsWith(".webm") ||
+                        cleanPath.endsWith(".mov") ||
+                        cleanPath.endsWith(".avi")
+
+                    val hasQueryUrlParam = parsedCurrentUri?.queryParameterNames?.any { q ->
+                        q.equals("url", true) || q.equals("link", true) || q.equals("src", true) || q.equals("file", true)
+                    } == true
+
+                    val isExplicitEmbed = (currentUrl == resolvedStream?.url && resolvedStream?.type.equals("embed", ignoreCase = true)) ||
+                        hasQueryUrlParam ||
+                        currentUrl.contains("/embed", ignoreCase = true) ||
+                        currentUrl.contains("player.php", ignoreCase = true) ||
+                        cleanPath.contains("player") ||
+                        cleanPath.contains("share")
+
                     val inferredStreamType = StremioPluginWrapper.inferStreamType(
                         streamUrl = currentUrl,
                         rawType = if (currentUrl == resolvedStream?.url) resolvedStream?.type else null,
                         metaText = ""
                     )
-                    val isDirectMediaStream = !currentUrl.contains("/embed", ignoreCase = true) &&
-                        !currentUrl.contains("player.php", ignoreCase = true) &&
-                        (inferredStreamType in setOf("m3u8", "hls", "mp4", "mkv", "webm", "mov", "avi") ||
-                            (currentUrl == resolvedStream?.url && resolvedStream?.type != "embed"))
+                    val isDirectMediaStream = hasDirectMediaExtension && !isExplicitEmbed
 
                     val embedHttpClient = OkHttpClient.Builder()
                         .dns(object : okhttp3.Dns {
