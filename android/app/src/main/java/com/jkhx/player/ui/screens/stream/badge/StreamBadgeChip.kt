@@ -22,7 +22,7 @@ import coil.compose.AsyncImage
 fun StreamBadgeChip(
     badge: StreamBadge,
     modifier: Modifier = Modifier,
-    height: Dp = 17.dp
+    height: Dp = 20.dp
 ) {
     val tagColorArgb = if (badge.tagStyle.equals("filled", ignoreCase = true)) {
         badge.tagColor.toBadgeColorArgbOrNull()
@@ -41,7 +41,7 @@ fun StreamBadgeChip(
     Box(
         modifier = boxModifier
             .clip(shape)
-            .padding(horizontal = 3.dp, vertical = 1.dp),
+            .padding(horizontal = 4.dp, vertical = 2.dp),
         contentAlignment = Alignment.Center
     ) {
         if (badge.imageURL.isNotBlank()) {
@@ -49,8 +49,8 @@ fun StreamBadgeChip(
                 model = badge.imageURL,
                 contentDescription = badge.name,
                 modifier = Modifier
-                    .height(height - 2.dp)
-                    .widthIn(min = 24.dp, max = 80.dp),
+                    .height(height - 3.dp)
+                    .widthIn(min = 28.dp, max = 95.dp),
                 contentScale = ContentScale.Fit
             )
         } else {
@@ -69,7 +69,7 @@ fun StreamBadgeChip(
 fun StreamFileSizeBadge(
     fileSize: String,
     modifier: Modifier = Modifier,
-    height: Dp = 17.dp
+    height: Dp = 20.dp
 ) {
     val shape = RoundedCornerShape(4.dp)
     Box(

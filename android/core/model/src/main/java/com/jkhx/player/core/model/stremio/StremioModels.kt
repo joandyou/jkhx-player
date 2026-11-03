@@ -295,6 +295,7 @@ data class StremioStream(
     val type: String? = null,
     val infoHash: String? = null,
     val fileIdx: Int? = null,
+    val sources: List<String> = emptyList(),
     val behaviorHints: StremioStreamBehaviorHints? = null,
     val subtitles: List<StremioStreamSubtitle> = emptyList()
 ) {
@@ -306,10 +307,106 @@ data class StremioStream(
 
     val effectiveUrl: String?
         get() = url ?: externalUrl
+
+    val isTorrent: Boolean
+        get() = !infoHash.isNullOrBlank()
 }
 
 @Serializable
 data class StremioStreamResponse(
     val streams: List<StremioStream> = emptyList()
+)
+
+@Serializable
+data class StremioTorrentFile(
+    val name: String = "",
+    val length: Long = 0L,
+    val path: String? = null,
+    val progress: Double = 0.0,
+    val downloaded: Long = 0L
+)
+
+@Serializable
+data class StremioTorrentStats(
+    val infoHash: String? = null,
+    val name: String? = null,
+    val peers: Int = 0,
+    val downloadSpeed: Double = 0.0,
+    val uploadSpeed: Double = 0.0,
+    val downloaded: Long = 0L,
+    val uploaded: Long = 0L,
+    val streamProgress: Double = 0.0,
+    val streamLen: Long = 0L,
+    val streamName: String? = null,
+    val isFinished: Boolean = false,
+    val swarmConnections: Int = 0,
+    val swarmSize: Int = 0,
+    val files: List<StremioTorrentFile> = emptyList()
+) {
+    val downloadSpeedFormatted: String
+        get() {
+            val speed = downloadSpeed.toLong()
+            return when {
+                speed >= 1024L * 1024L -> String.format(java.util.Locale.US, "%.1f MB/s", speed.toDouble() / (1024.0 * 1024.0))
+                speed >= 1024L -> String.format(java.util.Locale.US, "%.0f KB/s", speed.toDouble() / 1024.0)
+                speed > 0 -> "$speed B/s"
+                else -> "0 KB/s"
+            }
+        }
+
+    val downloadedFormatted: String
+        get() {
+            val bytes = downloaded.toDouble()
+            val mebibyte = 1024.0 * 1024.0
+            val gibibyte = 1024.0 * 1024.0 * 1024.0
+            return when {
+                bytes >= gibibyte -> String.format(java.util.Locale.US, "%.2f GB", bytes / gibibyte)
+                bytes >= mebibyte -> String.format(java.util.Locale.US, "%.1f MB", bytes / mebibyte)
+                bytes >= 1024.0 -> String.format(java.util.Locale.US, "%.0f KB", bytes / 1024.0)
+                else -> "${downloaded} B"
+            }
+        }
+
+    val streamLenFormatted: String
+        get() = when {
+            streamLen >= 1024L * 1024L * 1024L -> String.format(java.util.Locale.US, "%.2f GB", streamLen.toDouble() / (1024.0 * 1024.0 * 1024.0))
+            streamLen >= 1024L * 1024L -> String.format(java.util.Locale.US, "%.1f MB", streamLen.toDouble() / (1024.0 * 1024.0))
+            else -> "$streamLen B"
+        }
+}
+
+@Serializable
+data class StremioServerSettingsValues(
+    val serverVersion: String? = null,
+    val cacheSize: Double? = null,
+    val btMaxConnections: Int? = null,
+    val btEnableDht: Boolean = true,
+    val btProfile: String? = null
+) {
+    val cacheSizeFormatted: String
+        get() {
+            val bytes = cacheSize?.toLong() ?: 0L
+            return when {
+                bytes >= 1024L * 1024L * 1024L -> String.format(java.util.Locale.US, "%.1f GiB", bytes.toDouble() / (1024.0 * 1024.0 * 1024.0))
+                bytes >= 1024L * 1024L -> String.format(java.util.Locale.US, "%.0f MiB", bytes.toDouble() / (1024.0 * 1024.0))
+                else -> "0 B"
+            }
+        }
+}
+
+@Serializable
+data class StremioServerSettings(
+    val baseUrl: String? = null,
+    val values: StremioServerSettingsValues? = null
+)
+
+data class StremioServerHealth(
+    val isOnline: Boolean,
+    val latencyMs: Long = 0L,
+    val version: String? = null,
+    val cacheSizeFormatted: String? = null,
+    val rawCacheSize: Long? = null,
+    val btProfile: String? = null,
+    val maxConnections: Int? = null
 )
 

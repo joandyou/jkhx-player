@@ -132,6 +132,7 @@ fun DetailScreen(
     var selectedServerIndex by remember { mutableStateOf(0) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var refreshKey by remember { mutableIntStateOf(0) }
     val settingsManager = remember { JkhxApplication.instance.settingsManager }
     val isMovieSortDescending by settingsManager.isMovieEpisodeSortDescending.collectAsState()
     val isComicSortDescending by settingsManager.isComicEpisodeSortDescending.collectAsState()
@@ -158,7 +159,7 @@ fun DetailScreen(
         label = "detailTopBarAlpha"
     )
 
-    LaunchedEffect(providerId, slug) {
+    LaunchedEffect(providerId, slug, refreshKey) {
         isLoading = true
         errorMessage = null
         try {
@@ -435,17 +436,88 @@ fun DetailScreen(
         } else if (movieDetail != null) {
             val detail = movieDetail!!
             val isComic = detail.type == "comic" || detail.type == "novel" || pluginManager.isComicProvider(providerId) || pluginManager.isNovelProvider(providerId)
-            val isEpisodeSortDescending = if (isComic) isComicSortDescending else isMovieSortDescending
-            val hasTmdb = !detail.tmdbId.isNullOrBlank() || (detail.castMembers.isNotEmpty() && detail.rating != null)
-            val unifiedServer = remember(detail.episodes, providerDisplayName) {
-                val baseServer = detail.episodes.maxByOrNull { it.episodes.size } ?: detail.episodes.firstOrNull()
-                baseServer?.copy(serverName = providerDisplayName)
-            }
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 36.dp)
-            ) {
+            val isLive = detail.type == "live" || pluginManager.isLiveProvider(providerId)
+            val isAdult = detail.type == "adult" || pluginManager.isAdultProvider(providerId)
+            val isMovieOrTv = !isComic && !isLive && !isAdult
+
+            if (isMovieOrTv) {
+                MovieDetailContent(
+                    providerId = providerId,
+                    slug = slug,
+                    detail = detail,
+                    providerDisplayName = providerDisplayName,
+                    watchHistory = watchHistory,
+                    isFavorite = isFavorite,
+                    onToggleFavorite = {
+                        coroutineScope.launch(Dispatchers.IO) {
+                            val favId = "$providerId:$slug"
+                            if (isFavorite) {
+                                favoriteDao.delete(favId)
+                                com.jkhx.player.sync.SyncManager.getInstance(context).onFavoriteDeleted(favId)
+                                withContext(Dispatchers.Main) {
+                                    Toast.makeText(context, context.getString(R.string.detail_favorite_removed), Toast.LENGTH_SHORT).show()
+                                }
+                            } else {
+                                favoriteDao.insert(
+                                    FavoriteEntity(
+                                        id = favId,
+                                        providerId = providerId,
+                                        movieSlug = slug,
+                                        movieName = detail.name,
+                                        thumbUrl = detail.backdropUrl ?: detail.posterUrl,
+                                        addedAt = System.currentTimeMillis()
+                                    )
+                                )
+                                withContext(Dispatchers.Main) {
+                                    Toast.makeText(context, context.getString(R.string.detail_favorite_added), Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    },
+                    onRefreshSources = { refreshKey++ },
+                    isRefreshing = isLoading && refreshKey > 0,
+                    onPlayEpisode = { srv, epIdx, ep, isDesc ->
+                        setupActivePlayerSession(
+                            providerId = providerId,
+                            slug = slug,
+                            detail = detail,
+                            server = srv,
+                            episodeIndex = epIdx,
+                            episode = ep,
+                            rawName = rawPluginName,
+                            rawOriginName = rawPluginOriginName,
+                            isDescending = isDesc
+                        )
+                        onPlayEpisode(ep)
+                    },
+                    onMovieClick = onMovieClick,
+                    onSearchMovie = onSearchMovie,
+                    actor1Movies = actor1Movies,
+                    actor1Name = actor1Name,
+                    actor2Movies = actor2Movies,
+                    actor2Name = actor2Name,
+                    genreMovies = genreMovies,
+                    genreName = genreName,
+                    countryMovies = countryMovies,
+                    countryName = countryName,
+                    isEpisodeSortDescending = isMovieSortDescending,
+                    onToggleEpisodeSort = {
+                        settingsManager.setMovieEpisodeSortDescending(!isMovieSortDescending)
+                    },
+                    listState = listState
+                )
+            } else {
+                val isEpisodeSortDescending = if (isComic) isComicSortDescending else isMovieSortDescending
+                val hasTmdb = !detail.tmdbId.isNullOrBlank() || (detail.castMembers.isNotEmpty() && detail.rating != null)
+                val unifiedServer = remember(detail.episodes, providerDisplayName) {
+                    val baseServer = detail.episodes.maxByOrNull { it.episodes.size } ?: detail.episodes.firstOrNull()
+                    baseServer?.copy(serverName = providerDisplayName)
+                }
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 36.dp)
+                ) {
                 // 1. Cinema Ambient Glow Hero Header
                 item {
                     Box(
@@ -918,46 +990,217 @@ fun DetailScreen(
                     }
                 }
 
-                // 3. Server Tabs & Episodes (Đồng nhất hiển thị tên Plugin / Addon tại mục Chọn Server)
-                if (unifiedServer != null && unifiedServer.episodes.isNotEmpty()) {
-                    item {
-                        Spacer(modifier = Modifier.height(AppTheme.dimens.space14))
-                        Text(
-                            text = stringResource(R.string.detail_select_server),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            color = MaterialTheme.colorScheme.onBackground,
-                            modifier = Modifier.padding(horizontal = AppTheme.dimens.space16, vertical = AppTheme.dimens.space4)
-                        )
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = AppTheme.dimens.space16),
-                            horizontalArrangement = Arrangement.spacedBy(AppTheme.dimens.space16)
-                        ) {
-                            item {
-                                Column(
-                                    modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
+                // 3. Metadata Details (Đạo diễn, Thể loại, Diễn viên, Quốc gia, Nội dung)
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = AppTheme.dimens.space16, vertical = AppTheme.dimens.space8)
+                    ) {
+                        // 1. Đạo diễn
+                        if (detail.directors.isNotEmpty()) {
+                            Row(modifier = Modifier.padding(vertical = 3.dp)) {
+                                Text(
+                                    text = stringResource(R.string.detail_director),
+                                    fontSize = 13.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.width(85.dp)
+                                )
+                                Text(
+                                    text = detail.directors.joinToString(", "),
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+
+                        // 2. Thể loại (Đưa lên trên Diễn viên theo yêu cầu)
+                        if (detail.genres.isNotEmpty()) {
+                            Row(modifier = Modifier.padding(vertical = 3.dp)) {
+                                Text(
+                                    text = stringResource(R.string.detail_genres),
+                                    fontSize = 13.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.width(85.dp)
+                                )
+                                Text(
+                                    text = detail.genres.joinToString(", "),
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+
+                        // 3. Diễn viên (Avatar card row kết hợp hình ảnh, tên và vai diễn)
+                        val castList = if (detail.castMembers.isNotEmpty()) {
+                            detail.castMembers
+                        } else {
+                            detail.actors.map { CastMember(name = it) }
+                        }
+                        if (castList.isNotEmpty()) {
+                            Column(modifier = Modifier.padding(vertical = 6.dp)) {
+                                Text(
+                                    text = stringResource(R.string.detail_actors),
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(bottom = 8.dp)
+                                )
+                                val avatarContext = LocalContext.current
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
-                                    Text(
-                                        text = unifiedServer.serverName,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onBackground
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Box(
-                                        modifier = Modifier
-                                            .height(2.5.dp)
-                                            .width(80.dp)
-                                            .background(
-                                                color = MaterialTheme.colorScheme.primary,
-                                                shape = ShapeTokens.Badge
+                                    items(castList.take(16)) { cast ->
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            modifier = Modifier.width(72.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(56.dp)
+                                                    .clip(CircleShape)
+                                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                                    .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), CircleShape),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                if (!cast.profileUrl.isNullOrBlank()) {
+                                                    AsyncImage(
+                                                        model = remember(cast.profileUrl) {
+                                                            ImageRequest.Builder(avatarContext)
+                                                                .data(cast.profileUrl)
+                                                                .crossfade(true)
+                                                                .build()
+                                                        },
+                                                        contentDescription = cast.name,
+                                                        contentScale = ContentScale.Crop,
+                                                        modifier = Modifier.fillMaxSize()
+                                                    )
+                                                } else {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Person,
+                                                        contentDescription = cast.name,
+                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                                        modifier = Modifier.size(30.dp)
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Text(
+                                                text = cast.name,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = MaterialTheme.colorScheme.onBackground,
+                                                maxLines = 2,
+                                                textAlign = TextAlign.Center,
+                                                overflow = TextOverflow.Ellipsis
                                             )
-                                    )
+                                            val characterName = cast.character
+                                            if (!characterName.isNullOrBlank()) {
+                                                Text(
+                                                    text = characterName,
+                                                    fontSize = 9.5.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                                    maxLines = 1,
+                                                    textAlign = TextAlign.Center,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
-                        Spacer(modifier = Modifier.height(AppTheme.dimens.space10))
+
+                        // 4. Quốc gia
+                        if (detail.countries.isNotEmpty()) {
+                            Row(modifier = Modifier.padding(vertical = 3.dp)) {
+                                Text(
+                                    text = stringResource(R.string.detail_country),
+                                    fontSize = 13.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.width(85.dp)
+                                )
+                                Text(
+                                    text = detail.countries.joinToString(", "),
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+
+                        // 5. Nội dung
+                        if (!detail.description.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.height(AppTheme.dimens.space14))
+                            Text(
+                                text = stringResource(R.string.detail_synopsis),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
+                            Spacer(modifier = Modifier.height(AppTheme.dimens.space6))
+                            var isExpanded by remember { mutableStateOf(false) }
+                            Text(
+                                text = detail.description ?: "",
+                                fontSize = 13.5.sp,
+                                lineHeight = 20.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = if (isExpanded) Int.MAX_VALUE else 3,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = stringResource(if (isExpanded) R.string.detail_read_less else R.string.detail_read_more),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier
+                                    .clickable { isExpanded = !isExpanded }
+                                    .padding(vertical = 4.dp)
+                            )
+                        }
+                    }
+                }
+
+                // 4. Server Tabs & Episodes (Đưa xuống dưới cùng phần chi tiết theo yêu cầu)
+                if (unifiedServer != null && unifiedServer.episodes.isNotEmpty()) {
+                    if (detail.episodes.size > 1) {
+                        item {
+                            Spacer(modifier = Modifier.height(AppTheme.dimens.space14))
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = AppTheme.dimens.space16),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(detail.episodes) { srv ->
+                                    val isSelected = srv.serverName == unifiedServer.serverName
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = { /* server filter chip */ },
+                                        label = {
+                                            Text(
+                                                text = srv.serverName,
+                                                fontSize = 12.sp,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                            )
+                                        },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                            selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                                        ),
+                                        modifier = Modifier.tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.05f)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(AppTheme.dimens.space6))
+                        }
+                    } else {
+                        item {
+                            Spacer(modifier = Modifier.height(AppTheme.dimens.space10))
+                        }
                     }
 
                     val currentServer = unifiedServer
@@ -1158,182 +1401,6 @@ fun DetailScreen(
                     }
                 }
 
-                // 4. Metadata Details (Đạo diễn, Thể loại, Diễn viên, Quốc gia, Nội dung)
-                item {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = AppTheme.dimens.space16, vertical = AppTheme.dimens.space8)
-                    ) {
-                        // 1. Đạo diễn
-                        if (detail.directors.isNotEmpty()) {
-                            Row(modifier = Modifier.padding(vertical = 3.dp)) {
-                                Text(
-                                    text = stringResource(R.string.detail_director),
-                                    fontSize = 13.5.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.width(85.dp)
-                                )
-                                Text(
-                                    text = detail.directors.joinToString(", "),
-                                    fontSize = 13.5.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onBackground,
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        }
-
-                        // 2. Thể loại (Đưa lên trên Diễn viên theo yêu cầu)
-                        if (detail.genres.isNotEmpty()) {
-                            Row(modifier = Modifier.padding(vertical = 3.dp)) {
-                                Text(
-                                    text = stringResource(R.string.detail_genres),
-                                    fontSize = 13.5.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.width(85.dp)
-                                )
-                                Text(
-                                    text = detail.genres.joinToString(", "),
-                                    fontSize = 13.5.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onBackground,
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        }
-
-                        // 3. Diễn viên (Avatar card row kết hợp hình ảnh, tên và vai diễn)
-                        val castList = if (detail.castMembers.isNotEmpty()) {
-                            detail.castMembers
-                        } else {
-                            detail.actors.map { CastMember(name = it) }
-                        }
-                        if (castList.isNotEmpty()) {
-                            Column(modifier = Modifier.padding(vertical = 6.dp)) {
-                                Text(
-                                    text = stringResource(R.string.detail_actors),
-                                    fontSize = 13.5.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(bottom = 8.dp)
-                                )
-                                val avatarContext = LocalContext.current
-                                LazyRow(
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    items(castList.take(16)) { cast ->
-                                        Column(
-                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                            modifier = Modifier.width(72.dp)
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(56.dp)
-                                                    .clip(CircleShape)
-                                                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                                                    .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), CircleShape),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                if (!cast.profileUrl.isNullOrBlank()) {
-                                                    AsyncImage(
-                                                        model = remember(cast.profileUrl) {
-                                                            ImageRequest.Builder(avatarContext)
-                                                                .data(cast.profileUrl)
-                                                                .crossfade(true)
-                                                                .build()
-                                                        },
-                                                        contentDescription = cast.name,
-                                                        contentScale = ContentScale.Crop,
-                                                        modifier = Modifier.fillMaxSize()
-                                                    )
-                                                } else {
-                                                    Icon(
-                                                        imageVector = Icons.Default.Person,
-                                                        contentDescription = cast.name,
-                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                                        modifier = Modifier.size(30.dp)
-                                                    )
-                                                }
-                                            }
-                                            Spacer(modifier = Modifier.height(6.dp))
-                                            Text(
-                                                text = cast.name,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Medium,
-                                                color = MaterialTheme.colorScheme.onBackground,
-                                                maxLines = 2,
-                                                textAlign = TextAlign.Center,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                            val characterName = cast.character
-                                            if (!characterName.isNullOrBlank()) {
-                                                Text(
-                                                    text = characterName,
-                                                    fontSize = 9.5.sp,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                                    maxLines = 1,
-                                                    textAlign = TextAlign.Center,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // 4. Quốc gia
-                        if (detail.countries.isNotEmpty()) {
-                            Row(modifier = Modifier.padding(vertical = 3.dp)) {
-                                Text(
-                                    text = stringResource(R.string.detail_country),
-                                    fontSize = 13.5.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.width(85.dp)
-                                )
-                                Text(
-                                    text = detail.countries.joinToString(", "),
-                                    fontSize = 13.5.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onBackground,
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        }
-
-                        // 5. Nội dung
-                        if (!detail.description.isNullOrBlank()) {
-                            Spacer(modifier = Modifier.height(AppTheme.dimens.space14))
-                            Text(
-                                text = stringResource(R.string.detail_synopsis),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
-                                color = MaterialTheme.colorScheme.onBackground
-                            )
-                            Spacer(modifier = Modifier.height(AppTheme.dimens.space6))
-                            var isExpanded by remember { mutableStateOf(false) }
-                            Text(
-                                text = detail.description ?: "",
-                                fontSize = 13.5.sp,
-                                lineHeight = 20.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = if (isExpanded) Int.MAX_VALUE else 3,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = stringResource(if (isExpanded) R.string.detail_read_less else R.string.detail_read_more),
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.error,
-                                modifier = Modifier
-                                    .clickable { isExpanded = !isExpanded }
-                                    .padding(vertical = 4.dp)
-                            )
-                        }
-                    }
-                }
-
                 // 5. Phim của Diễn viên 1
                 if (actor1Movies.isNotEmpty() && !actor1Name.isNullOrBlank()) {
                     item(key = "rec_actor_1") {
@@ -1407,6 +1474,7 @@ fun DetailScreen(
                 }
             }
         }
+    }
 
         // --- LỚP 2: FLOATING TRANSPARENT TOPBAR (TRÀN VIỀN ĐỈNH CHUẨN ĐIỆN ẢNH) ---
         Row(

@@ -209,16 +209,7 @@ fun PlayerScreen(
     var refreshSourcesKey by remember { mutableIntStateOf(0) }
     val stremioStreamMap = remember { mutableMapOf<String, EpisodeStream>() }
 
-    val onCopyStreamUrl: (String) -> Unit = remember(context) {
-        { rawUrl ->
-            val cleanUrl = rawUrl.substringBefore("#").substringBefore("|").ifBlank { rawUrl }
-            if (cleanUrl.isNotBlank()) {
-                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                clipboard.setPrimaryClip(ClipData.newPlainText("Stream Link", cleanUrl))
-                Toast.makeText(context, context.getString(R.string.stream_copied_toast), Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
+    val onCopyStreamUrl: (String) -> Unit = remember(context) { { rawUrl -> copyStreamUrlToClipboard(context, rawUrl) } }
 
     var currentEpisodeIndex by remember {
         mutableStateOf(if (activeEpisodes.isNotEmpty()) activeEpisodes.indexOfFirst { it.id == episode.id }.takeIf { it >= 0 } ?: ActivePlayerSession.currentEpisodeIndex else 0)
@@ -228,27 +219,13 @@ fun PlayerScreen(
     }
 
     // Trích xuất link embed gốc từ episode.data (nếu có) để làm fallback
-    val fallbackEmbedFromData = remember(currentEpisode) {
-        try {
-            val dataObj = currentEpisode.data as? JsonObject
-            (dataObj?.get("embed") as? JsonPrimitive)?.content
-        } catch (e: Exception) {
-            null
-        }
-    }
+    val fallbackEmbedFromData = remember(currentEpisode) { extractEmbedFromEpisodeData(currentEpisode) }
 
     var isCustomStreamActive by remember { mutableStateOf(ActiveEpisodeHolder.customStream != null) }
     var rawEmbedUrl by remember { mutableStateOf<String?>(if (ActiveEpisodeHolder.customStream != null) null else fallbackEmbedFromData) }
     var resolvedStream by remember { mutableStateOf<EpisodeStream?>(null) }
 
-    fun getEffectiveEmbedFallback(): String? {
-        if (!rawEmbedUrl.isNullOrBlank()) return rawEmbedUrl
-        if (!fallbackEmbedFromData.isNullOrBlank()) return fallbackEmbedFromData
-        val stream = resolvedStream ?: return null
-        val isKkphimEmbed = stream.url.contains("player.phimapi.com/player/?url=")
-        val isDirectMedia = (stream.url.contains(".m3u8", true) || stream.url.contains(".mp4", true) || stream.url.contains(".mkv", true)) && !isKkphimEmbed
-        return if (stream.type.equals("embed", true) && !isDirectMedia) stream.url else null
-    }
+    fun getEffectiveEmbedFallback(): String? = computeEffectiveEmbedFallback(rawEmbedUrl, fallbackEmbedFromData, resolvedStream)
     var isLoading by remember { mutableStateOf(true) }
     var isPlayerBuffering by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -1328,13 +1305,19 @@ fun PlayerScreen(
                     return
                 }
 
-                val maxRetries = 5
+                val isTorrent = resolvedStream?.torrentInfoHash != null || activeUnifiedStream?.torrentInfoHash != null
+                val maxRetries = if (isTorrent) 25 else 5
                 if (exoPlayerRetryCount < maxRetries) {
                     exoPlayerRetryCount++
-                    val retryDelayMs = (exoPlayerRetryCount + 1) * 1000L
+                    val retryDelayMs = if (isTorrent) 3500L else (exoPlayerRetryCount + 1) * 1000L
                     println("[PlayerScreen] Đang thử phục hồi ExoPlayer (lần $exoPlayerRetryCount/$maxRetries sau ${retryDelayMs}ms)...")
                     coroutineScope.launch {
-                        Toast.makeText(context, "Máy chủ đang nạp bộ đệm (lần $exoPlayerRetryCount/$maxRetries)... Vui lòng đợi", Toast.LENGTH_SHORT).show()
+                        val retryMsg = if (isTorrent) {
+                            "Đang kết nối luồng P2P (lần $exoPlayerRetryCount/$maxRetries)... Vui lòng đợi"
+                        } else {
+                            "Máy chủ đang nạp bộ đệm (lần $exoPlayerRetryCount/$maxRetries)... Vui lòng đợi"
+                        }
+                        Toast.makeText(context, retryMsg, Toast.LENGTH_SHORT).show()
                         delay(retryDelayMs)
                         val currentPos = exoPlayerManager.player.currentPosition.coerceAtLeast(0L)
                         exoPlayerManager.player.seekTo(currentPos)
@@ -1344,35 +1327,14 @@ fun PlayerScreen(
                     return
                 }
 
-                if (!embedFallback.isNullOrEmpty()) {
+                if (!embedFallback.isNullOrEmpty() && !isTorrent) {
                     println("[PlayerScreen] Hết lượt thử lại -> Tự động chuyển sang WebView Player: $embedFallback")
                     webViewUrl = embedFallback
                     webViewHeaders = embedHeadersFor(embedFallback, resolvedStream?.headers)
                     isWebViewMode = true
                     errorMessage = null
                 } else {
-                    var httpCode: Int? = null
-                    var currentEx: Throwable? = error
-                    while (currentEx != null) {
-                        if (currentEx is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
-                            httpCode = currentEx.responseCode
-                            break
-                        }
-                        currentEx = currentEx.cause
-                    }
-
-                    val fallbackMsg = context.getString(R.string.player_error_cannot_connect)
-                    val detailedMessage = when (httpCode) {
-                        502 -> "Lỗi HTTP 502 Bad Gateway: Máy chủ nguồn/Debrid quá tải hoặc lỗi upstream"
-                        503 -> "Lỗi HTTP 503 Service Unavailable: Máy chủ nguồn đang bảo trì hoặc tạm ngưng"
-                        504 -> "Lỗi HTTP 504 Gateway Timeout: Máy chủ nguồn phản hồi quá lâu"
-                        403 -> "Lỗi HTTP 403 Forbidden: Máy chủ nguồn từ chối truy cập (Chặn IP/WAF)"
-                        404 -> "Lỗi HTTP 404 Not Found: Luồng phát không tồn tại hoặc đã bị xóa"
-                        429 -> "Lỗi HTTP 429 Too Many Requests: Vượt quá giới hạn request đến máy chủ"
-                        in 400..599 -> "Lỗi HTTP $httpCode: ${error.message ?: fallbackMsg}"
-                        else -> error.message ?: fallbackMsg
-                    }
-                    errorMessage = context.getString(R.string.player_error_format, error.errorCodeName, detailedMessage)
+                    errorMessage = formatPlaybackErrorMessage(context, error)
                 }
             }
         }
@@ -1380,22 +1342,55 @@ fun PlayerScreen(
     }
 
     // Coroutine đo tốc độ tải về và tiến độ bộ đệm real-time khi phim đang buffer
-    LaunchedEffect(exoPlayerManager, isLoading, isPlayerBuffering, isPlaybackStartedEffective) {
+    LaunchedEffect(exoPlayerManager, isLoading, isPlayerBuffering, isPlaybackStartedEffective, resolvedStream, activeUnifiedStream) {
+        val torrentHash = resolvedStream?.torrentInfoHash ?: activeUnifiedStream?.torrentInfoHash
+        val stremioServer = resolvedStream?.stremioServerUrl ?: activeUnifiedStream?.stremioServerUrl
+            ?: JkhxApplication.instance.settingsManager.stremioActiveServerUrl.value.trim().trimEnd('/')
+
         if (isLoading || isPlayerBuffering || !isPlaybackStartedEffective) {
+            val stremioClient = if (!torrentHash.isNullOrBlank() && stremioServer.isNotBlank()) {
+                JkhxApplication.instance.pluginManager.getStremioClient()
+            } else null
+
             while (isActive) {
-                val speed = exoPlayerManager.getDownloadSpeedFormatted()
-                val stats = exoPlayerManager.getBufferedStats(targetBufferMs = 15_000L)
-                downloadSpeedText = speed
-                bufferProgress = stats.progress
-                val durSec = stats.bufferedDurationMs / 1000.0
-                val durSecStr = if (durSec >= 10.0) "${durSec.toInt()}s" else String.format(java.util.Locale.US, "%.1fs", durSec)
-                val mbStr = exoPlayerManager.formatBytes(stats.bufferedBytes)
-                bufferedStatsText = if (stats.bufferedBytes > 0L) {
-                    context.getString(R.string.player_buffering_stats_format, durSecStr, mbStr, "15s", speed)
+                if (stremioClient != null && !torrentHash.isNullOrBlank()) {
+                    val p2pStats = stremioClient.fetchTorrentStats(stremioServer, torrentHash)
+                    if (p2pStats != null) {
+                        val p2pSpeed = p2pStats.downloadSpeedFormatted
+                        downloadSpeedText = p2pSpeed
+                        val initProg = computeP2pInitialProgress(p2pStats.downloaded)
+                        bufferProgress = if (!isPlaybackStartedEffective) initProg else p2pStats.streamProgress.toFloat().coerceIn(0f, 1f)
+                        bufferedStatsText = formatP2pBufferingStats(p2pStats)
+                    } else {
+                        val speed = exoPlayerManager.getDownloadSpeedFormatted()
+                        val stats = exoPlayerManager.getBufferedStats(targetBufferMs = 15_000L)
+                        downloadSpeedText = speed
+                        bufferProgress = stats.progress
+                        val durSec = stats.bufferedDurationMs / 1000.0
+                        val durSecStr = if (durSec >= 10.0) "${durSec.toInt()}s" else String.format(java.util.Locale.US, "%.1fs", durSec)
+                        val mbStr = exoPlayerManager.formatBytes(stats.bufferedBytes)
+                        bufferedStatsText = if (stats.bufferedBytes > 0L) {
+                            context.getString(R.string.player_buffering_stats_format, durSecStr, mbStr, "15s", speed)
+                        } else {
+                            context.getString(R.string.player_buffering_stats_simple, durSecStr, "15s", speed)
+                        }
+                    }
+                    delay(1200)
                 } else {
-                    context.getString(R.string.player_buffering_stats_simple, durSecStr, "15s", speed)
+                    val speed = exoPlayerManager.getDownloadSpeedFormatted()
+                    val stats = exoPlayerManager.getBufferedStats(targetBufferMs = 15_000L)
+                    downloadSpeedText = speed
+                    bufferProgress = stats.progress
+                    val durSec = stats.bufferedDurationMs / 1000.0
+                    val durSecStr = if (durSec >= 10.0) "${durSec.toInt()}s" else String.format(java.util.Locale.US, "%.1fs", durSec)
+                    val mbStr = exoPlayerManager.formatBytes(stats.bufferedBytes)
+                    bufferedStatsText = if (stats.bufferedBytes > 0L) {
+                        context.getString(R.string.player_buffering_stats_format, durSecStr, mbStr, "15s", speed)
+                    } else {
+                        context.getString(R.string.player_buffering_stats_simple, durSecStr, "15s", speed)
+                    }
+                    delay(400)
                 }
-                delay(400)
             }
         }
     }
@@ -1883,6 +1878,7 @@ fun PlayerScreen(
                 isWebViewMode = true
                 resolvedStream = stream
             } else {
+                stream = resolveTorrentStreamUrl(stream, activeUnifiedStream, settingsManager, pluginManager.getStremioClient())
                 println("[PlayerScreen] Stream resolved thành công: type=${stream.type}, url=${stream.url.take(80)}")
                 resolvedStream = stream
 
@@ -2792,35 +2788,19 @@ fun PlayerScreen(
                     resolvedStream?.let { stream ->
                         val matchedSub = stream.subtitles.firstOrNull { it.url == opt.id || it.label == opt.label }
                         if (matchedSub != null) {
-                            coroutineScope.launch(Dispatchers.IO) {
-                                try {
-                                    val client = JkhxApplication.instance.okHttpClient
-                                    val reqBuilder = okhttp3.Request.Builder().url(matchedSub.url)
-                                    stream.headers.forEach { (k, v) -> reqBuilder.header(k, v) }
-                                    if (!stream.headers.containsKey("User-Agent")) {
-                                        reqBuilder.header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                            coroutineScope.launch {
+                                val parsed = fetchSubtitleCuesFromUrl(matchedSub.url, stream.headers)
+                                if (parsed.isNotEmpty()) {
+                                    subtitleCuesMap[matchedSub.url] = parsed
+                                    subtitleCuesMap[matchedSub.label] = parsed
+                                    if (selectedSubtitleTrackId == opt.id) {
+                                        currentSubCues = parsed
+                                        exoPlayerManager.player.trackSelectionParameters = exoPlayerManager.player.trackSelectionParameters
+                                            .buildUpon()
+                                            .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, true)
+                                            .build()
                                     }
-                                    val response = client.newCall(reqBuilder.build()).execute()
-                                    if (response.isSuccessful) {
-                                        val bodyStr = response.body?.string()
-                                        if (!bodyStr.isNullOrBlank()) {
-                                            val parsed = com.jkhx.player.core.player.subtitle.parser.SrtParser.parse(bodyStr)
-                                            if (parsed.isNotEmpty()) {
-                                                withContext(Dispatchers.Main) {
-                                                    subtitleCuesMap[matchedSub.url] = parsed
-                                                    subtitleCuesMap[matchedSub.label] = parsed
-                                                    if (selectedSubtitleTrackId == opt.id) {
-                                                        currentSubCues = parsed
-                                                        exoPlayerManager.player.trackSelectionParameters = exoPlayerManager.player.trackSelectionParameters
-                                                            .buildUpon()
-                                                            .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, true)
-                                                            .build()
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                } catch (_: Exception) {}
+                                }
                             }
                         }
                     }

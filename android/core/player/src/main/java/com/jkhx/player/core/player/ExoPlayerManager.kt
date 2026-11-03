@@ -26,6 +26,7 @@ import androidx.media3.exoplayer.upstream.BandwidthMeter
 import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.extractor.DefaultExtractorsFactory
+import androidx.media3.extractor.mkv.MatroskaExtractor
 import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
 import com.jkhx.player.core.model.EpisodeStream
 import com.jkhx.player.core.model.PlayerError
@@ -115,8 +116,8 @@ class ExoPlayerManager(
                     okhttp3.Dns.SYSTEM.lookup(hostname).sortedBy { it is java.net.Inet6Address }
             })
             .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(45, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(120, TimeUnit.SECONDS)
+            .writeTimeout(60, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .followRedirects(true)
             .followSslRedirects(true)
@@ -236,15 +237,16 @@ class ExoPlayerManager(
             }
             val loadControl = DefaultLoadControl.Builder()
                 .setBufferDurationsMs(
-                    /* minBufferMs = */ 30_000,
-                    /* maxBufferMs = */ 60_000,
-                    /* bufferForPlaybackMs = */ 2_500,
-                    /* bufferForPlaybackAfterRebufferMs = */ 5_000
+                    /* minBufferMs = */ 15_000,
+                    /* maxBufferMs = */ 50_000,
+                    /* bufferForPlaybackMs = */ 1_500,
+                    /* bufferForPlaybackAfterRebufferMs = */ 3_000
                 )
                 .setBackBuffer(
-                    /* backBufferDurationMs = */ 30_000,
+                    /* backBufferDurationMs = */ 10_000,
                     /* retainBackBufferFromKeyframe = */ true
                 )
+                .setPrioritizeTimeOverSizeThresholds(true)
                 .build()
 
             exoPlayer = ExoPlayer.Builder(context)
@@ -400,11 +402,12 @@ class ExoPlayerManager(
 
         val extractorsFactory = DefaultExtractorsFactory()
             .setConstantBitrateSeekingEnabled(true)
+            .setMatroskaExtractorFlags(MatroskaExtractor.FLAG_DISABLE_SEEK_FOR_CUES)
             .setTsExtractorFlags(
                 DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS or
                 DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES
             )
-            .setTsExtractorTimestampSearchBytes(200_000 * 188)
+            .setTsExtractorTimestampSearchBytes(1500 * 188)
 
         val uri = Uri.parse(stream.url)
         val mediaItemBuilder = MediaItem.Builder().setUri(uri)

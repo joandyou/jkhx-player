@@ -23,7 +23,9 @@ data class UnifiedStreamItem(
     val subtitles: List<Subtitle> = emptyList(),
     val isAddon: Boolean = false,
     val isWebView: Boolean = false,
-    val targetEpisode: EpisodeData? = null
+    val targetEpisode: EpisodeData? = null,
+    val torrentInfoHash: String? = null,
+    val stremioServerUrl: String? = null
 ) {
     fun toEpisodeStream(): EpisodeStream {
         val resolvedType = when {
@@ -39,13 +41,15 @@ data class UnifiedStreamItem(
             type = resolvedType,
             url = streamUrl,
             headers = headers,
-            subtitles = subtitles
+            subtitles = subtitles,
+            torrentInfoHash = torrentInfoHash,
+            stremioServerUrl = stremioServerUrl
         )
     }
 
     fun extractFileSize(): String? {
         val regex = Regex("""(?:📦\s*)?(\d+(?:\.\d+)?\s*(?:GB|MB|GiB|MiB))""", RegexOption.IGNORE_CASE)
-        val match = regex.find(techInfo) ?: regex.find(title)
+        val match = regex.find(techInfo) ?: regex.find(title) ?: regex.find(serverName)
         return match?.groupValues?.get(1)?.trim()
     }
 

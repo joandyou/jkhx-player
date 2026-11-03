@@ -7,6 +7,7 @@ import android.net.Uri
 import android.util.TypedValue
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.SubtitleView
+import com.jkhx.player.R
 import com.jkhx.player.core.model.EpisodeServer
 import com.jkhx.player.core.player.SubtitleTrackOption
 import com.jkhx.player.core.player.subtitle.model.SubtitleCue
@@ -387,4 +388,119 @@ internal fun performAiSubtitleSync(
     }
     return calculatedOffset
 }
+
+fun copyStreamUrlToClipboard(context: Context, rawUrl: String) {
+    val cleanUrl = rawUrl.substringBefore("#").substringBefore("|").ifBlank { rawUrl }
+    if (cleanUrl.isNotBlank()) {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Stream Link", cleanUrl))
+        android.widget.Toast.makeText(context, context.getString(com.jkhx.player.R.string.stream_copied_toast), android.widget.Toast.LENGTH_SHORT).show()
+    }
+}
+
+fun extractEmbedFromEpisodeData(episode: com.jkhx.player.core.model.EpisodeData): String? {
+    return try {
+        val dataObj = episode.data as? kotlinx.serialization.json.JsonObject
+        (dataObj?.get("embed") as? kotlinx.serialization.json.JsonPrimitive)?.content
+    } catch (_: Exception) {
+        null
+    }
+}
+
+fun computeEffectiveEmbedFallback(
+    rawEmbedUrl: String?,
+    fallbackEmbedFromData: String?,
+    stream: com.jkhx.player.core.model.EpisodeStream?
+): String? {
+    if (!rawEmbedUrl.isNullOrBlank()) return rawEmbedUrl
+    if (!fallbackEmbedFromData.isNullOrBlank()) return fallbackEmbedFromData
+    val s = stream ?: return null
+    val isKkphimEmbed = s.url.contains("player.phimapi.com/player/?url=")
+    val isDirectMedia = (s.url.contains(".m3u8", true) || s.url.contains(".mp4", true) || s.url.contains(".mkv", true)) && !isKkphimEmbed
+    return if (s.type.equals("embed", true) && !isDirectMedia) s.url else null
+}
+
+suspend fun fetchSubtitleCuesFromUrl(
+    url: String,
+    headers: Map<String, String> = emptyMap()
+): List<SubtitleCue> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+    try {
+        val client = com.jkhx.player.JkhxApplication.instance.okHttpClient
+        val reqBuilder = okhttp3.Request.Builder().url(url)
+        headers.forEach { (k, v) -> reqBuilder.header(k, v) }
+        if (!headers.containsKey("User-Agent")) {
+            reqBuilder.header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        }
+        val response = client.newCall(reqBuilder.build()).execute()
+        if (response.isSuccessful) {
+            val bodyStr = response.body?.string().orEmpty()
+            if (bodyStr.isNotBlank()) {
+                return@withContext com.jkhx.player.core.player.subtitle.parser.SrtParser.parse(bodyStr)
+            }
+        }
+    } catch (_: Exception) {}
+    emptyList()
+}
+
+fun formatPlaybackErrorMessage(context: Context, error: androidx.media3.common.PlaybackException): String {
+    var httpCode: Int? = null
+    var currentEx: Throwable? = error
+    while (currentEx != null) {
+        if (currentEx is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
+            httpCode = currentEx.responseCode
+            break
+        }
+        currentEx = currentEx.cause
+    }
+
+    val fallbackMsg = context.getString(R.string.player_error_cannot_connect)
+    val detailedMessage = when (httpCode) {
+        502 -> "Lỗi HTTP 502 Bad Gateway: Máy chủ nguồn/Debrid quá tải hoặc lỗi upstream"
+        503 -> "Lỗi HTTP 503 Service Unavailable: Máy chủ nguồn đang bảo trì hoặc tạm ngưng"
+        504 -> "Lỗi HTTP 504 Gateway Timeout: Máy chủ nguồn phản hồi quá lâu"
+        403 -> "Lỗi HTTP 403 Forbidden: Máy chủ nguồn từ chối truy cập (Chặn IP/WAF)"
+        404 -> "Lỗi HTTP 404 Not Found: Luồng phát không tồn tại hoặc đã bị xóa"
+        429 -> "Lỗi HTTP 429 Too Many Requests: Vượt quá giới hạn request đến máy chủ"
+        in 400..599 -> "Lỗi HTTP $httpCode: ${error.message ?: fallbackMsg}"
+        else -> error.message ?: fallbackMsg
+    }
+    return context.getString(R.string.player_error_format, error.errorCodeName, detailedMessage)
+}
+
+fun formatP2pBufferingStats(p2pStats: com.jkhx.player.core.model.stremio.StremioTorrentStats): String {
+    val downloaded = p2pStats.downloadedFormatted
+    val peers = p2pStats.peers
+    val speed = p2pStats.downloadSpeedFormatted
+    return if (downloaded.isNotBlank() && downloaded != "0 B") {
+        "$downloaded đã tải xuống • $peers peer • $speed"
+    } else {
+        "P2P: $peers peers • $speed"
+    }
+}
+
+fun computeP2pInitialProgress(downloadedBytes: Long, targetBytes: Long = 15L * 1024L * 1024L): Float {
+    if (downloadedBytes <= 0L) return 0f
+    return (downloadedBytes.toFloat() / targetBytes.toFloat()).coerceIn(0.05f, 0.95f)
+}
+
+suspend fun resolveTorrentStreamUrl(
+    stream: com.jkhx.player.core.model.EpisodeStream,
+    activeUnifiedStream: com.jkhx.player.ui.screens.stream.UnifiedStreamItem?,
+    settingsManager: com.jkhx.player.settings.SettingsManager,
+    stremioClient: com.jkhx.player.core.network.stremio.StremioBridgeClient
+): com.jkhx.player.core.model.EpisodeStream {
+    val torrentHash = stream.torrentInfoHash ?: activeUnifiedStream?.torrentInfoHash
+    if (torrentHash.isNullOrBlank()) return stream
+    val srv = stream.stremioServerUrl ?: activeUnifiedStream?.stremioServerUrl
+        ?: settingsManager.stremioActiveServerUrl.value.trim().trimEnd('/')
+    if (srv.isBlank()) return stream
+    val realIdx = stremioClient.resolveTorrentFileIdx(srv, torrentHash)
+    return stream.copy(
+        url = "$srv/$torrentHash/$realIdx",
+        stremioServerUrl = srv,
+        torrentInfoHash = torrentHash
+    )
+}
+
+
 

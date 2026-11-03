@@ -288,6 +288,11 @@
     <string name="detail_sort_chapters">Sort order</string>
     <string name="detail_sort_asc">Oldest first</string>
     <string name="detail_sort_desc">Newest first</string>
+    <string name="detail_seasons">Seasons</string>
+    <string name="detail_season_n">Season %d</string>
+    <string name="detail_episodes_count">%d episodes</string>
+    <string name="detail_episodes_progress">%1$d of %2$d episodes</string>
+    <string name="detail_resume_episode">Resume %s</string>
 
     <!-- SearchScreen -->
     <string name="search_placeholder">Search movies &amp; comics across all plugins…</string>
@@ -711,4 +716,27 @@
     <string name="home_search_provider_placeholder">Search sources / addons…</string>
     <string name="home_provider_tab_all">All</string>
     <string name="home_provider_empty_filter">No matching sources found</string>
+
+    <!-- Stremio Streaming Server (P2P Torrent) Strings -->
+    <string name="stremio_server_section_title">Streaming Server</string>
+    <string name="stremio_server_section_desc">Stremio Server engine converting P2P Torrent swarms to native HTTP streams</string>
+    <string name="stremio_server_url_header">URL</string>
+    <string name="stremio_server_status_header">Status</string>
+    <string name="stremio_server_status_online">Online</string>
+    <string name="stremio_server_status_offline">Offline</string>
+    <string name="stremio_server_status_checking">Checking…</string>
+    <string name="stremio_server_btn_add">Add URL</string>
+    <string name="stremio_server_btn_reload">Reload</string>
+    <string name="stremio_server_cache_size">Cache Size</string>
+    <string name="stremio_server_torrent_profile">Torrent Profile</string>
+    <string name="stremio_server_max_connections">Max Connections</string>
+    <string name="stremio_server_version">Server Version</string>
+    <string name="stremio_server_dialog_add_title">Add Stremio Server URL</string>
+    <string name="stremio_server_dialog_url_label">Server Address (URL)</string>
+    <string name="stremio_server_dialog_url_hint">https://jstremio.joandyou.cc/ or http://192.168.1.50:11470/</string>
+    <string name="stremio_server_dialog_error_empty">Please enter a valid server URL</string>
+    <string name="stremio_server_dialog_error_duplicate">This URL is already in the list</string>
+    <string name="stremio_server_delete_confirm">Remove this server from candidate list?</string>
+    <string name="stremio_server_not_configured_alert">Stremio P2P server not configured. Please open Settings to activate a streaming server.</string>
+    <string name="player_buffering_p2p_format">P2P: %1$d peers • %2$s</string>
 </resources>

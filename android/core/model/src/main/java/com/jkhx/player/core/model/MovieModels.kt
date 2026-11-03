@@ -155,7 +155,9 @@ data class EpisodeStream(
     val headers: Map<String, String> = emptyMap(),
     val subtitles: List<Subtitle> = emptyList(),
     val images: List<String> = emptyList(),
-    val content: String? = null
+    val content: String? = null,
+    val torrentInfoHash: String? = null,
+    val stremioServerUrl: String? = null
 )
 
 @Serializable

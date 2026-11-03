@@ -16,10 +16,12 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -502,6 +504,8 @@ private fun StreamCardItem(
         if (showSizeBadges) item.extractFileSize() else null
     }
 
+    val hasBadges = matchedBadges.isNotEmpty() || fileSize != null || item.qualityBadge != null
+
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
@@ -526,7 +530,7 @@ private fun StreamCardItem(
                 modifier = Modifier.weight(1f)
             ) {
                 // Nếu vị trí nhãn ở Phía trên: hiển thị hàng badges trước
-                if (badgePlacement == StreamBadgePlacement.TOP) {
+                if (badgePlacement == StreamBadgePlacement.TOP && hasBadges) {
                     StreamBadgeRow(
                         badges = matchedBadges,
                         fileSize = fileSize,
@@ -544,48 +548,48 @@ private fun StreamCardItem(
                 )
 
                 // Dòng 2: Tên Server / Audio (Vietsub #1, Thuyết Minh...)
-                Text(
-                    text = item.serverName,
-                    fontSize = 12.5.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
-                )
+                if (item.serverName.isNotBlank() && item.serverName != item.providerName) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = item.serverName,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
+                    )
+                }
 
-                Spacer(modifier = Modifier.height(2.dp))
+                // Dòng 3: Tiêu đề chi tiết tập phim (nếu có và không trùng serverName/providerName)
+                if (item.title.isNotBlank() && item.title != item.serverName && item.title != item.providerName) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = item.title,
+                        fontSize = 11.5.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
 
-                // Dòng 3: Tiêu đề chi tiết tập phim
-                Text(
-                    text = item.title,
-                    fontSize = 11.5.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                Spacer(modifier = Modifier.height(3.dp))
-
-                // Dòng 4: Thông tin kết nối kỹ thuật + Badges (nếu ở phía dưới)
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
+                // Dòng 4: Thông tin kết nối kỹ thuật (dung lượng, seeds, p2p, hls...)
+                if (item.techInfo.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(3.dp))
                     Text(
                         text = item.techInfo,
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
+                        overflow = TextOverflow.Ellipsis
                     )
+                }
 
-                    // Nếu vị trí nhãn ở phía dưới
-                    if (badgePlacement == StreamBadgePlacement.BOTTOM) {
-                        StreamBadgeRow(
-                            badges = matchedBadges,
-                            fileSize = fileSize,
-                            fallbackQuality = item.qualityBadge
-                        )
-                    }
+                // Dòng 5: Nếu vị trí nhãn ở phía dưới: hiển thị hàng badges trên dòng riêng biệt
+                if (badgePlacement == StreamBadgePlacement.BOTTOM && hasBadges) {
+                    Spacer(modifier = Modifier.height(5.dp))
+                    StreamBadgeRow(
+                        badges = matchedBadges,
+                        fileSize = fileSize,
+                        fallbackQuality = item.qualityBadge
+                    )
                 }
             }
 
@@ -593,9 +597,11 @@ private fun StreamCardItem(
             Column(
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.Center,
-                modifier = Modifier.padding(start = 10.dp)
+                modifier = Modifier
+                    .padding(start = 8.dp)
+                    .widthIn(max = 110.dp)
             ) {
-                if (showAddonIcon) {
+                if (showAddonIcon && item.groupName.isNotBlank()) {
                     Text(
                         text = item.groupName,
                         fontSize = 10.5.sp,
@@ -636,7 +642,9 @@ private fun StreamBadgeRow(
 ) {
     if (badges.isEmpty() && fileSize == null && fallbackQuality == null) return
     Row(
-        modifier = modifier,
+        modifier = modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {

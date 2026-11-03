@@ -337,12 +337,13 @@ class StreamAggregator(
                                 )
                                 if (errKeywords.any { meta.contains(it) }) return true
                                 val effUrl = str.effectiveUrl?.lowercase().orEmpty()
-                                if (effUrl.isBlank() || effUrl.contains("/error") || effUrl.contains("/unavailable")) return true
+                                if (effUrl.isBlank() && !str.isTorrent) return true
+                                if (effUrl.contains("/error") || effUrl.contains("/unavailable")) return true
                                 return false
                             }
 
                             suspend fun processStremioStreams(vId: String, streams: List<StremioStream>): Boolean {
-                                val validStreams = streams.filter { !it.effectiveUrl.isNullOrBlank() && !isInvalidStream(it) }
+                                val validStreams = streams.filter { (!it.effectiveUrl.isNullOrBlank() || it.isTorrent) && !isInvalidStream(it) }
                                 if (validStreams.isEmpty()) return false
 
                                 for ((idx, str) in validStreams.withIndex()) {
@@ -610,25 +611,34 @@ class StreamAggregator(
         movieDetail: MovieDetail,
         episode: EpisodeData
     ): UnifiedStreamItem {
-        val strUrl = str.effectiveUrl.orEmpty()
-        val isWeb = (str.url == null && str.externalUrl != null) ||
-            str.type == "embed" || str.type == "web"
+        val isTorrentStream = str.isTorrent
+        val activeServer = JkhxApplication.instance.settingsManager.stremioActiveServerUrl.value.trim().trimEnd('/')
+        val strUrl = if (isTorrentStream && activeServer.isNotBlank()) {
+            "$activeServer/${str.infoHash}/${str.fileIdx ?: 0}"
+        } else {
+            str.effectiveUrl.orEmpty()
+        }
+        val isWeb = !isTorrentStream && ((str.url == null && str.externalUrl != null) ||
+            str.type == "embed" || str.type == "web")
         val metaText = "${str.name.orEmpty()} ${str.title.orEmpty()} ${str.description.orEmpty()}"
-        val sType = if (isWeb) {
+        val sType = if (isTorrentStream) {
+            "mkv"
+        } else if (isWeb) {
             "embed"
         } else {
             StremioPluginWrapper.inferStreamType(strUrl, str.type, metaText)
         }
 
-        val defaultTechInfo = when (sType) {
-            "m3u8" -> "⚡ HLS Direct"
-            "flv" -> "⚡ FLV Live Stream"
-            "dash" -> "⚡ DASH Stream"
-            "mkv" -> "⚡ Direct MKV"
-            "avi" -> "⚡ Direct AVI"
-            "mp4" -> "⚡ Direct MP4"
-            "webm" -> "⚡ Direct WEBM"
-            "embed" -> "🌐 Mở Trình Phát Web Gốc"
+        val defaultTechInfo = when {
+            isTorrentStream -> "⚡ P2P Direct Stream"
+            sType == "m3u8" -> "⚡ HLS Direct"
+            sType == "flv" -> "⚡ FLV Live Stream"
+            sType == "dash" -> "⚡ DASH Stream"
+            sType == "mkv" -> "⚡ Direct MKV"
+            sType == "avi" -> "⚡ Direct AVI"
+            sType == "mp4" -> "⚡ Direct MP4"
+            sType == "webm" -> "⚡ Direct WEBM"
+            sType == "embed" -> "🌐 Mở Trình Phát Web Gốc"
             else -> "⚡ Direct Stream"
         }
 
@@ -660,22 +670,19 @@ class StreamAggregator(
             }
             titleLines.size == 2 -> {
                 val firstLine = titleLines[0]
+                val secondLine = titleLines[1]
                 if (firstLine.startsWith("📺")) {
-                    Triple(parsedProviderName, firstLine, titleLines[1])
+                    Triple(parsedProviderName, firstLine, secondLine)
                 } else {
-                    Triple(firstLine, "📺 [${sManifest.name}] ${movieDetail.name} - ${episode.name}", titleLines[1])
+                    // Torrent stream / video: firstLine là tên video, secondLine là chi tiết dung lượng & seeders
+                    Triple(firstLine, "", secondLine)
                 }
             }
             titleLines.size == 1 -> {
                 val singleLine = titleLines[0]
-                val sName = if (singleLine.isNotBlank() && singleLine.length <= 30 && !singleLine.startsWith("📺")) {
-                    "$parsedProviderName ($singleLine)"
-                } else {
-                    parsedProviderName
-                }
                 Triple(
-                    sName,
                     singleLine,
+                    "",
                     defaultTechInfo
                 )
             }
@@ -730,7 +737,9 @@ class StreamAggregator(
             },
             isAddon = true,
             isWebView = isWeb,
-            targetEpisode = episode
+            targetEpisode = episode,
+            torrentInfoHash = if (isTorrentStream) str.infoHash else null,
+            stremioServerUrl = if (isTorrentStream) activeServer else null
         )
     }
 }

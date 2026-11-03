@@ -719,6 +719,13 @@ class SettingsManager(context: Context) {
         private const val KEY_STREAM_BADGE_PLACEMENT = "pref_stream_badge_placement"
         private const val KEY_SHOW_STREAM_SIZE_BADGES = "pref_show_stream_size_badges"
         private const val KEY_SHOW_ADDON_ICON = "pref_show_addon_icon"
+        private const val KEY_STREMIO_SERVER_CANDIDATES = "pref_stremio_server_candidates"
+        private const val KEY_STREMIO_ACTIVE_SERVER_URL = "pref_stremio_active_server_url"
+        private const val KEY_STREMIO_CACHE_SIZE = "pref_stremio_cache_size"
+        private const val KEY_STREMIO_TORRENT_PROFILE = "pref_stremio_torrent_profile"
+
+        val DEFAULT_STREMIO_CANDIDATES = emptyList<String>()
+        const val DEFAULT_STREMIO_ACTIVE_SERVER = ""
 
         @Volatile
         private var instance: SettingsManager? = null
@@ -836,6 +843,96 @@ class SettingsManager(context: Context) {
     fun setShowAddonIcon(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_SHOW_ADDON_ICON, enabled).apply()
         _showAddonIcon.value = enabled
+    }
+
+    // --- Stremio Streaming Server (P2P Torrent Engine) ---
+    private fun decodeServerCandidates(jsonStr: String?): List<String> {
+        if (jsonStr.isNullOrBlank()) {
+            return emptyList()
+        }
+        return try {
+            val array = org.json.JSONArray(jsonStr)
+            val list = mutableListOf<String>()
+            for (i in 0 until array.length()) {
+                val item = array.optString(i)?.trim()
+                if (!item.isNullOrBlank()) {
+                    list.add(item)
+                }
+            }
+            list
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun encodeServerCandidates(list: List<String>): String {
+        val array = org.json.JSONArray()
+        list.forEach { array.put(it) }
+        return array.toString()
+    }
+
+    private val _stremioServerCandidates = MutableStateFlow(
+        decodeServerCandidates(prefs.getString(KEY_STREMIO_SERVER_CANDIDATES, null))
+    )
+    val stremioServerCandidates: StateFlow<List<String>> = _stremioServerCandidates.asStateFlow()
+
+    private val _stremioActiveServerUrl = MutableStateFlow(
+        prefs.getString(KEY_STREMIO_ACTIVE_SERVER_URL, DEFAULT_STREMIO_ACTIVE_SERVER) ?: DEFAULT_STREMIO_ACTIVE_SERVER
+    )
+    val stremioActiveServerUrl: StateFlow<String> = _stremioActiveServerUrl.asStateFlow()
+
+    fun setStremioActiveServerUrl(url: String) {
+        val clean = url.trim()
+        prefs.edit().putString(KEY_STREMIO_ACTIVE_SERVER_URL, clean).apply()
+        _stremioActiveServerUrl.value = clean
+    }
+
+    fun addStremioServerCandidate(url: String) {
+        val clean = if (!url.endsWith("/")) "${url.trim()}/" else url.trim()
+        val current = _stremioServerCandidates.value.toMutableList()
+        if (!current.any { it.equals(clean, ignoreCase = true) }) {
+            current.add(clean)
+            prefs.edit().putString(KEY_STREMIO_SERVER_CANDIDATES, encodeServerCandidates(current)).apply()
+            _stremioServerCandidates.value = current
+            if (_stremioActiveServerUrl.value.isBlank()) {
+                setStremioActiveServerUrl(clean)
+            }
+        }
+    }
+
+    fun removeStremioServerCandidate(url: String) {
+        val current = _stremioServerCandidates.value.toMutableList()
+        current.removeAll { it.equals(url.trim(), ignoreCase = true) }
+        prefs.edit().putString(KEY_STREMIO_SERVER_CANDIDATES, encodeServerCandidates(current)).apply()
+        _stremioServerCandidates.value = current
+
+        if (_stremioActiveServerUrl.value.equals(url.trim(), ignoreCase = true)) {
+            val newActive = current.firstOrNull() ?: ""
+            setStremioActiveServerUrl(newActive)
+        }
+    }
+
+    // Cấu hình Kích thước bộ nhớ đệm (Cache Size) chuẩn Nuvio / Stremio
+    private val _stremioCacheSize = MutableStateFlow(
+        prefs.getLong(KEY_STREMIO_CACHE_SIZE, 2L * 1024L * 1024L * 1024L) // Mặc định 2GiB
+    )
+    val stremioCacheSize: StateFlow<Long> = _stremioCacheSize.asStateFlow()
+
+    fun setStremioCacheSize(bytes: Long) {
+        prefs.edit().putLong(KEY_STREMIO_CACHE_SIZE, bytes).apply()
+        _stremioCacheSize.value = bytes
+    }
+
+    // Cấu hình Hồ sơ torrent (Torrent Profile) chuẩn Nuvio / Stremio
+    private val _stremioTorrentProfile = MutableStateFlow(
+        prefs.getString(KEY_STREMIO_TORRENT_PROFILE, "custom") ?: "custom"
+    )
+    val stremioTorrentProfile: StateFlow<String> = _stremioTorrentProfile.asStateFlow()
+
+    fun setStremioTorrentProfile(profile: String) {
+        val clean = profile.trim()
+        prefs.edit().putString(KEY_STREMIO_TORRENT_PROFILE, clean).apply()
+        _stremioTorrentProfile.value = clean
     }
 }
 

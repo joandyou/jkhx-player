@@ -3,6 +3,12 @@ package com.jkhx.player.ui.screens.settings
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -21,11 +27,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -33,6 +41,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.jkhx.player.JkhxApplication
 import com.jkhx.player.R
+import com.jkhx.player.core.model.stremio.StremioServerHealth
 import com.jkhx.player.ui.screens.stream.badge.*
 import com.jkhx.player.ui.theme.AppTheme
 import com.jkhx.player.ui.theme.ShapeTokens
@@ -87,6 +96,59 @@ fun AuxServicesSettingsScreen(
     var showBadgePositionDialog by remember { mutableStateOf(false) }
     var previewImportItem by remember { mutableStateOf<StreamBadgeImport?>(null) }
 
+    // Stremio Streaming Server states
+    val stremioCandidates by settingsManager.stremioServerCandidates.collectAsState()
+    val stremioActiveUrl by settingsManager.stremioActiveServerUrl.collectAsState()
+    val stremioCacheSize by settingsManager.stremioCacheSize.collectAsState()
+    val stremioTorrentProfile by settingsManager.stremioTorrentProfile.collectAsState()
+    var stremioServerHealthMap by remember { mutableStateOf<Map<String, StremioServerHealth>>(emptyMap()) }
+    var isCheckingStremioServers by remember { mutableStateOf(false) }
+    var showAddStremioServerDialog by remember { mutableStateOf(false) }
+    var isCacheDropdownExpanded by remember { mutableStateOf(false) }
+    var isProfileDropdownExpanded by remember { mutableStateOf(false) }
+
+    val infiniteTransition = rememberInfiniteTransition(label = "stremio_reload_spin")
+    val reloadSpinAngle by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "stremio_spin"
+    )
+
+    fun reloadStremioHealth(showToastOnComplete: Boolean = false) {
+        coroutineScope.launch {
+            isCheckingStremioServers = true
+            val stremioClient = JkhxApplication.instance.pluginManager.getStremioClient()
+            val newResults = mutableMapOf<String, StremioServerHealth>()
+            for (candidate in stremioCandidates) {
+                val health = stremioClient.checkStreamingServerHealth(candidate)
+                newResults[candidate] = health
+                stremioServerHealthMap = stremioServerHealthMap + (candidate to health)
+            }
+            stremioServerHealthMap = newResults
+            val activeHealth = newResults[stremioActiveUrl]
+            val serverCache = activeHealth?.rawCacheSize
+            if (serverCache != null && serverCache > 0L) {
+                settingsManager.setStremioCacheSize(serverCache)
+            }
+            val serverProfile = activeHealth?.btProfile
+            if (!serverProfile.isNullOrBlank()) {
+                settingsManager.setStremioTorrentProfile(serverProfile)
+            }
+            isCheckingStremioServers = false
+            if (showToastOnComplete) {
+                Toast.makeText(context, "Đã cập nhật trạng thái máy chủ phát trực tuyến", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    LaunchedEffect(stremioCandidates, stremioActiveUrl) {
+        reloadStremioHealth()
+    }
+
     var activeDialog by remember { mutableStateOf<AuxServiceDialogType?>(null) }
 
     Scaffold(
@@ -132,6 +194,435 @@ fun AuxServicesSettingsScreen(
             )
 
             Spacer(modifier = Modifier.height(20.dp))
+
+            // ========================================================
+            // NHÓM: PHÁT TRỰC TUYẾN (STREMIO STREAMING SERVER)
+            // ========================================================
+            Text(
+                text = stringResource(R.string.stremio_server_section_title),
+                fontSize = 13.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+            )
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    // Table Header: URL | Trạng thái
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = stringResource(R.string.stremio_server_url_header),
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = stringResource(R.string.stremio_server_status_header),
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    if (stremioCandidates.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 18.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Chưa có URL máy chủ Stremio nào.\nNhấn \"+ Thêm URL\" bên dưới để nhập địa chỉ máy chủ của bạn.",
+                                fontSize = 12.5.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                textAlign = TextAlign.Center,
+                                lineHeight = 18.sp
+                            )
+                        }
+                    } else {
+                        stremioCandidates.forEach { candidateUrl ->
+                            val isSelected = candidateUrl.trimEnd('/') == stremioActiveUrl.trimEnd('/')
+                            val health = stremioServerHealthMap[candidateUrl]
+
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable {
+                                        settingsManager.setStremioActiveServerUrl(candidateUrl)
+                                        reloadStremioHealth()
+                                    },
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                                else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                                    else MaterialTheme.colorScheme.outline.copy(alpha = 0.08f)
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    RadioButton(
+                                        selected = isSelected,
+                                        onClick = {
+                                            settingsManager.setStremioActiveServerUrl(candidateUrl)
+                                            reloadStremioHealth()
+                                        },
+                                        colors = RadioButtonDefaults.colors(
+                                            selectedColor = MaterialTheme.colorScheme.primary
+                                        ),
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = candidateUrl,
+                                        fontSize = 13.5.sp,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    if (isCheckingStremioServers && health == null) {
+                                        Text(
+                                            text = stringResource(R.string.stremio_server_status_checking),
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                        )
+                                    } else if (health?.isOnline == true) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(8.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(0xFF4CAF50))
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = stringResource(R.string.stremio_server_status_online),
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = Color(0xFF4CAF50)
+                                            )
+                                        }
+                                    } else if (health != null) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(8.dp)
+                                                    .clip(CircleShape)
+                                                    .background(MaterialTheme.colorScheme.error.copy(alpha = 0.7f))
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = stringResource(R.string.stremio_server_status_offline),
+                                                fontSize = 12.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    IconButton(
+                                        onClick = { settingsManager.removeStremioServerCandidate(candidateUrl) },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Close,
+                                            contentDescription = "Delete",
+                                            modifier = Modifier.size(16.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Button(
+                            onClick = { showAddStremioServerDialog = true },
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            ),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(stringResource(R.string.stremio_server_btn_add), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        }
+
+                        OutlinedButton(
+                            onClick = { reloadStremioHealth(showToastOnComplete = true) },
+                            enabled = !isCheckingStremioServers,
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .size(18.dp)
+                                    .rotate(if (isCheckingStremioServers) reloadSpinAngle else 0f)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(stringResource(R.string.stremio_server_btn_reload), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(18.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.08f))
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // 1. Kích thước bộ nhớ đệm
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = stringResource(R.string.stremio_server_cache_size),
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+
+                        val cacheOptions = listOf(
+                            0L to "No caching",
+                            2L * 1024L * 1024L * 1024L to "2GiB",
+                            5L * 1024L * 1024L * 1024L to "5GiB",
+                            10L * 1024L * 1024L * 1024L to "10GiB",
+                            -1L to "Infinite"
+                        )
+                        val currentCacheLabel = cacheOptions.firstOrNull { it.first == stremioCacheSize }?.second
+                            ?: if (stremioCacheSize == -1L) "Infinite" else if (stremioCacheSize == 0L) "No caching" else "${stremioCacheSize / (1024 * 1024 * 1024)}GiB"
+
+                        Box {
+                            Surface(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable { isCacheDropdownExpanded = true },
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .padding(horizontal = 16.dp, vertical = 9.dp)
+                                        .widthIn(min = 120.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = currentCacheLabel,
+                                        fontSize = 13.5.sp,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontWeight = FontWeight.Normal
+                                    )
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowDropDown,
+                                        contentDescription = null,
+                                        modifier = Modifier
+                                            .size(18.dp)
+                                            .rotate(if (isCacheDropdownExpanded) 180f else 0f),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                    )
+                                }
+                            }
+
+                            DropdownMenu(
+                                expanded = isCacheDropdownExpanded,
+                                onDismissRequest = { isCacheDropdownExpanded = false },
+                                modifier = Modifier
+                                    .width(170.dp)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                            ) {
+                                cacheOptions.forEach { (bytes, label) ->
+                                    val isSelected = stremioCacheSize == bytes
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = label,
+                                                    fontSize = 13.5.sp,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                                if (isSelected) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(6.dp)
+                                                            .clip(CircleShape)
+                                                            .background(Color(0xFF4CAF50))
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        onClick = {
+                                            isCacheDropdownExpanded = false
+                                            settingsManager.setStremioCacheSize(bytes)
+                                            if (stremioActiveUrl.isNotBlank()) {
+                                                coroutineScope.launch {
+                                                    val stremioClient = JkhxApplication.instance.pluginManager.getStremioClient()
+                                                    val payload = if (bytes == -1L) "{\"cacheSize\": null}" else "{\"cacheSize\": $bytes}"
+                                                    stremioClient.updateStreamingServerSettings(stremioActiveUrl, payload)
+                                                    reloadStremioHealth()
+                                                }
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // 2. Hồ sơ torrent
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = stringResource(R.string.stremio_server_torrent_profile),
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+
+                        val profileOptions = listOf(
+                            "default" to "Mặc định",
+                            "soft" to "Vừa",
+                            "fast" to "Nhanh",
+                            "ultra-fast" to "Siêu nhanh",
+                            "custom" to "custom"
+                        )
+                        val currentProfileLabel = profileOptions.firstOrNull { it.first.equals(stremioTorrentProfile, ignoreCase = true) }?.second
+                            ?: stremioTorrentProfile
+
+                        Box {
+                            Surface(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable { isProfileDropdownExpanded = true },
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .padding(horizontal = 16.dp, vertical = 9.dp)
+                                        .widthIn(min = 120.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = currentProfileLabel,
+                                        fontSize = 13.5.sp,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontWeight = FontWeight.Normal
+                                    )
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowDropDown,
+                                        contentDescription = null,
+                                        modifier = Modifier
+                                            .size(18.dp)
+                                            .rotate(if (isProfileDropdownExpanded) 180f else 0f),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                    )
+                                }
+                            }
+
+                            DropdownMenu(
+                                expanded = isProfileDropdownExpanded,
+                                onDismissRequest = { isProfileDropdownExpanded = false },
+                                modifier = Modifier
+                                    .width(170.dp)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                            ) {
+                                profileOptions.forEach { (code, label) ->
+                                    val isSelected = stremioTorrentProfile.equals(code, ignoreCase = true)
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = label,
+                                                    fontSize = 13.5.sp,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                                if (isSelected) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(6.dp)
+                                                            .clip(CircleShape)
+                                                            .background(Color(0xFF4CAF50))
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        onClick = {
+                                            isProfileDropdownExpanded = false
+                                            settingsManager.setStremioTorrentProfile(code)
+                                            if (stremioActiveUrl.isNotBlank()) {
+                                                coroutineScope.launch {
+                                                    val stremioClient = JkhxApplication.instance.pluginManager.getStremioClient()
+                                                    val payload = "{\"btProfile\": \"$code\"}"
+                                                    stremioClient.updateStreamingServerSettings(stremioActiveUrl, payload)
+                                                    reloadStremioHealth()
+                                                }
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
 
             // ========================================================
             // NHÓM: KIỂU FUSION
@@ -896,6 +1387,76 @@ fun AuxServicesSettingsScreen(
             onSelect = {
                 settingsManager.setStreamBadgePlacement(it)
                 showBadgePositionDialog = false
+            }
+        )
+    }
+
+    if (showAddStremioServerDialog) {
+        var inputUrl by remember { mutableStateOf("") }
+        var errorMsg by remember { mutableStateOf<String?>(null) }
+
+        AlertDialog(
+            onDismissRequest = { showAddStremioServerDialog = false },
+            title = {
+                Text(
+                    text = stringResource(R.string.stremio_server_dialog_add_title),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = stringResource(R.string.stremio_server_dialog_url_label),
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = inputUrl,
+                        onValueChange = {
+                            inputUrl = it
+                            errorMsg = null
+                        },
+                        placeholder = {
+                            Text(stringResource(R.string.stremio_server_dialog_url_hint), fontSize = 12.sp)
+                        },
+                        isError = errorMsg != null,
+                        supportingText = errorMsg?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val clean = inputUrl.trim()
+                        if (clean.isBlank()) {
+                            errorMsg = context.getString(R.string.stremio_server_dialog_error_empty)
+                            return@TextButton
+                        }
+                        val normalized = if (!clean.startsWith("http://", ignoreCase = true) && !clean.startsWith("https://", ignoreCase = true)) {
+                            "http://$clean"
+                        } else clean
+                        val finalUrl = if (!normalized.endsWith("/")) "$normalized/" else normalized
+                        if (stremioCandidates.any { it.trimEnd('/').equals(finalUrl.trimEnd('/'), ignoreCase = true) }) {
+                            errorMsg = context.getString(R.string.stremio_server_dialog_error_duplicate)
+                            return@TextButton
+                        }
+                        settingsManager.addStremioServerCandidate(finalUrl)
+                        settingsManager.setStremioActiveServerUrl(finalUrl)
+                        showAddStremioServerDialog = false
+                        reloadStremioHealth()
+                    }
+                ) {
+                    Text(stringResource(R.string.common_save), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddStremioServerDialog = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
             }
         )
     }

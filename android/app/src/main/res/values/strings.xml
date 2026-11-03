@@ -288,6 +288,11 @@
     <string name="detail_sort_chapters">Đổi thứ tự</string>
     <string name="detail_sort_asc">Cũ nhất trước</string>
     <string name="detail_sort_desc">Mới nhất trước</string>
+    <string name="detail_seasons">Các mùa</string>
+    <string name="detail_season_n">Mùa %d</string>
+    <string name="detail_episodes_count">%d tập</string>
+    <string name="detail_episodes_progress">%1$d / %2$d tập</string>
+    <string name="detail_resume_episode">Xem tiếp %s</string>
 
     <!-- SearchScreen -->
     <string name="search_placeholder">Tìm kiếm phim, truyện trên toàn bộ plugins…</string>
@@ -711,4 +716,27 @@
     <string name="home_search_provider_placeholder">Tìm kiếm nguồn / addon…</string>
     <string name="home_provider_tab_all">Tất cả</string>
     <string name="home_provider_empty_filter">Không tìm thấy nguồn phù hợp</string>
+
+    <!-- Stremio Streaming Server (P2P Torrent) Strings -->
+    <string name="stremio_server_section_title">Phát trực tuyến</string>
+    <string name="stremio_server_section_desc">Máy chủ Stremio Engine chuyển đổi luồng P2P Torrent sang HTTP phát native</string>
+    <string name="stremio_server_url_header">URL</string>
+    <string name="stremio_server_status_header">Trạng thái</string>
+    <string name="stremio_server_status_online">Trực tuyến</string>
+    <string name="stremio_server_status_offline">Ngoại tuyến</string>
+    <string name="stremio_server_status_checking">Đang kiểm tra…</string>
+    <string name="stremio_server_btn_add">Thêm URL</string>
+    <string name="stremio_server_btn_reload">Tải lại</string>
+    <string name="stremio_server_cache_size">Kích thước bộ nhớ đệm</string>
+    <string name="stremio_server_torrent_profile">Hồ sơ torrent</string>
+    <string name="stremio_server_max_connections">Kết nối tối đa (Max connections)</string>
+    <string name="stremio_server_version">Phiên bản máy chủ</string>
+    <string name="stremio_server_dialog_add_title">Thêm URL máy chủ Stremio</string>
+    <string name="stremio_server_dialog_url_label">Địa chỉ máy chủ (URL)</string>
+    <string name="stremio_server_dialog_url_hint">https://jstremio.joandyou.cc/ hoặc http://192.168.1.50:11470/</string>
+    <string name="stremio_server_dialog_error_empty">Vui lòng nhập URL máy chủ hợp lệ</string>
+    <string name="stremio_server_dialog_error_duplicate">URL này đã có trong danh sách</string>
+    <string name="stremio_server_delete_confirm">Xóa máy chủ này khỏi danh sách?</string>
+    <string name="stremio_server_not_configured_alert">Chưa cấu hình máy chủ Stremio P2P. Vui lòng vào Cài đặt để kích hoạt máy chủ phát trực tuyến.</string>
+    <string name="player_buffering_p2p_format">P2P: %1$d peers • %2$s</string>
 </resources>
