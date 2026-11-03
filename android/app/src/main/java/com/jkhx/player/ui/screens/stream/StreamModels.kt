@@ -3,11 +3,13 @@ package com.jkhx.player.ui.screens.stream
 import com.jkhx.player.core.model.EpisodeData
 import com.jkhx.player.core.model.EpisodeStream
 import com.jkhx.player.core.model.Subtitle
+import kotlinx.serialization.Serializable
 
 /**
  * Model đại diện cho một luồng stream hợp nhất từ bất kỳ nguồn nào
  * (Native Plugin hoặc Stremio Addon).
  */
+@Serializable
 data class UnifiedStreamItem(
     val id: String,
     val providerId: String,

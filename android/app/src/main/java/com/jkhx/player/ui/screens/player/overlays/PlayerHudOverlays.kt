@@ -76,6 +76,7 @@ fun BoxScope.PlayerHudOverlays(
     isPlaybackStartedEffective: Boolean,
     isLoading: Boolean,
     isPlayerBuffering: Boolean,
+    isSeeking: Boolean = false,
     movieThumb: String?,
     movieName: String,
     currentEpisodeName: String,
@@ -155,7 +156,7 @@ fun BoxScope.PlayerHudOverlays(
                 bufferProgress = bufferProgress
             )
         }
-    } else if (!isWebViewMode && errorMessage == null && isPlaybackStartedEffective && (isLoading || isPlayerBuffering) && !showControls) {
+    } else if (!isWebViewMode && errorMessage == null && isPlaybackStartedEffective && (isLoading || isPlayerBuffering || isSeeking) && !showControls) {
         // Buffer mid-stream sau khi phim đã bắt đầu phát (chỉ hiển thị khi Controls ẩn để triệt tiêu hoàn toàn trùng lặp 2 vòng xoay)
         Box(
             modifier = Modifier
@@ -493,7 +494,7 @@ private fun BufferingInfoContent(
                         .background(MaterialTheme.colorScheme.primary, CircleShape)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                val titleText = if (downloadSpeedText.isNotBlank() && downloadSpeedText != "0 KB/s") {
+                val titleText = if (downloadSpeedText.isNotBlank() && downloadSpeedText != "0 KB/s" && downloadSpeedText != "0 B/s") {
                     stringResource(R.string.player_buffering_speed_format, downloadSpeedText)
                 } else {
                     stringResource(R.string.player_buffering_title)

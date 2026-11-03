@@ -83,6 +83,7 @@ private fun setupActivePlayerSession(
     isDescending: Boolean = false
 ) {
     com.jkhx.player.ActivePlayerSession.providerId = providerId
+    com.jkhx.player.ActivePlayerSession.metaProviderId = providerId
     com.jkhx.player.ActivePlayerSession.movieSlug = slug
     com.jkhx.player.ActivePlayerSession.movieName = detail.name
     com.jkhx.player.ActivePlayerSession.movieThumb = detail.backdropUrl ?: detail.posterUrl
@@ -100,7 +101,9 @@ private fun setupActivePlayerSession(
     com.jkhx.player.ActivePlayerSession.rawPluginName = rawName ?: detail.name
     com.jkhx.player.ActivePlayerSession.rawPluginOriginName = rawOriginName ?: detail.originName
     com.jkhx.player.ActivePlayerSession.movieDetail = detail
+    com.jkhx.player.ActivePlayerSession.movieType = detail.type ?: "series"
     com.jkhx.player.ActivePlayerSession.customStream = null
+    com.jkhx.player.ActivePlayerSession.activeUnifiedStream = null
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -122,10 +125,19 @@ fun DetailScreen(
     val displayMode = LocalDisplayMode.current
     val isTablet = displayMode == DeviceDisplayMode.TABLET
 
-    val watchHistory by historyDao.getHistoryById("$providerId:$slug").collectAsState(initial = null)
+    val allHistory by historyDao.getAllHistory().collectAsState(initial = emptyList())
     val isFavorite by favoriteDao.isFavorite("$providerId:$slug").collectAsState(initial = false)
 
     var movieDetail by remember { mutableStateOf<MovieDetail?>(null) }
+    val watchHistory = remember(allHistory, providerId, slug, movieDetail?.tmdbId) {
+        val tmdb = movieDetail?.tmdbId
+        allHistory.firstOrNull { h ->
+            h.id == "$providerId:$slug" ||
+                h.movieSlug == slug ||
+                (!tmdb.isNullOrBlank() && h.id == "tmdb:$tmdb") ||
+                (slug.startsWith("tt", ignoreCase = true) && h.id == "imdb:$slug")
+        }
+    }
     var rawPluginName by remember { mutableStateOf<String?>(null) }
     var rawPluginOriginName by remember { mutableStateOf<String?>(null) }
     var providerDisplayName by remember(providerId) { mutableStateOf(providerId) }
@@ -812,8 +824,8 @@ fun DetailScreen(
                                 },
                                 enabled = firstEpisode != null,
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.onSurface,
-                                    contentColor = MaterialTheme.colorScheme.surface
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
                                 ),
                                 shape = ShapeTokens.BannerCard,
                                 modifier = Modifier
@@ -825,7 +837,7 @@ fun DetailScreen(
                                 Icon(
                                     imageVector = if (isComic) Icons.AutoMirrored.Filled.MenuBook else Icons.Default.PlayArrow,
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.surface,
+                                    tint = MaterialTheme.colorScheme.onPrimary,
                                     modifier = Modifier.size(20.dp)
                                 )
                                 Spacer(modifier = Modifier.width(AppTheme.dimens.space6))
@@ -833,7 +845,7 @@ fun DetailScreen(
                                     text = stringResource(if (isComic) R.string.detail_read_short else R.string.detail_watch_short),
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 15.sp,
-                                    color = MaterialTheme.colorScheme.surface
+                                    color = MaterialTheme.colorScheme.onPrimary
                                 )
                             }
 

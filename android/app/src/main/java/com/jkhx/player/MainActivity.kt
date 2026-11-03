@@ -179,6 +179,7 @@ sealed class Screen(val route: String, val titleRes: Int) {
 
 object ActivePlayerSession {
     var providerId: String = ""
+    var metaProviderId: String = ""
     var movieSlug: String = ""
     var movieName: String = ""
     var movieThumb: String? = null
@@ -558,7 +559,7 @@ fun AppNavHost(
                 Toast.makeText(context, context.getString(R.string.home_resuming_episode, history.movieName), Toast.LENGTH_SHORT).show()
                 val initialEpId = history.lastEpisodeId?.takeIf { it.isNotBlank() } ?: history.movieSlug
                 val initialEpName = history.lastEpisodeName?.takeIf { it.isNotBlank() } ?: "Tập 1"
-                val initialEp = EpisodeData(
+                val fallbackEp = EpisodeData(
                     id = initialEpId,
                     name = initialEpName,
                     slug = "${history.movieSlug}__$initialEpId",
@@ -566,41 +567,29 @@ fun AppNavHost(
                     season = null,
                     serverName = ""
                 )
-                val jsonString = Json.encodeToString(EpisodeData.serializer(), initialEp)
+                val chosenEp = com.jkhx.player.ui.screens.player.ResumeStreamStore.applyToSession(
+                    context = context,
+                    history = history,
+                    fallbackEpisode = fallbackEp
+                )
+                val jsonString = Json.encodeToString(EpisodeData.serializer(), chosenEp)
                 val safeToken = android.util.Base64.encodeToString(
                     jsonString.toByteArray(Charsets.UTF_8),
                     android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP
                 )
 
-                ActivePlayerSession.providerId = history.providerId
-                ActivePlayerSession.movieSlug = history.movieSlug
-                ActivePlayerSession.movieName = history.movieName
-                ActivePlayerSession.movieThumb = history.thumbUrl
-                ActivePlayerSession.tmdbId = null
-                ActivePlayerSession.imdbId = history.movieSlug.takeIf { it.startsWith("tt", ignoreCase = true) }
-                ActivePlayerSession.originName = history.movieName
-                ActivePlayerSession.movieYear = null
-                ActivePlayerSession.availableServers = emptyList()
-                ActivePlayerSession.currentServerName = ""
-                ActivePlayerSession.isDescending = false
-                ActivePlayerSession.episodes = listOf(initialEp)
-                ActivePlayerSession.currentEpisodeIndex = 0
-                ActivePlayerSession.currentEpisode = initialEp
-                ActivePlayerSession.rawPluginName = history.movieName
-                ActivePlayerSession.rawPluginOriginName = history.movieName
-                ActivePlayerSession.movieDetail = null
-                ActivePlayerSession.customStream = null
-                ActivePlayerSession.aggregatedStreams = emptyList()
-                ActivePlayerSession.activeUnifiedStream = null
-                ActiveEpisodeHolder.episode = initialEp
-                ActiveEpisodeHolder.customStream = null
-
-                navController.navigate("player/${history.providerId}/$safeToken")
+                navController.navigate("player/${ActivePlayerSession.providerId}/$safeToken")
             } else {
                 coroutineScope.launch(Dispatchers.IO) {
                 try {
                     val historyDao = JkhxApplication.instance.database.historyDao()
-                    var activeProviderId = history.providerId
+                    val savedRecord = com.jkhx.player.ui.screens.player.ResumeStreamStore.load(
+                        context = context,
+                        historyId = history.id,
+                        movieSlug = history.movieSlug,
+                        episodeId = history.lastEpisodeId
+                    )
+                    var activeProviderId = savedRecord?.metaProviderId?.takeIf { it.isNotBlank() } ?: history.providerId
                     var activeMovieSlug = history.movieSlug
                     var plugin = pluginManager.getPlugin(activeProviderId)
 
@@ -609,7 +598,9 @@ fun AppNavHost(
                     }
 
                     var detail: MovieDetail? = try {
-                        plugin?.getDetail(activeMovieSlug)
+                        plugin?.getDetail(activeMovieSlug)?.takeUnless {
+                            com.jkhx.player.ui.screens.player.ResumeStreamStore.isDummyStremioDetail(activeProviderId, activeMovieSlug, it)
+                        }
                     } catch (_: Exception) {
                         null
                     }
@@ -1105,6 +1096,9 @@ fun AppNavHost(
                     onBack = { navController.popBackStack() },
                     onStreamSelected = { selectedStream ->
                         val epStream = selectedStream.toEpisodeStream()
+                        if (ActivePlayerSession.metaProviderId.isBlank() && (!providerId.startsWith("stremio_") || providerId == "stremio_cinemeta")) {
+                            ActivePlayerSession.metaProviderId = providerId
+                        }
                         ActivePlayerSession.providerId = selectedStream.providerId
                         ActivePlayerSession.currentServerName = selectedStream.serverName
                         ActivePlayerSession.customStream = epStream
@@ -1112,6 +1106,13 @@ fun AppNavHost(
                         ActiveEpisodeHolder.customStream = epStream
                         val nextEp = selectedStream.targetEpisode ?: episode
                         ActiveEpisodeHolder.episode = nextEp
+                        com.jkhx.player.ui.screens.player.ResumeStreamStore.saveFromActiveSession(
+                            context = context,
+                            streamProviderId = selectedStream.providerId,
+                            episode = nextEp,
+                            unifiedStream = selectedStream,
+                            episodeStream = epStream
+                        )
                         val epJson = Json.encodeToString(EpisodeData.serializer(), nextEp)
                         val nextSafeToken = android.util.Base64.encodeToString(
                             epJson.toByteArray(Charsets.UTF_8),

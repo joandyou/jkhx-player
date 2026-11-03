@@ -255,6 +255,7 @@ fun PlayerScreen(
     var sliderDragRatio by remember { mutableFloatStateOf(0f) }
     var isSeeking by remember { mutableStateOf(false) }
     var exoPlayerRetryCount by remember { mutableIntStateOf(0) }
+    var hasReaggregatedAddonStream by remember(currentEpisode.id) { mutableStateOf(false) }
     var downloadSpeedText by remember { mutableStateOf("0 KB/s") }
     var bufferedStatsText by remember { mutableStateOf("") }
     var bufferProgress by remember { mutableFloatStateOf(0f) }
@@ -1176,8 +1177,10 @@ fun PlayerScreen(
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
                 if (playing) {
-                    hasPlaybackStarted = true
-                    showControls = true
+                    if (!hasPlaybackStarted) {
+                        hasPlaybackStarted = true
+                        showControls = true
+                    }
                     lastInteractionTime = System.currentTimeMillis()
                 }
             }
@@ -1306,6 +1309,13 @@ fun PlayerScreen(
                 }
 
                 val isTorrent = resolvedStream?.torrentInfoHash != null || activeUnifiedStream?.torrentInfoHash != null
+                if (!hasReaggregatedAddonStream && activeProviderId.startsWith("stremio_") && !isTorrent && isCustomStreamActive) {
+                    hasReaggregatedAddonStream = true
+                    ActivePlayerSession.customStream = null
+                    ActiveEpisodeHolder.customStream = null
+                    reloadStreamTrigger++
+                    return
+                }
                 val maxRetries = if (isTorrent) 25 else 5
                 if (exoPlayerRetryCount < maxRetries) {
                     exoPlayerRetryCount++
@@ -1342,12 +1352,12 @@ fun PlayerScreen(
     }
 
     // Coroutine đo tốc độ tải về và tiến độ bộ đệm real-time khi phim đang buffer
-    LaunchedEffect(exoPlayerManager, isLoading, isPlayerBuffering, isPlaybackStartedEffective, resolvedStream, activeUnifiedStream) {
+    LaunchedEffect(exoPlayerManager, isLoading, isPlayerBuffering, isSeeking, isPlaybackStartedEffective, resolvedStream, activeUnifiedStream) {
         val torrentHash = resolvedStream?.torrentInfoHash ?: activeUnifiedStream?.torrentInfoHash
         val stremioServer = resolvedStream?.stremioServerUrl ?: activeUnifiedStream?.stremioServerUrl
             ?: JkhxApplication.instance.settingsManager.stremioActiveServerUrl.value.trim().trimEnd('/')
 
-        if (isLoading || isPlayerBuffering || !isPlaybackStartedEffective) {
+        if (isLoading || isPlayerBuffering || isSeeking || !isPlaybackStartedEffective) {
             val stremioClient = if (!torrentHash.isNullOrBlank() && stremioServer.isNotBlank()) {
                 JkhxApplication.instance.pluginManager.getStremioClient()
             } else null
@@ -1356,39 +1366,21 @@ fun PlayerScreen(
                 if (stremioClient != null && !torrentHash.isNullOrBlank()) {
                     val p2pStats = stremioClient.fetchTorrentStats(stremioServer, torrentHash)
                     if (p2pStats != null) {
-                        val p2pSpeed = p2pStats.downloadSpeedFormatted
-                        downloadSpeedText = p2pSpeed
+                        downloadSpeedText = p2pStats.downloadSpeedFormatted
                         val initProg = computeP2pInitialProgress(p2pStats.downloaded)
                         bufferProgress = if (!isPlaybackStartedEffective) initProg else p2pStats.streamProgress.toFloat().coerceIn(0f, 1f)
                         bufferedStatsText = formatP2pBufferingStats(p2pStats)
                     } else {
-                        val speed = exoPlayerManager.getDownloadSpeedFormatted()
-                        val stats = exoPlayerManager.getBufferedStats(targetBufferMs = 15_000L)
-                        downloadSpeedText = speed
-                        bufferProgress = stats.progress
-                        val durSec = stats.bufferedDurationMs / 1000.0
-                        val durSecStr = if (durSec >= 10.0) "${durSec.toInt()}s" else String.format(java.util.Locale.US, "%.1fs", durSec)
-                        val mbStr = exoPlayerManager.formatBytes(stats.bufferedBytes)
-                        bufferedStatsText = if (stats.bufferedBytes > 0L) {
-                            context.getString(R.string.player_buffering_stats_format, durSecStr, mbStr, "15s", speed)
-                        } else {
-                            context.getString(R.string.player_buffering_stats_simple, durSecStr, "15s", speed)
-                        }
+                        downloadSpeedText = "0 KB/s"
+                        bufferProgress = 0f
+                        bufferedStatsText = context.getString(R.string.player_buffering_connecting)
                     }
                     delay(1200)
                 } else {
-                    val speed = exoPlayerManager.getDownloadSpeedFormatted()
-                    val stats = exoPlayerManager.getBufferedStats(targetBufferMs = 15_000L)
+                    val (speed, prog, statsStr) = computeHttpBufferOverlayState(context, exoPlayerManager)
                     downloadSpeedText = speed
-                    bufferProgress = stats.progress
-                    val durSec = stats.bufferedDurationMs / 1000.0
-                    val durSecStr = if (durSec >= 10.0) "${durSec.toInt()}s" else String.format(java.util.Locale.US, "%.1fs", durSec)
-                    val mbStr = exoPlayerManager.formatBytes(stats.bufferedBytes)
-                    bufferedStatsText = if (stats.bufferedBytes > 0L) {
-                        context.getString(R.string.player_buffering_stats_format, durSecStr, mbStr, "15s", speed)
-                    } else {
-                        context.getString(R.string.player_buffering_stats_simple, durSecStr, "15s", speed)
-                    }
+                    bufferProgress = prog
+                    bufferedStatsText = statsStr
                     delay(400)
                 }
             }
@@ -1413,7 +1405,7 @@ fun PlayerScreen(
                 }
             }
 
-            if (!isLoading && hasPlaybackStarted && currentPosition > 0L && (p.isPlaying || p.playbackState == Player.STATE_READY)) {
+            if (!isLoading && !showResumePromptDialog && pendingResumePositionMs <= 0L && hasPlaybackStarted && currentPosition > 2_000L && (p.isPlaying || p.playbackState == Player.STATE_READY)) {
                 val durationToSave = if (totalDuration > 0L) totalDuration else effectiveTotalDuration
                 withContext(Dispatchers.IO) {
                     try {
@@ -1581,6 +1573,12 @@ fun PlayerScreen(
         val currentPos = if (currentPosition > 5_000L) currentPosition else 0L
         pendingResumePositionMs = currentPos
 
+        if (ActivePlayerSession.metaProviderId.isBlank() &&
+            (!activeProviderId.startsWith("stremio_") || activeProviderId == "stremio_cinemeta")
+        ) {
+            ActivePlayerSession.metaProviderId = activeProviderId
+        }
+
         val epStream = item.toEpisodeStream()
         ActivePlayerSession.customStream = epStream
         ActiveEpisodeHolder.customStream = epStream
@@ -1596,6 +1594,17 @@ fun PlayerScreen(
         ActivePlayerSession.currentServerName = item.serverName
         ActivePlayerSession.currentEpisode = targetEp
         ActiveEpisodeHolder.episode = targetEp
+
+        ResumeStreamStore.saveFromActiveSession(
+            context = context,
+            streamProviderId = item.providerId,
+            episode = targetEp,
+            unifiedStream = item,
+            episodeStream = epStream,
+            overrideMovieSlug = activeMovieSlug,
+            overrideMovieName = movieName,
+            overrideTmdbId = movieTmdbId
+        )
 
         reloadStreamTrigger++
         showSourceSelectorDrawer = false
@@ -1617,6 +1626,9 @@ fun PlayerScreen(
         webViewUrl = null
         showResumePromptDialog = false
         resumeTargetPositionMs = 0L
+        downloadSpeedText = "0 KB/s"
+        bufferedStatsText = ""
+        bufferProgress = 0f
         // Reset ngay tiến độ thời gian về 0 để tránh hiển thị nhầm thời gian của tập trước
         currentPosition = 0L
         bufferedPosition = 0L
@@ -1628,125 +1640,57 @@ fun PlayerScreen(
 
         try {
             // Nếu mở trực tiếp từ Lịch sử xem tiếp (0ms) mà chưa nạp danh sách tập/detail: nạp ngay trong PlayerScreen
-            if (availableServers.isEmpty() && ActivePlayerSession.customStream == null && !currentEpisode.id.startsWith("http://") && !currentEpisode.id.startsWith("https://")) {
-                withContext(Dispatchers.IO) {
-                    var resolvedProviderId = activeProviderId
-                    var resolvedMovieSlug = activeMovieSlug
-                    var plugin = pluginManager.getPlugin(resolvedProviderId)
-                    var detail: MovieDetail? = try {
-                        plugin?.getDetail(resolvedMovieSlug)
-                    } catch (_: Exception) {
-                        null
-                    }
-
-                    if (detail == null) {
-                        if (resolvedMovieSlug.startsWith("tt", ignoreCase = true)) {
-                            val cinemetaPlugin = pluginManager.getPlugin("stremio_cinemeta")
-                            if (cinemetaPlugin != null) {
-                                val cDetail = try { cinemetaPlugin.getDetail(resolvedMovieSlug) } catch (_: Exception) { null }
-                                if (cDetail != null && cDetail.name.isNotBlank()) {
-                                    detail = cDetail
-                                    plugin = cinemetaPlugin
-                                    resolvedProviderId = "stremio_cinemeta"
-                                }
-                            }
-                        }
-
-                        if (detail == null && movieName.isNotBlank()) {
-                            val candidatePlugins = pluginManager.getMovieTvPlugins()
-                            for (cand in candidatePlugins) {
-                                try {
-                                    val sRes = cand.search(movieName, 1)
-                                    val match = sRes.items.firstOrNull { item ->
-                                        item.name.equals(movieName, ignoreCase = true) ||
-                                        (!item.originName.isNullOrBlank() && item.originName.equals(movieName, ignoreCase = true)) ||
-                                        item.slug == resolvedMovieSlug
-                                    } ?: sRes.items.firstOrNull { item ->
-                                        item.name.contains(movieName, ignoreCase = true) ||
-                                        movieName.contains(item.name, ignoreCase = true)
-                                    }
-                                    if (match != null) {
-                                        val candDetail = cand.getDetail(match.slug)
-                                        if (candDetail.episodes.isNotEmpty()) {
-                                            detail = candDetail
-                                            plugin = cand
-                                            resolvedProviderId = cand.id
-                                            resolvedMovieSlug = match.slug
-                                            break
-                                        }
-                                    }
-                                } catch (_: Exception) {}
-                            }
-                        }
-                    }
-
-                    if (detail != null) {
-                        var validDetail = detail
-                        val slugTail = resolvedMovieSlug.substringAfterLast("__")
-                        val isDummyName = validDetail.name.isBlank() || validDetail.name == resolvedMovieSlug || validDetail.name == slugTail
-                        if (movieName.isNotBlank() && isDummyName) {
-                            validDetail = validDetail.copy(
-                                name = movieName,
-                                originName = validDetail.originName?.takeIf { it != resolvedMovieSlug && it != slugTail } ?: movieName,
-                                posterUrl = validDetail.posterUrl ?: movieThumb,
-                                backdropUrl = validDetail.backdropUrl ?: movieThumb,
-                                thumbUrl = validDetail.thumbUrl ?: movieThumb
-                            )
-                        } else if (validDetail.posterUrl == null && !movieThumb.isNullOrBlank()) {
-                            validDetail = validDetail.copy(
-                                posterUrl = movieThumb,
-                                backdropUrl = validDetail.backdropUrl ?: movieThumb,
-                                thumbUrl = validDetail.thumbUrl ?: movieThumb
-                            )
-                        }
-
-                        val targetServer = validDetail.episodes.find { srv ->
-                            srv.episodes.any { it.id == currentEpisode.id || it.name == currentEpisode.name }
-                        } ?: validDetail.episodes.firstOrNull()
-
-                        val targetEpisode = targetServer?.episodes?.find {
-                            it.id == currentEpisode.id || it.name == currentEpisode.name
-                        } ?: targetServer?.episodes?.firstOrNull() ?: currentEpisode
-
-                        val sortedEps = targetServer?.episodes ?: listOf(targetEpisode)
-                        val targetIdx = sortedEps.indexOfFirst {
-                            it.id == targetEpisode.id || it.name == targetEpisode.name
-                        }.coerceAtLeast(0)
-
-                        withContext(Dispatchers.Main) {
-                            activeProviderId = resolvedProviderId
-                            activeMovieSlug = resolvedMovieSlug
-                            movieName = validDetail.name.ifBlank { movieName }
-                            movieThumb = validDetail.backdropUrl ?: validDetail.posterUrl ?: movieThumb
-                            movieTmdbId = validDetail.tmdbId
-                            movieOriginName = validDetail.originName
-                            movieYear = validDetail.year
-                            availableServers = validDetail.episodes
-                            rawPluginName = validDetail.name
-                            rawPluginOriginName = validDetail.originName
-                            activeServerName = targetServer?.serverName ?: ""
-                            activeEpisodes = sortedEps
-                            currentEpisodeIndex = targetIdx
-                            currentEpisode = targetEpisode
-
-                            ActivePlayerSession.providerId = resolvedProviderId
-                            ActivePlayerSession.movieSlug = resolvedMovieSlug
-                            ActivePlayerSession.movieName = movieName
-                            ActivePlayerSession.movieThumb = movieThumb
-                            ActivePlayerSession.tmdbId = validDetail.tmdbId
-                            ActivePlayerSession.imdbId = validDetail.imdbId
-                            ActivePlayerSession.originName = validDetail.originName
-                            ActivePlayerSession.movieYear = validDetail.year
-                            ActivePlayerSession.availableServers = validDetail.episodes
+            if (availableServers.isEmpty() && !currentEpisode.id.startsWith("http://") && !currentEpisode.id.startsWith("https://")) {
+                val resolvedRes = withContext(Dispatchers.IO) {
+                    ResumeStreamStore.resolveDetailForPlayer(
+                        context = context,
+                        pluginManager = pluginManager,
+                        activeProviderId = activeProviderId,
+                        activeMovieSlug = activeMovieSlug,
+                        movieName = movieName,
+                        movieThumb = movieThumb,
+                        currentEpisode = currentEpisode
+                    )
+                }
+                if (resolvedRes != null) {
+                    val validDetail = resolvedRes.detail
+                    val keepAddonOrCustomProvider = ActivePlayerSession.customStream != null || activeProviderId.startsWith("stremio_")
+                    withContext(Dispatchers.Main) {
+                        ActivePlayerSession.metaProviderId = resolvedRes.metaProviderId
+                        if (!keepAddonOrCustomProvider) {
+                            activeProviderId = resolvedRes.metaProviderId
+                            ActivePlayerSession.providerId = resolvedRes.metaProviderId
+                            activeServerName = resolvedRes.targetServer?.serverName ?: ""
                             ActivePlayerSession.currentServerName = activeServerName
-                            ActivePlayerSession.episodes = sortedEps
-                            ActivePlayerSession.currentEpisodeIndex = targetIdx
-                            ActivePlayerSession.currentEpisode = targetEpisode
-                            ActivePlayerSession.rawPluginName = validDetail.name
-                            ActivePlayerSession.rawPluginOriginName = validDetail.originName
-                            ActivePlayerSession.movieDetail = validDetail
-                            ActiveEpisodeHolder.episode = targetEpisode
                         }
+                        activeMovieSlug = resolvedRes.resolvedMovieSlug
+                        movieName = validDetail.name.ifBlank { movieName }
+                        movieThumb = validDetail.backdropUrl ?: validDetail.posterUrl ?: movieThumb
+                        movieTmdbId = validDetail.tmdbId ?: movieTmdbId
+                        movieOriginName = validDetail.originName ?: movieOriginName
+                        movieYear = validDetail.year ?: movieYear
+                        availableServers = validDetail.episodes
+                        rawPluginName = validDetail.name
+                        rawPluginOriginName = validDetail.originName
+                        activeEpisodes = resolvedRes.sortedEpisodes
+                        currentEpisodeIndex = resolvedRes.targetIndex
+                        currentEpisode = resolvedRes.targetEpisode
+
+                        ActivePlayerSession.movieSlug = resolvedRes.resolvedMovieSlug
+                        ActivePlayerSession.movieName = movieName
+                        ActivePlayerSession.movieThumb = movieThumb
+                        ActivePlayerSession.tmdbId = movieTmdbId
+                        ActivePlayerSession.imdbId = validDetail.imdbId ?: ActivePlayerSession.imdbId
+                        ActivePlayerSession.originName = movieOriginName
+                        ActivePlayerSession.movieYear = movieYear
+                        ActivePlayerSession.availableServers = validDetail.episodes
+                        ActivePlayerSession.episodes = resolvedRes.sortedEpisodes
+                        ActivePlayerSession.currentEpisodeIndex = resolvedRes.targetIndex
+                        ActivePlayerSession.currentEpisode = resolvedRes.targetEpisode
+                        ActivePlayerSession.rawPluginName = validDetail.name
+                        ActivePlayerSession.rawPluginOriginName = validDetail.originName
+                        ActivePlayerSession.movieDetail = validDetail
+                        ActiveEpisodeHolder.episode = resolvedRes.targetEpisode
                     }
                 }
             }
@@ -1779,51 +1723,39 @@ fun PlayerScreen(
                                 headers = cachedHeaders
                             )
                         } else {
-                            val directPluginStream = try {
-                                pluginManager.getPlugin(activeProviderId)?.getStream(currentEpisode)?.takeIf { it.url.isNotBlank() }
-                            } catch (_: Exception) {
+                            val canCallDirectStremioGetStream = currentEpisode.id.startsWith("tt", ignoreCase = true) ||
+                                currentEpisode.id.contains("aiostreams", ignoreCase = true)
+                            val directPluginStream = if (canCallDirectStremioGetStream) {
+                                try {
+                                    pluginManager.getPlugin(activeProviderId)?.getStream(currentEpisode)?.takeIf { it.url.isNotBlank() }
+                                } catch (_: Exception) {
+                                    null
+                                }
+                            } else {
                                 null
                             }
                             if (directPluginStream != null) {
                                 directPluginStream
                             } else {
-                                val detailForAgg = ActivePlayerSession.movieDetail ?: MovieDetail(
-                                    slug = activeMovieSlug,
-                                    name = movieName,
-                                    originName = movieOriginName ?: movieName,
-                                    type = ActivePlayerSession.movieType,
-                                    posterUrl = movieThumb,
-                                    backdropUrl = movieThumb,
-                                    tmdbId = movieTmdbId,
-                                    imdbId = ActivePlayerSession.imdbId,
-                                    year = movieYear,
-                                    episodes = availableServers
-                                )
-                                var bestStream: UnifiedStreamItem? = null
-                                try {
-                                    kotlinx.coroutines.withTimeoutOrNull(12000L) {
-                                        StreamAggregator(pluginManager).aggregateStreams(
-                                            providerId = activeProviderId,
-                                            movieDetail = detailForAgg,
-                                            episode = currentEpisode
-                                        ).collect { list ->
-                                            if (list.isNotEmpty()) {
-                                                ActivePlayerSession.aggregatedStreams = list
-                                                withContext(Dispatchers.Main) {
-                                                    drawerStreams = list
-                                                }
-                                                if (bestStream == null) {
-                                                    bestStream = list.firstOrNull()
-                                                    if (bestStream != null) {
-                                                        throw kotlinx.coroutines.CancellationException("Found bestStream")
-                                                    }
-                                                }
-                                            }
-                                        }
+                                val chosen = ResumeStreamStore.aggregateAndPickAddonStream(
+                                    context = context,
+                                    pluginManager = pluginManager,
+                                    activeProviderId = activeProviderId,
+                                    activeMovieSlug = activeMovieSlug,
+                                    movieName = movieName,
+                                    movieOriginName = movieOriginName,
+                                    movieThumb = movieThumb,
+                                    movieTmdbId = movieTmdbId,
+                                    movieYear = movieYear,
+                                    availableServers = availableServers,
+                                    currentEpisode = currentEpisode
+                                ) { list ->
+                                    withContext(Dispatchers.Main) {
+                                        drawerStreams = list
                                     }
-                                } catch (_: Exception) {}
-                                val chosen = bestStream
-                                    ?: throw Exception(context.getString(R.string.streams_empty))
+                                } ?: throw Exception(context.getString(R.string.streams_empty))
+
+                                val chosenEpStream = chosen.toEpisodeStream()
                                 withContext(Dispatchers.Main) {
                                     activeUnifiedStream = chosen
                                     ActivePlayerSession.activeUnifiedStream = chosen
@@ -1832,7 +1764,17 @@ fun PlayerScreen(
                                     ActivePlayerSession.providerId = chosen.providerId
                                     ActivePlayerSession.currentServerName = chosen.serverName
                                 }
-                                chosen.toEpisodeStream()
+                                ResumeStreamStore.saveFromActiveSession(
+                                    context = context,
+                                    streamProviderId = chosen.providerId,
+                                    episode = currentEpisode,
+                                    unifiedStream = chosen,
+                                    episodeStream = chosenEpStream,
+                                    overrideMovieSlug = activeMovieSlug,
+                                    overrideMovieName = movieName,
+                                    overrideTmdbId = movieTmdbId
+                                )
+                                chosenEpStream
                             }
                         }
                     }
@@ -1882,6 +1824,19 @@ fun PlayerScreen(
                 println("[PlayerScreen] Stream resolved thành công: type=${stream.type}, url=${stream.url.take(80)}")
                 resolvedStream = stream
 
+                if (isCustomStreamActive || activeProviderId.startsWith("stremio_")) {
+                    ResumeStreamStore.saveFromActiveSession(
+                        context = context,
+                        streamProviderId = activeProviderId,
+                        episode = currentEpisode,
+                        unifiedStream = activeUnifiedStream,
+                        episodeStream = stream,
+                        overrideMovieSlug = activeMovieSlug,
+                        overrideMovieName = movieName,
+                        overrideTmdbId = movieTmdbId
+                    )
+                }
+
                 // Nếu vừa chuyển đổi nguồn có pendingResumePositionMs thì ưu tiên tiếp tục
                 val startPos = if (pendingResumePositionMs > 0L) {
                     val pos = pendingResumePositionMs
@@ -1894,11 +1849,14 @@ fun PlayerScreen(
                     hasCheckedInitialResume = true
                     // Kiểm tra tiến độ đã xem trước đó để hỏi người dùng xem tiếp hay từ đầu (chỉ hỏi khi mới vào Player)
                     val savedProgress = withContext(Dispatchers.IO) {
-                        try {
-                            playbackProgressDao.getProgress("$activeProviderId:$activeMovieSlug:${currentEpisode.id}")
-                        } catch (e: Exception) {
-                            null
-                        }
+                        ResumeStreamStore.findSavedResumeProgress(
+                            playbackProgressDao = playbackProgressDao,
+                            historyDao = historyDao,
+                            activeProviderId = activeProviderId,
+                            activeMovieSlug = activeMovieSlug,
+                            movieTmdbId = movieTmdbId,
+                            currentEpisode = currentEpisode
+                        )
                     }
 
                     if (savedProgress != null && savedProgress.positionMs > 10_000L &&
@@ -2239,9 +2197,11 @@ fun PlayerScreen(
                             } else {
                                 (dragStartPosMs + currentSeekDeltaMs).coerceAtLeast(0L)
                             }
+                            isSeeking = true
                             exoPlayerManager.player.seekTo(finalTarget)
                             currentPosition = finalTarget
                             dragDirection = 0
+                            showControls = false
                             hudHideJob?.cancel()
                             hudHideJob = coroutineScope.launch {
                                 delay(600)
@@ -2249,6 +2209,8 @@ fun PlayerScreen(
                                     hudType = HudIndicatorType.NONE
                                 }
                                 isDraggingGesture = false
+                                delay(200)
+                                isSeeking = false
                             }
                         } else {
                             dragDirection = 0
@@ -2495,6 +2457,7 @@ fun PlayerScreen(
             isPlaybackStartedEffective = isPlaybackStartedEffective,
             isLoading = isLoading,
             isPlayerBuffering = isPlayerBuffering,
+            isSeeking = isSeeking,
             movieThumb = movieThumb,
             movieName = movieName,
             currentEpisodeName = currentEpisode.name,
@@ -2568,6 +2531,7 @@ fun PlayerScreen(
             val embedFallback = getEffectiveEmbedFallback()
             PlayerControlsOverlay(
                 showControls = showControls,
+                onHideControls = { showControls = false },
                 videoBackdrop = videoBackdrop,
                 movieName = movieName,
                 currentEpisode = currentEpisode,

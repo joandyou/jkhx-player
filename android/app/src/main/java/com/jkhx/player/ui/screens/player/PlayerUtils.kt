@@ -483,6 +483,27 @@ fun computeP2pInitialProgress(downloadedBytes: Long, targetBytes: Long = 15L * 1
     return (downloadedBytes.toFloat() / targetBytes.toFloat()).coerceIn(0.05f, 0.95f)
 }
 
+fun computeHttpBufferOverlayState(
+    context: android.content.Context,
+    exoPlayerManager: com.jkhx.player.core.player.ExoPlayerManager,
+    targetBufferMs: Long = 15_000L
+): Triple<String, Float, String> {
+    val speed = exoPlayerManager.getDownloadSpeedFormatted()
+    val stats = exoPlayerManager.getBufferedStats(targetBufferMs = targetBufferMs)
+    if (stats.bufferedDurationMs <= 0L && (speed == "0 KB/s" || speed == "0 B/s")) {
+        return Triple("0 KB/s", 0f, context.getString(R.string.player_buffering_connecting))
+    }
+    val durSec = stats.bufferedDurationMs / 1000.0
+    val durSecStr = if (durSec >= 10.0) "${durSec.toInt()}s" else String.format(java.util.Locale.US, "%.1fs", durSec)
+    val mbStr = exoPlayerManager.formatBytes(stats.bufferedBytes)
+    val statsText = if (stats.bufferedBytes > 0L) {
+        context.getString(R.string.player_buffering_stats_format, durSecStr, mbStr, "15s", speed)
+    } else {
+        context.getString(R.string.player_buffering_stats_simple, durSecStr, "15s", speed)
+    }
+    return Triple(speed, stats.progress, statsText)
+}
+
 suspend fun resolveTorrentStreamUrl(
     stream: com.jkhx.player.core.model.EpisodeStream,
     activeUnifiedStream: com.jkhx.player.ui.screens.stream.UnifiedStreamItem?,

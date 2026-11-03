@@ -263,14 +263,13 @@ class ExoPlayerManager(
 
     fun getDownloadSpeedBytesPerSec(): Long {
         val now = System.currentTimeMillis()
-        if (now - lastTransferWindowTimestamp > 2500L && bytesTransferredInWindow == 0L) {
+        val elapsed = now - lastTransferWindowTimestamp
+        if (elapsed > 2500L && bytesTransferredInWindow == 0L) {
             currentDownloadSpeedBytesPerSec = 0L
+        } else if (elapsed in 100L..2500L && bytesTransferredInWindow > 0L && currentDownloadSpeedBytesPerSec == 0L) {
+            currentDownloadSpeedBytesPerSec = (bytesTransferredInWindow * 1000L) / elapsed
         }
-        if (currentDownloadSpeedBytesPerSec > 0L) {
-            return currentDownloadSpeedBytesPerSec
-        }
-        val estimate = bandwidthMeter.bitrateEstimate
-        return if (estimate > 0L) estimate / 8L else 0L
+        return currentDownloadSpeedBytesPerSec
     }
 
     fun getDownloadSpeedFormatted(): String {

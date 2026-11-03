@@ -101,6 +101,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun BoxScope.PlayerControlsOverlay(
     showControls: Boolean,
+    onHideControls: () -> Unit = {},
     videoBackdrop: VideoFrameBackdrop?,
     movieName: String,
     currentEpisode: EpisodeData,
@@ -491,7 +492,7 @@ fun BoxScope.PlayerControlsOverlay(
                             onSeekingChange(true)
                             exoPlayerManager.seekTo(targetMs)
                             onDraggingSliderChange(false)
-                            onUserInteraction()
+                            onHideControls()
                             coroutineScope.launch {
                                 delay(800)
                                 onSeekingChange(false)
