@@ -58,6 +58,7 @@ import com.jkhx.player.core.database.entity.HistoryEntity
 import com.jkhx.player.core.model.CastMember
 import com.jkhx.player.core.model.EpisodeData
 import com.jkhx.player.core.model.EpisodeServer
+import com.jkhx.player.ui.screens.player.formatTime
 import com.jkhx.player.core.model.MovieDetail
 import com.jkhx.player.core.model.MovieItem
 import com.jkhx.player.ui.components.MovieCard
@@ -357,10 +358,28 @@ fun MovieDetailContent(
                 // 1. Nút Xem Ngay / Xem Tiếp (Lớn bo tròn dạng Pill nổi bật)
                 val isResume = resumeEpisode != null
                 val playText = if (isResume) {
-                    val sNum = resumeEpisode!!.season ?: 1
-                    val epNum = resumeEpisode.number ?: 1
-                    val epCode = if (isSeries) "M$sNum T$epNum" else resumeEpisode.name
-                    stringResource(R.string.detail_resume_episode, epCode)
+                    val pos = watchHistory?.positionMs ?: 0L
+                    val dur = watchHistory?.durationMs ?: 0L
+                    val percent = if (dur > 0L) ((pos.toFloat() / dur.toFloat()) * 100).toInt().coerceIn(0, 100) else 0
+
+                    if (isSeries) {
+                        val sNum = resumeEpisode!!.season ?: 1
+                        val epNum = resumeEpisode.number ?: 1
+                        if (percent in 1..99) {
+                            stringResource(R.string.detail_resume_episode, "M$sNum T$epNum ($percent%)")
+                        } else {
+                            stringResource(R.string.detail_resume_episode, "M$sNum T$epNum")
+                        }
+                    } else {
+                        // Phim lẻ: Hiển thị "Xem tiếp (45%)" hoặc "Xem tiếp (12:34)"
+                        if (percent in 1..99) {
+                            stringResource(R.string.player_resume_continue, "$percent%")
+                        } else if (pos > 0L) {
+                            stringResource(R.string.player_resume_continue, formatTime(pos))
+                        } else {
+                            stringResource(R.string.home_continue_watching)
+                        }
+                    }
                 } else {
                     stringResource(R.string.detail_watch_short)
                 }
@@ -1032,11 +1051,28 @@ private fun MovieEpisodeCardItem(
             Spacer(modifier = Modifier.width(12.dp))
 
             // Thông tin tập phim bên phải
+            val cardTitle = remember(detail.name, episode.name, isSeries, episode.number, actualIndex) {
+                if (isSeries) {
+                    val epName = episode.name.trim()
+                    val epNum = episode.number ?: (actualIndex + 1)
+                    val cleanEpName = if (epName.isBlank() || epName.equals("phim lẻ", ignoreCase = true) || epName.equals("full", ignoreCase = true)) {
+                        "Tập $epNum"
+                    } else if (!epName.startsWith("tập", ignoreCase = true) && !epName.startsWith("t", ignoreCase = true) && epName.toIntOrNull() != null) {
+                        "Tập $epName"
+                    } else {
+                        epName
+                    }
+                    "${detail.name} - $cleanEpName"
+                } else {
+                    detail.name
+                }
+            }
+
             Column(
                 modifier = Modifier.weight(1f)
             ) {
                 Text(
-                    text = episode.name,
+                    text = cardTitle,
                     fontSize = 14.sp,
                     fontWeight = if (isCurrentPlaying) FontWeight.Bold else FontWeight.SemiBold,
                     color = if (isCurrentPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,

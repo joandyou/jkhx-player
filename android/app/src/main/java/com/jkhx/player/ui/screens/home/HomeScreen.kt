@@ -174,6 +174,7 @@ fun HomeScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     var loadJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var selectedHistoryForAction by remember { mutableStateOf<HistoryEntity?>(null) }
 
     // Hiệu ứng xoay mượt mà cho nút Refresh — xoay tròn đều khi tải, xoay nốt vòng và hạ cánh êm dịu khi hoàn thành
     val rotationAnimatable = remember { androidx.compose.animation.core.Animatable(0f) }
@@ -667,11 +668,7 @@ fun HomeScreen(
                                                 }
                                             },
                                             onLongClick = {
-                                                if (onSelectStream != null) {
-                                                    onSelectStream(historyItem)
-                                                } else {
-                                                    onMovieClick(historyItem.providerId, historyItem.movieSlug)
-                                                }
+                                                selectedHistoryForAction = historyItem
                                             },
                                             onDelete = {
                                                 coroutineScope.launch {
@@ -1031,6 +1028,43 @@ fun HomeScreen(
                 }
             }
         }
+
+        // Popup Context Menu chuẩn phong cách Nuvio khi nhấn giữ (long press) vào card Xem tiếp
+        ContinueWatchingActionModal(
+            history = selectedHistoryForAction,
+            onDismissRequest = { selectedHistoryForAction = null },
+            onOpenDetails = { item ->
+                onMovieClick(item.providerId, item.movieSlug)
+            },
+            onSelectStream = { item ->
+                if (onSelectStream != null) {
+                    onSelectStream(item)
+                } else {
+                    onMovieClick(item.providerId, item.movieSlug)
+                }
+            },
+            onRestartFromBeginning = { item ->
+                coroutineScope.launch {
+                    historyDao.upsert(item.copy(positionMs = 0L, updatedAt = System.currentTimeMillis()))
+                }
+                if (onResumePlayback != null) {
+                    onResumePlayback(item.copy(positionMs = 0L))
+                } else {
+                    onMovieClick(item.providerId, item.movieSlug)
+                }
+            },
+            onDelete = { item ->
+                coroutineScope.launch {
+                    historyDao.delete(item.id)
+                    val isComicOrNovel = pluginManager.isComicProvider(item.providerId) || pluginManager.isNovelProvider(item.providerId)
+                    val isLive = pluginManager.isLiveProvider(item.providerId)
+                    if (!isComicOrNovel && !isLive && item.movieName.isNotBlank()) {
+                        historyDao.deleteByName(item.movieName)
+                    }
+                    com.jkhx.player.sync.SyncManager.getInstance(context).onHistoryDeleted(item.id)
+                }
+            }
+        )
     }
 }
 

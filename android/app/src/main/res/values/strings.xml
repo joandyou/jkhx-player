@@ -733,10 +733,22 @@
     <string name="stremio_server_version">Phiên bản máy chủ</string>
     <string name="stremio_server_dialog_add_title">Thêm URL máy chủ Stremio</string>
     <string name="stremio_server_dialog_url_label">Địa chỉ máy chủ (URL)</string>
-    <string name="stremio_server_dialog_url_hint">https://jstremio.joandyou.cc/ hoặc http://192.168.1.50:11470/</string>
+    <string name="stremio_server_dialog_url_hint">http://192.168.1.50:11470/</string>
     <string name="stremio_server_dialog_error_empty">Vui lòng nhập URL máy chủ hợp lệ</string>
     <string name="stremio_server_dialog_error_duplicate">URL này đã có trong danh sách</string>
     <string name="stremio_server_delete_confirm">Xóa máy chủ này khỏi danh sách?</string>
     <string name="stremio_server_not_configured_alert">Chưa cấu hình máy chủ Stremio P2P. Vui lòng vào Cài đặt để kích hoạt máy chủ phát trực tuyến.</string>
     <string name="player_buffering_p2p_format">P2P: %1$d peers • %2$s</string>
+
+    <!-- Continue Watching Action Modal -->
+    <string name="cw_action_view_details">Xem chi tiết</string>
+    <string name="cw_action_select_stream">Chọn nguồn phát</string>
+    <string name="cw_action_restart">Xem từ đầu</string>
+    <string name="cw_action_delete">Xóa</string>
+    <string name="cw_remaining_minutes">Còn %dph</string>
+    <string name="cw_remaining_hours_minutes">Còn %1$dg %2$dph</string>
+    <string name="cw_remaining_seconds">Còn &lt; 1ph</string>
+    <string name="cw_tag_movie">Phim</string>
+    <string name="cw_tag_series">Phim bộ</string>
+    <string name="cw_delete_confirm">Đã xóa khỏi lịch sử xem</string>
 </resources>

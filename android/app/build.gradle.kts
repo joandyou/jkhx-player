@@ -14,8 +14,8 @@ android {
         applicationId = "com.jkhx.player"
         minSdk = 26
         targetSdk = 35
-        versionCode = 20
-        versionName = "1.0.19"
+        versionCode = 21
+        versionName = "1.0.20"
 
         ndk {
             abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a", "x86_64"))

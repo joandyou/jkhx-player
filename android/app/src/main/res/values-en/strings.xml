@@ -733,10 +733,22 @@
     <string name="stremio_server_version">Server Version</string>
     <string name="stremio_server_dialog_add_title">Add Stremio Server URL</string>
     <string name="stremio_server_dialog_url_label">Server Address (URL)</string>
-    <string name="stremio_server_dialog_url_hint">https://jstremio.joandyou.cc/ or http://192.168.1.50:11470/</string>
+    <string name="stremio_server_dialog_url_hint">http://192.168.1.50:11470/</string>
     <string name="stremio_server_dialog_error_empty">Please enter a valid server URL</string>
     <string name="stremio_server_dialog_error_duplicate">This URL is already in the list</string>
     <string name="stremio_server_delete_confirm">Remove this server from candidate list?</string>
     <string name="stremio_server_not_configured_alert">Stremio P2P server not configured. Please open Settings to activate a streaming server.</string>
     <string name="player_buffering_p2p_format">P2P: %1$d peers • %2$s</string>
+
+    <!-- Continue Watching Action Modal -->
+    <string name="cw_action_view_details">View details</string>
+    <string name="cw_action_select_stream">Select stream</string>
+    <string name="cw_action_restart">Watch from start</string>
+    <string name="cw_action_delete">Remove</string>
+    <string name="cw_remaining_minutes">%d min left</string>
+    <string name="cw_remaining_hours_minutes">%1$dh %2$dm left</string>
+    <string name="cw_remaining_seconds">&lt; 1 min left</string>
+    <string name="cw_tag_movie">Movie</string>
+    <string name="cw_tag_series">Series</string>
+    <string name="cw_delete_confirm">Removed from watch history</string>
 </resources>
