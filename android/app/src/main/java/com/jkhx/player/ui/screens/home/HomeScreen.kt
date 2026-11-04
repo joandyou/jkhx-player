@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import com.jkhx.player.JkhxApplication
 import com.jkhx.player.core.database.entity.HistoryEntity
@@ -1098,8 +1099,9 @@ fun HeroBannerSection(
     var isUserInteracting by remember { mutableStateOf(false) }
     var isHeroFocused by remember { mutableStateOf(false) }
 
-    // Chiều cao thích ứng: Mobile ~300dp (gọn gàng, lộ hàng "Tiếp tục xem"), Tablet / TV ~380dp
-    val bannerHeight = if (isTablet) 380.dp else 300.dp
+    // Chiều cao thích ứng: 0.5f (50% màn hình) trên Điện thoại; 400dp trên Tablet / TV
+    val configuration = LocalConfiguration.current
+    val bannerHeight = if (isTablet) 400.dp else (configuration.screenHeightDp.dp * 0.5f)
 
     // Tự động slide mỗi 5 giây, tạm dừng khi người dùng chạm/giữ, cuộn hoặc đang duyệt bằng Remote TV
     LaunchedEffect(movies.size, isDragged, isUserInteracting, isHeroFocused) {
@@ -1198,12 +1200,12 @@ fun HeroBannerSection(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(115.dp)
+                .height(120.dp)
                 .align(Alignment.TopCenter)
                 .background(
                     Brush.verticalGradient(
                         0.0f to Color(0xB3000000),
-                        0.55f to Color(0x55000000),
+                        0.55f to Color(0x44000000),
                         1.0f to Color.Transparent
                     )
                 )
@@ -1213,7 +1215,7 @@ fun HeroBannerSection(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(190.dp)
+                .height(220.dp)
                 .align(Alignment.BottomCenter)
                 .background(
                     Brush.verticalGradient(
@@ -1226,7 +1228,7 @@ fun HeroBannerSection(
                 )
         )
 
-        // --- 4. Cụm thông tin & Nút hành động Overlay chân Banner ---
+        // --- 4. Cụm thông tin Overlay chân Banner (Không nút thừa, thoáng đãng tối đa) ---
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
@@ -1276,7 +1278,7 @@ fun HeroBannerSection(
                         border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.2f))
                     ) {
                         Text(
-                            text = "$movieYear",
+                            text = "${movieYear}",
                             fontSize = 11.sp,
                             color = Color.White.copy(alpha = 0.9f),
                             fontWeight = FontWeight.Medium,
@@ -1339,7 +1341,7 @@ fun HeroBannerSection(
             Text(
                 text = currentMovie.name,
                 fontWeight = FontWeight.Black,
-                fontSize = if (isTablet) 24.sp else 19.sp,
+                fontSize = if (isTablet) 24.sp else 21.sp,
                 color = Color.White,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -1357,7 +1359,7 @@ fun HeroBannerSection(
             if (!originTitle.isNullOrBlank() && !originTitle.equals(currentMovie.name.trim(), ignoreCase = true)) {
                 Text(
                     text = originTitle,
-                    fontSize = 12.sp,
+                    fontSize = 12.5.sp,
                     color = Color.White.copy(alpha = 0.75f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -1365,93 +1367,31 @@ fun HeroBannerSection(
                 )
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Cụm nút CTA & Indicator Dots
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                // Cụm nút hành động
+            // Dải chấm Pager Indicator Dots (Căn giữa tinh tế dưới chân banner)
+            if (movies.size > 1) {
+                Spacer(modifier = Modifier.height(10.dp))
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 2.dp)
                 ) {
-                    // Nút [▶ Phát ngay]
-                    Button(
-                        onClick = { onMovieClick(currentMovie) },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        ),
-                        shape = ShapeTokens.Button,
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                        modifier = Modifier.tvFocusableItem(cornerRadius = 10.dp, focusedScale = 1.05f)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.PlayArrow,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
+                    repeat(movies.size.coerceAtMost(10)) { index ->
+                        val isSelected = pagerState.currentPage == index
+                        Box(
+                            modifier = Modifier
+                                .padding(horizontal = 3.dp)
+                                .clip(ShapeTokens.Badge)
+                                .background(
+                                    if (isSelected) MaterialTheme.colorScheme.primary
+                                    else Color.White.copy(alpha = 0.35f)
+                                )
+                                .size(
+                                    width = if (isSelected) 16.dp else 4.dp,
+                                    height = 4.dp
+                                )
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = stringResource(R.string.home_hero_play_now),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
-                        )
-                    }
-
-                    // Nút [ⓘ Chi tiết]
-                    Surface(
-                        onClick = { onMovieClick(currentMovie) },
-                        shape = ShapeTokens.Button,
-                        color = Color(0x33FFFFFF),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
-                        modifier = Modifier.tvFocusableItem(cornerRadius = 10.dp, focusedScale = 1.05f)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Info,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = stringResource(R.string.home_hero_details),
-                                color = Color.White,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 13.sp
-                            )
-                        }
-                    }
-                }
-
-                // Dải chấm Pager Indicator Dots
-                if (movies.size > 1) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        repeat(movies.size.coerceAtMost(8)) { index ->
-                            val isSelected = pagerState.currentPage == index
-                            Box(
-                                modifier = Modifier
-                                    .clip(ShapeTokens.Badge)
-                                    .background(
-                                        if (isSelected) MaterialTheme.colorScheme.primary
-                                        else Color.White.copy(alpha = 0.35f)
-                                    )
-                                    .size(
-                                        width = if (isSelected) 14.dp else 4.dp,
-                                        height = 4.dp
-                                    )
-                            )
-                        }
                     }
                 }
             }
