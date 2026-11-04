@@ -208,6 +208,9 @@ object ActivePlayerSession {
     var lastSelectedStreamGroup: String? = null
     var aggregatedStreams: List<UnifiedStreamItem> = emptyList()
     var activeUnifiedStream: UnifiedStreamItem? = null
+
+    // Cờ đánh dấu người dùng đã chủ động chọn "Xem lại từ đầu" từ Home Menu để không hiện popup hỏi lại trong Player
+    var forceStartFromBeginning: Boolean = false
 }
 
 object ActiveEpisodeHolder {

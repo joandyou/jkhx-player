@@ -57,6 +57,8 @@
     <string name="home_tag_completed_format">Hoàn Tất (%1$s/%2$s)</string>
     <string name="home_tag_episode_format">Tập %s</string>
     <string name="home_logo_desc">Logo JKHX</string>
+    <string name="home_hero_play_now">Phát ngay</string>
+    <string name="home_hero_details">Chi tiết</string>
 
     <!-- MovieCard & History Card -->
     <string name="movie_card_delete_history">Xóa</string>

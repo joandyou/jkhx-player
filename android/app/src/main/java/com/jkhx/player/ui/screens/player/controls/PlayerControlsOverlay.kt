@@ -180,7 +180,7 @@ fun BoxScope.PlayerControlsOverlay(
                         )
                     )
             ) {
-                // --- TOP BAR: Back, Tiêu đề phim & tập, Nút Khóa, Nút Tỉ lệ, Nút PiP, Nút Cài đặt ---
+                // --- TOP BAR: Tiêu đề phim & tập bên trái, toàn bộ nút điều khiển và nút Back gom về góc trên bên phải chuẩn Nuvio ---
                 Row(
                     modifier = Modifier
                         .align(Alignment.TopStart)
@@ -188,20 +188,10 @@ fun BoxScope.PlayerControlsOverlay(
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(
-                        onClick = onBack,
-                        modifier = Modifier
-                            .size(42.dp)
-                            .playerLiquidGlass(CircleShape, elevation = 4.dp)
-                            .tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.12f)
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back), tint = Color.White)
-                    }
-
                     Column(
                         modifier = Modifier
                             .weight(1f)
-                            .padding(horizontal = 10.dp)
+                            .padding(end = 12.dp)
                     ) {
                         Text(
                             text = movieName,
@@ -215,7 +205,8 @@ fun BoxScope.PlayerControlsOverlay(
                             text = currentEpisode.name,
                             color = MaterialTheme.colorScheme.primary,
                             fontSize = 13.sp,
-                            maxLines = 1
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
 
@@ -227,18 +218,18 @@ fun BoxScope.PlayerControlsOverlay(
                         IconButton(
                             onClick = onLockScreen,
                             modifier = Modifier
-                                .size(40.dp)
+                                .size(44.dp)
                                 .playerLiquidGlass(CircleShape, elevation = 4.dp)
                                 .tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.12f)
                         ) {
-                            Icon(Icons.Default.Lock, contentDescription = stringResource(R.string.player_lock_controls), tint = Color.White, modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.Lock, contentDescription = stringResource(R.string.player_lock_controls), tint = Color.White, modifier = Modifier.size(22.dp))
                         }
 
                         // Nút Xoay màn hình (Ngang <-> Dọc)
                         IconButton(
                             onClick = onRotateScreen,
                             modifier = Modifier
-                                .size(40.dp)
+                                .size(44.dp)
                                 .playerLiquidGlass(CircleShape, elevation = 4.dp)
                                 .tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.12f)
                         ) {
@@ -246,7 +237,7 @@ fun BoxScope.PlayerControlsOverlay(
                                 Icons.Default.ScreenRotation,
                                 contentDescription = stringResource(R.string.player_rotate),
                                 tint = Color.White,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(22.dp)
                             )
                         }
 
@@ -255,11 +246,11 @@ fun BoxScope.PlayerControlsOverlay(
                             IconButton(
                                 onClick = onEnterPip,
                                 modifier = Modifier
-                                    .size(40.dp)
+                                    .size(44.dp)
                                     .playerLiquidGlass(CircleShape, elevation = 4.dp)
                                     .tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.12f)
                             ) {
-                                Icon(Icons.Default.PictureInPictureAlt, contentDescription = stringResource(R.string.player_pip), tint = Color.White, modifier = Modifier.size(20.dp))
+                                Icon(Icons.Default.PictureInPictureAlt, contentDescription = stringResource(R.string.player_pip), tint = Color.White, modifier = Modifier.size(22.dp))
                             }
                         }
 
@@ -268,7 +259,7 @@ fun BoxScope.PlayerControlsOverlay(
                             IconButton(
                                 onClick = onOpenEpisodesDrawer,
                                 modifier = Modifier
-                                    .size(40.dp)
+                                    .size(44.dp)
                                     .playerLiquidGlass(CircleShape, elevation = 4.dp)
                                     .tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.12f)
                             ) {
@@ -276,7 +267,7 @@ fun BoxScope.PlayerControlsOverlay(
                                     Icons.Default.VideoLibrary,
                                     contentDescription = stringResource(R.string.player_episodes_sheet_title),
                                     tint = if (showEpisodesDrawer) MaterialTheme.colorScheme.primary.copy(alpha = 0.65f) else Color.White,
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(22.dp)
                                 )
                             }
                         }
@@ -285,11 +276,11 @@ fun BoxScope.PlayerControlsOverlay(
                         IconButton(
                             onClick = onOpenSettings,
                             modifier = Modifier
-                                .size(40.dp)
+                                .size(44.dp)
                                 .playerLiquidGlass(CircleShape, elevation = 4.dp)
                                 .tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.12f)
                         ) {
-                            Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.player_settings_title), tint = Color.White, modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.player_settings_title), tint = Color.White, modifier = Modifier.size(22.dp))
                         }
 
                         // Nút chuyển đổi nhanh WebView <-> ExoPlayer
@@ -297,7 +288,7 @@ fun BoxScope.PlayerControlsOverlay(
                             IconButton(
                                 onClick = onSwitchToWebView,
                                 modifier = Modifier
-                                    .size(40.dp)
+                                    .size(44.dp)
                                     .playerLiquidGlass(CircleShape, elevation = 4.dp)
                                     .tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.12f)
                             ) {
@@ -305,9 +296,20 @@ fun BoxScope.PlayerControlsOverlay(
                                     Icons.Default.Language,
                                     contentDescription = stringResource(R.string.player_switch_to_webview),
                                     tint = Color.White,
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(22.dp)
                                 )
                             }
+                        }
+
+                        // Nút Trở Về (Back) nằm ở góc trên bên phải cùng cụm controls chuẩn Nuvio
+                        IconButton(
+                            onClick = onBack,
+                            modifier = Modifier
+                                .size(46.dp)
+                                .playerLiquidGlass(CircleShape, elevation = 4.dp)
+                                .tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.12f)
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back), tint = Color.White, modifier = Modifier.size(24.dp))
                         }
                     }
                 }
@@ -575,15 +577,15 @@ fun BoxScope.PlayerControlsOverlay(
                         Box(
                             modifier = Modifier
                                 .playerLiquidGlass(
-                                    shape = RoundedCornerShape(26.dp),
+                                    shape = RoundedCornerShape(28.dp),
                                     tint = Color(0xFF10141C).copy(alpha = 0.60f),
                                     elevation = 8.dp
                                 )
-                                .padding(horizontal = 6.dp, vertical = 4.dp)
+                                .padding(horizontal = 8.dp, vertical = 6.dp)
                         ) {
-                            val btnSize = if (isLandscape) 40.dp else 36.dp
-                            val iconSize = if (isLandscape) 20.dp else 18.dp
-                            val pillSpacing = if (isLandscape) 6.dp else 4.dp
+                            val btnSize = if (isLandscape) 46.dp else 42.dp
+                            val iconSize = if (isLandscape) 23.dp else 21.dp
+                            val pillSpacing = if (isLandscape) 8.dp else 6.dp
 
                             Row(
                                 modifier = Modifier
@@ -605,7 +607,7 @@ fun BoxScope.PlayerControlsOverlay(
                                             if (isResizeCustom) Modifier.border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.50f), CircleShape) else Modifier
                                         )
                                         .focusRequester(capsulePillFocusRequester)
-                                        .tvFocusableItem(cornerRadius = 20.dp, focusedScale = 1.15f)
+                                        .tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.15f)
                                         .clickable {
                                             onUserInteraction()
                                             val nextModeIdx = (resizeModeIndex + 1) % resizeModes.size
@@ -636,7 +638,7 @@ fun BoxScope.PlayerControlsOverlay(
                                         .then(
                                             if (isSpeedCustom) Modifier.border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.50f), CircleShape) else Modifier
                                         )
-                                        .tvFocusableItem(cornerRadius = 20.dp, focusedScale = 1.15f)
+                                        .tvFocusableItem(cornerRadius = 24.dp, focusedScale = 1.15f)
                                         .clickable {
                                             onUserInteraction()
                                             val nextIdx = (speeds.indexOf(currentSpeed) + 1) % speeds.size
@@ -651,7 +653,7 @@ fun BoxScope.PlayerControlsOverlay(
                                         Text(
                                             text = "${currentSpeed}x",
                                             color = MaterialTheme.colorScheme.primary,
-                                            fontSize = 11.sp,
+                                            fontSize = if (isLandscape) 12.sp else 11.sp,
                                             fontWeight = FontWeight.Bold
                                         )
                                     } else {

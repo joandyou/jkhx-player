@@ -322,13 +322,21 @@ class ExoPlayerManager(
     private val dynamicSubtitles = mutableListOf<Subtitle>()
     private var currentMediaSourceFactory: MediaSource.Factory? = null
     var subtitleOffsetMs: Long = 0L
+    private var isTorrentCuesDisabled: Boolean = false
 
-    fun prepareStream(stream: EpisodeStream, startPositionMs: Long = 0L) {
+    fun prepareStream(
+        stream: EpisodeStream,
+        startPositionMs: Long = 0L,
+        enableCuesSeek: Boolean = (startPositionMs > 0L),
+        preserveDynamicSubtitles: Boolean = false
+    ) {
         val player = initializePlayer()
         player.stop()
         currentStream = stream
-        dynamicSubtitles.clear()
-        subtitleOffsetMs = 0L
+        if (!preserveDynamicSubtitles) {
+            dynamicSubtitles.clear()
+            subtitleOffsetMs = 0L
+        }
         bytesTransferredInWindow = 0L
         currentDownloadSpeedBytesPerSec = 0L
         lastTransferWindowTimestamp = System.currentTimeMillis()
@@ -399,9 +407,21 @@ class ExoPlayerManager(
         val upstreamDataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
             .setTransferListener(internalTransferListener)
 
+        val isTorrentStream = stream.torrentInfoHash != null ||
+            stream.stremioServerUrl != null ||
+            stream.url.contains(":11470") ||
+            stream.type.equals("torrent", ignoreCase = true)
+
+        isTorrentCuesDisabled = isTorrentStream && !enableCuesSeek
+        val matroskaFlags = if (isTorrentCuesDisabled) {
+            MatroskaExtractor.FLAG_DISABLE_SEEK_FOR_CUES
+        } else {
+            0
+        }
+
         val extractorsFactory = DefaultExtractorsFactory()
             .setConstantBitrateSeekingEnabled(true)
-            .setMatroskaExtractorFlags(MatroskaExtractor.FLAG_DISABLE_SEEK_FOR_CUES)
+            .setMatroskaExtractorFlags(matroskaFlags)
             .setTsExtractorFlags(
                 DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS or
                 DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES
@@ -868,7 +888,14 @@ class ExoPlayerManager(
     }
 
     fun seekTo(positionMs: Long) {
-        exoPlayer?.seekTo(positionMs)
+        val p = exoPlayer ?: return
+        val stream = currentStream
+        if (isTorrentCuesDisabled && stream != null) {
+            isTorrentCuesDisabled = false
+            prepareStream(stream, startPositionMs = positionMs, enableCuesSeek = true, preserveDynamicSubtitles = true)
+        } else {
+            p.seekTo(positionMs)
+        }
     }
 
     fun release() {

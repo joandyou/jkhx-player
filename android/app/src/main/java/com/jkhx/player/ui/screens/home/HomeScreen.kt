@@ -23,6 +23,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.core.*
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
@@ -36,6 +37,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
@@ -1044,8 +1047,18 @@ fun HomeScreen(
                 }
             },
             onRestartFromBeginning = { item ->
-                coroutineScope.launch {
+                com.jkhx.player.ActivePlayerSession.forceStartFromBeginning = true
+                coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                     historyDao.upsert(item.copy(positionMs = 0L, updatedAt = System.currentTimeMillis()))
+                    try {
+                        val progressDao = com.jkhx.player.JkhxApplication.instance.database.playbackProgressDao()
+                        if (!item.lastEpisodeId.isNullOrBlank()) {
+                            progressDao.delete("${item.providerId}:${item.movieSlug}:${item.lastEpisodeId}")
+                        }
+                        progressDao.getAllProgressSync()
+                            .filter { it.movieSlug == item.movieSlug }
+                            .forEach { progressDao.delete(it.id) }
+                    } catch (_: Exception) {}
                 }
                 if (onResumePlayback != null) {
                     onResumePlayback(item.copy(positionMs = 0L))
@@ -1073,15 +1086,20 @@ fun HeroBannerSection(
     movies: List<MovieItem>,
     onMovieClick: (MovieItem) -> Unit
 ) {
+    if (movies.isEmpty()) return
+
     val pagerState = rememberPagerState(pageCount = { movies.size })
     val displayMode = LocalDisplayMode.current
     val isTablet = displayMode == DeviceDisplayMode.TABLET
-    val currentMovie = movies.getOrNull(pagerState.currentPage) ?: movies.firstOrNull()
+    val currentMovie = movies.getOrNull(pagerState.currentPage) ?: movies.first()
 
     val coroutineScope = rememberCoroutineScope()
     val isDragged by pagerState.interactionSource.collectIsDraggedAsState()
     var isUserInteracting by remember { mutableStateOf(false) }
     var isHeroFocused by remember { mutableStateOf(false) }
+
+    // Chiều cao thích ứng: Mobile ~300dp (gọn gàng, lộ hàng "Tiếp tục xem"), Tablet / TV ~380dp
+    val bannerHeight = if (isTablet) 380.dp else 300.dp
 
     // Tự động slide mỗi 5 giây, tạm dừng khi người dùng chạm/giữ, cuộn hoặc đang duyệt bằng Remote TV
     LaunchedEffect(movies.size, isDragged, isUserInteracting, isHeroFocused) {
@@ -1099,6 +1117,7 @@ fun HeroBannerSection(
     Box(
         modifier = Modifier
             .fillMaxWidth()
+            .height(bannerHeight)
             .clipToBounds()
             .pointerInput(Unit) {
                 awaitEachGesture {
@@ -1112,267 +1131,327 @@ fun HeroBannerSection(
                 }
             }
     ) {
-        // --- 1. Cinema Ambient Glow Halo (Hào quang điện ảnh phủ toàn bộ chiều cao) ---
-        if (currentMovie != null) {
+        // --- 1. Ambient Glow Halo (Hào quang điện ảnh phía sau lấy cảm hứng từ ảnh phim) ---
+        val ambientBlurUrl = currentMovie.thumbUrl ?: currentMovie.posterUrl
+        if (!ambientBlurUrl.isNullOrBlank()) {
+            val blurContext = LocalContext.current
+            AsyncImage(
+                model = remember(ambientBlurUrl) {
+                    ImageRequest.Builder(blurContext)
+                        .data(ambientBlurUrl)
+                        .size(180, 100)
+                        .crossfade(false)
+                        .allowHardware(true)
+                        .build()
+                },
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .scale(1.25f)
+                    .blur(42.dp)
+                    .alpha(0.35f)
+            )
+        }
+
+        // --- 2. HorizontalPager hiển thị ảnh Backdrop 16:9 tràn viền ---
+        HorizontalPager(
+            state = pagerState,
+            key = { page -> movies.getOrNull(page)?.let { "${it.providerId ?: ""}_${it.slug}" } ?: page },
+            beyondViewportPageCount = 1,
+            modifier = Modifier
+                .fillMaxSize()
+                .focusGroup()
+                .onFocusChanged { state ->
+                    isHeroFocused = state.hasFocus || state.isFocused
+                }
+        ) { page ->
+            val movie = movies[page]
+            val heroContext = LocalContext.current
+            // Ưu tiên thumbUrl (ảnh ngang 16:9), fallback về posterUrl
+            val imageUrl = movie.thumbUrl ?: movie.posterUrl
+
             Box(
                 modifier = Modifier
-                    .matchParentSize()
-                    .graphicsLayer()
-                    .clipToBounds()
+                    .fillMaxSize()
+                    .clickable { onMovieClick(movie) }
             ) {
-                // Lớp 1: Ảnh poster mờ phóng to tạo ánh sáng bao trùm lên tận đỉnh màn hình
-                val blurContext = LocalContext.current
-                val blurUrl = currentMovie.posterUrl ?: currentMovie.thumbUrl
                 AsyncImage(
-                    model = remember(blurUrl) {
-                        ImageRequest.Builder(blurContext)
-                            .data(blurUrl)
-                            .size(240, 360)
+                    model = remember(imageUrl) {
+                        ImageRequest.Builder(heroContext)
+                            .data(imageUrl)
+                            .size(1080)
                             .crossfade(false)
                             .allowHardware(true)
+                            .memoryCacheKey(imageUrl)
                             .build()
                     },
-                    contentDescription = null,
+                    contentDescription = movie.name,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .scale(1.4f)
-                        .blur(48.dp)
-                )
-
-                // Lớp 2: Radial Gradient hào quang điện ảnh ấm áp
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.radialGradient(
-                                colors = listOf(
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.40f),
-                                    Color(0xFF7B1FA2).copy(alpha = 0.20f),
-                                    Color.Transparent
-                                ),
-                                radius = 950f
-                            )
-                        )
-                )
-
-                // Lớp 3: Gradient chuyển tiếp mượt mà (trong suốt hơn, lộ rõ quầng sáng poster)
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                0.0f to Color(0x88000000),
-                                0.20f to Color(0x18000000),
-                                0.55f to Color(0x15000000),
-                                0.75f to MaterialTheme.colorScheme.background.copy(alpha = 0.50f),
-                                0.90f to MaterialTheme.colorScheme.background.copy(alpha = 0.90f),
-                                1.0f to MaterialTheme.colorScheme.background
-                            )
-                        )
+                    modifier = Modifier.fillMaxSize()
                 )
             }
         }
 
-        // --- 2. Nội dung Hero Banner (Padding top chừa chỗ cho TopBar + Category Menu) ---
-        Column(
+        // --- 3. Lớp Gradient chuyển tiếp mượt mà ---
+        // Lớp đỉnh: Đảm bảo TopBar (Logo JKHX, nút chọn plugin, refresh, search) nổi rõ
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 96.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .height(115.dp)
+                .align(Alignment.TopCenter)
+                .background(
+                    Brush.verticalGradient(
+                        0.0f to Color(0xB3000000),
+                        0.55f to Color(0x55000000),
+                        1.0f to Color.Transparent
+                    )
+                )
+        )
+
+        // Lớp đáy: Fade to Background cực mượt từ thân ảnh xuống đáy
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(190.dp)
+                .align(Alignment.BottomCenter)
+                .background(
+                    Brush.verticalGradient(
+                        0.0f to Color.Transparent,
+                        0.35f to Color(0x66000000),
+                        0.70f to MaterialTheme.colorScheme.background.copy(alpha = 0.85f),
+                        0.92f to MaterialTheme.colorScheme.background.copy(alpha = 0.98f),
+                        1.0f to MaterialTheme.colorScheme.background
+                    )
+                )
+        )
+
+        // --- 4. Cụm thông tin & Nút hành động Overlay chân Banner ---
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .padding(horizontal = if (isTablet) 28.dp else 16.dp, vertical = 12.dp)
         ) {
-            HorizontalPager(
-                state = pagerState,
-                key = { page -> movies.getOrNull(page)?.let { "${it.providerId ?: ""}_${it.slug}" } ?: page },
-                beyondViewportPageCount = 2,
-                contentPadding = PaddingValues(horizontal = if (isTablet) 140.dp else 76.dp),
-                pageSpacing = 16.dp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(if (isTablet) 420.dp else 340.dp)
-                    .focusGroup()
-                    .onFocusChanged { state ->
-                        isHeroFocused = state.hasFocus || state.isFocused
-                    }
-            ) { page ->
-                val movie = movies[page]
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Card(
-                        shape = ShapeTokens.BannerCard,
-                        elevation = CardDefaults.cardElevation(defaultElevation = 10.dp),
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            .aspectRatio(0.68f) // Tỷ lệ dọc chuẩn poster 2:3 như app VAX
-                            .border(
-                                width = 1.dp,
-                                brush = Brush.verticalGradient(
-                                    listOf(
-                                        Color.White.copy(alpha = 0.35f),
-                                        Color.White.copy(alpha = 0.05f)
-                                    )
-                                ),
-                                shape = ShapeTokens.BannerCard
-                            )
-                            .onFocusChanged { state ->
-                                if (state.isFocused) {
-                                    isHeroFocused = true
-                                    if (pagerState.currentPage != page) {
-                                        coroutineScope.launch {
-                                            pagerState.animateScrollToPage(page)
-                                        }
-                                    }
-                                }
-                            }
-                            .tvFocusableItem(cornerRadius = 16.dp, focusedScale = 1.05f)
-                            .clickable { onMovieClick(movie) }
+            // Badges row: Rating (nếu có), Năm, Phân loại, Chất lượng, Thể loại
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(bottom = 6.dp)
+            ) {
+                // Điểm đánh giá (chỉ hiện khi có rating > 0.0)
+                val movieRating = currentMovie.rating
+                if (movieRating != null && movieRating > 0.0) {
+                    Surface(
+                        color = Color(0x55000000),
+                        shape = ShapeTokens.Chip,
+                        border = BorderStroke(0.5.dp, Color(0xFFFFD700).copy(alpha = 0.5f))
                     ) {
-                        val heroContext = LocalContext.current
-                        val heroUrl = movie.posterUrl ?: movie.thumbUrl
-                        AsyncImage(
-                            model = remember(heroUrl) {
-                                ImageRequest.Builder(heroContext)
-                                    .data(heroUrl)
-                                    .size(720)
-                                    .crossfade(false)
-                                    .allowHardware(true)
-                                    .memoryCacheKey(heroUrl)
-                                    .build()
-                            },
-                            contentDescription = movie.name,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "★",
+                                fontSize = 11.sp,
+                                color = Color(0xFFFFD700)
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = String.format(java.util.Locale.US, "%.1f", movieRating),
+                                fontSize = 11.sp,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                // Năm phát hành
+                val movieYear = currentMovie.year
+                if (movieYear != null && movieYear > 0) {
+                    Surface(
+                        color = Color(0x55000000),
+                        shape = ShapeTokens.Chip,
+                        border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.2f))
+                    ) {
+                        Text(
+                            text = "$movieYear",
+                            fontSize = 11.sp,
+                            color = Color.White.copy(alpha = 0.9f),
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+
+                // Phân loại: Phim Bộ / Phim Lẻ
+                Surface(
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+                    shape = ShapeTokens.Chip,
+                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+                ) {
+                    Text(
+                        text = if (currentMovie.type == "series") stringResource(R.string.home_tag_series) else stringResource(R.string.home_tag_movie),
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+
+                // Chất lượng (FHD / HD...)
+                Surface(
+                    color = Color(0x55000000),
+                    shape = ShapeTokens.Chip,
+                    border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.2f))
+                ) {
+                    Text(
+                        text = currentMovie.quality ?: stringResource(R.string.home_tag_hd),
+                        fontSize = 11.sp,
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+
+                // Thể loại (Category)
+                val categoryText = currentMovie.category?.trim()
+                if (!categoryText.isNullOrBlank()) {
+                    Surface(
+                        color = Color(0x55000000),
+                        shape = ShapeTokens.Chip,
+                        border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.2f))
+                    ) {
+                        Text(
+                            text = categoryText,
+                            fontSize = 11.sp,
+                            color = Color.White.copy(alpha = 0.85f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
                 }
             }
 
-            if (movies.isNotEmpty()) {
-                val currentMovie = movies.getOrNull(pagerState.currentPage) ?: movies.first()
-                Spacer(modifier = Modifier.height(10.dp))
-
-                if (currentMovie.year != null) {
-                    Text(
-                        text = "${currentMovie.year}",
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+            // Tiêu đề phim
+            Text(
+                text = currentMovie.name,
+                fontWeight = FontWeight.Black,
+                fontSize = if (isTablet) 24.sp else 19.sp,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = TextStyle(
+                    shadow = Shadow(
+                        color = Color.Black.copy(alpha = 0.85f),
+                        offset = Offset(0f, 2f),
+                        blurRadius = 6f
                     )
-                }
+                )
+            )
 
+            // Tên gốc (nếu có và khác tên hiển thị)
+            val originTitle = currentMovie.originName?.trim()
+            if (!originTitle.isNullOrBlank() && !originTitle.equals(currentMovie.name.trim(), ignoreCase = true)) {
                 Text(
-                    text = currentMovie.name,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp,
-                    color = MaterialTheme.colorScheme.onBackground,
+                    text = originTitle,
+                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = 0.75f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 2.dp)
+                    modifier = Modifier.padding(top = 1.dp)
                 )
+            }
 
-                // Tên gốc / tên tiếng Anh
-                val originTitle = currentMovie.originName?.trim()
-                if (!originTitle.isNullOrBlank() && !originTitle.equals(currentMovie.name.trim(), ignoreCase = true)) {
-                    Text(
-                        text = originTitle,
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 1.dp)
-                    )
-                }
+            Spacer(modifier = Modifier.height(10.dp))
 
-                // Tags row (Category, Quality, Quốc gia, Rating)
+            // Cụm nút CTA & Indicator Dots
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Cụm nút hành động
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(vertical = 4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = ShapeTokens.Button
+                    // Nút [▶ Phát ngay]
+                    Button(
+                        onClick = { onMovieClick(currentMovie) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        ),
+                        shape = ShapeTokens.Button,
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        modifier = Modifier.tvFocusableItem(cornerRadius = 10.dp, focusedScale = 1.05f)
                     ) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = if (currentMovie.type == "series") stringResource(R.string.home_tag_series) else stringResource(R.string.home_tag_movie),
-                            fontSize = 11.5.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            text = stringResource(R.string.home_hero_play_now),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
                         )
                     }
 
+                    // Nút [ⓘ Chi tiết]
                     Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = ShapeTokens.Button
+                        onClick = { onMovieClick(currentMovie) },
+                        shape = ShapeTokens.Button,
+                        color = Color(0x33FFFFFF),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
+                        modifier = Modifier.tvFocusableItem(cornerRadius = 10.dp, focusedScale = 1.05f)
                     ) {
-                        Text(
-                            text = currentMovie.quality ?: stringResource(R.string.home_tag_hd),
-                            fontSize = 11.5.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                        )
-                    }
-
-                    // Thông tin quốc gia
-                    val movieCountry = currentMovie.country?.trim()
-                    if (!movieCountry.isNullOrBlank()) {
-                        Surface(
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            shape = ShapeTokens.Button
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp)
                         ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "📍 $movieCountry",
-                                fontSize = 11.5.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                text = stringResource(R.string.home_hero_details),
+                                color = Color.White,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp
                             )
                         }
                     }
-
-                    // Điểm đánh giá TMDB
-                    val movieRating = currentMovie.rating
-                    if (movieRating != null && movieRating > 0.0) {
-                        Surface(
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            shape = ShapeTokens.Button
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            ) {
-                                Text(
-                                    text = "★",
-                                    fontSize = 11.5.sp,
-                                    color = Color(0xFFFFD700)
-                                )
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(
-                                    text = String.format(java.util.Locale.US, "%.1f", movieRating),
-                                    fontSize = 11.5.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-                        }
-                    }
                 }
 
-                // Pager Indicator Dots
-                Row(
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(top = 8.dp, bottom = 14.dp)
-                ) {
-                    repeat(movies.size.coerceAtMost(10)) { index ->
-                        val isSelected = pagerState.currentPage == index
-                        Box(
-                            modifier = Modifier
-                                .padding(horizontal = 3.dp)
-                                .clip(ShapeTokens.Badge)
-                                .background(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f))
-                                .size(width = if (isSelected) 16.dp else 4.dp, height = 4.dp)
-                        )
+                // Dải chấm Pager Indicator Dots
+                if (movies.size > 1) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        repeat(movies.size.coerceAtMost(8)) { index ->
+                            val isSelected = pagerState.currentPage == index
+                            Box(
+                                modifier = Modifier
+                                    .clip(ShapeTokens.Badge)
+                                    .background(
+                                        if (isSelected) MaterialTheme.colorScheme.primary
+                                        else Color.White.copy(alpha = 0.35f)
+                                    )
+                                    .size(
+                                        width = if (isSelected) 14.dp else 4.dp,
+                                        height = 4.dp
+                                    )
+                            )
+                        }
                     }
                 }
             }

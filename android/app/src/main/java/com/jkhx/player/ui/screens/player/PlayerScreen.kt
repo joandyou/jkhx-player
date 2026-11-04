@@ -1845,6 +1845,16 @@ fun PlayerScreen(
                         Toast.makeText(context, context.getString(R.string.player_resume_toast, formatTime(pos)), Toast.LENGTH_SHORT).show()
                     }
                     pos
+                } else if (ActivePlayerSession.forceStartFromBeginning) {
+                    // Người dùng đã chủ động chọn "Xem lại từ đầu" từ Home Menu -> Bỏ qua kiểm tra Resume, không hiện Popup hỏi lại!
+                    ActivePlayerSession.forceStartFromBeginning = false
+                    hasCheckedInitialResume = true
+                    withContext(Dispatchers.Main) {
+                        showResumePromptDialog = false
+                        resumeTargetPositionMs = 0L
+                        currentPosition = 0L
+                    }
+                    0L
                 } else if (!hasCheckedInitialResume) {
                     hasCheckedInitialResume = true
                     // Kiểm tra tiến độ đã xem trước đó để hỏi người dùng xem tiếp hay từ đầu (chỉ hỏi khi mới vào Player)
@@ -2117,13 +2127,13 @@ fun PlayerScreen(
                             if (offset.x < width / 2) {
                                 // Tua lùi 10s
                                 val target = (player.currentPosition - 10_000).coerceAtLeast(0L)
-                                player.seekTo(target)
+                                exoPlayerManager.seekTo(target)
                                 showHud(HudIndicatorType.SEEK_REWIND, 10f)
                             } else {
                                 // Tua tới 10s
                                 val maxDur = player.duration.coerceAtLeast(0L)
                                 val target = if (maxDur > 0) (player.currentPosition + 10_000).coerceAtMost(maxDur) else player.currentPosition + 10_000
-                                player.seekTo(target)
+                                exoPlayerManager.seekTo(target)
                                 showHud(HudIndicatorType.SEEK_FORWARD, 10f)
                             }
                         }
@@ -2198,7 +2208,7 @@ fun PlayerScreen(
                                 (dragStartPosMs + currentSeekDeltaMs).coerceAtLeast(0L)
                             }
                             isSeeking = true
-                            exoPlayerManager.player.seekTo(finalTarget)
+                            exoPlayerManager.seekTo(finalTarget)
                             currentPosition = finalTarget
                             dragDirection = 0
                             showControls = false
@@ -2349,14 +2359,14 @@ fun PlayerScreen(
                     }
                     KeyEvent.KEYCODE_MEDIA_REWIND -> {
                         val target = (exoPlayerManager.player.currentPosition - 10_000).coerceAtLeast(0L)
-                        exoPlayerManager.player.seekTo(target)
+                        exoPlayerManager.seekTo(target)
                         showHud(HudIndicatorType.SEEK_REWIND, 10f)
                         return@onPreviewKeyEvent true
                     }
                     KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
                         val maxDur = exoPlayerManager.player.duration.coerceAtLeast(0L)
                         val target = if (maxDur > 0) (exoPlayerManager.player.currentPosition + 10_000).coerceAtMost(maxDur) else exoPlayerManager.player.currentPosition + 10_000
-                        exoPlayerManager.player.seekTo(target)
+                        exoPlayerManager.seekTo(target)
                         showHud(HudIndicatorType.SEEK_FORWARD, 10f)
                         return@onPreviewKeyEvent true
                     }
@@ -2387,14 +2397,14 @@ fun PlayerScreen(
                     when (nativeCode) {
                         KeyEvent.KEYCODE_DPAD_LEFT -> {
                             val target = (exoPlayerManager.player.currentPosition - 10_000).coerceAtLeast(0L)
-                            exoPlayerManager.player.seekTo(target)
+                            exoPlayerManager.seekTo(target)
                             showHud(HudIndicatorType.SEEK_REWIND, 10f)
                             return@onPreviewKeyEvent true
                         }
                         KeyEvent.KEYCODE_DPAD_RIGHT -> {
                             val maxDur = exoPlayerManager.player.duration.coerceAtLeast(0L)
                             val target = if (maxDur > 0) (exoPlayerManager.player.currentPosition + 10_000).coerceAtMost(maxDur) else exoPlayerManager.player.currentPosition + 10_000
-                            exoPlayerManager.player.seekTo(target)
+                            exoPlayerManager.seekTo(target)
                             showHud(HudIndicatorType.SEEK_FORWARD, 10f)
                             return@onPreviewKeyEvent true
                         }

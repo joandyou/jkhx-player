@@ -36,8 +36,8 @@ import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.VolumeMute
-import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.filled.VolumeMute
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -110,60 +110,45 @@ fun BoxScope.PlayerHudOverlays(
         label = "buffering_alpha"
     )
 
-    // 1. Nuvio-style Opening Overlay (Màn hình đầu phim khi chưa bắt đầu phát) & Mid-stream Buffering Overlay
-    if (!isWebViewMode && errorMessage == null && !isPlaybackStartedEffective) {
-        // Lớp phủ đầu phim: Backdrop poster làm mờ + Gradient tối + Thông tin phim & Capsule nhấp nháy đồng bộ
+    // 1. Nuvio-style Buffering Overlay: Hợp nhất lớp phủ mở màn đầu phim & lớp phủ đệm giữa phim
+    val isBufferingOverlayVisible = !isWebViewMode && errorMessage == null && (
+        !isPlaybackStartedEffective || ((isLoading || isPlayerBuffering || isSeeking) && !showControls)
+    )
+    if (isBufferingOverlayVisible) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black),
+                .background(if (!isPlaybackStartedEffective) Color.Black else Color.Black.copy(alpha = 0.42f)),
             contentAlignment = Alignment.Center
         ) {
-            if (!movieThumb.isNullOrBlank()) {
-                AsyncImage(
-                    model = movieThumb,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
+            if (!isPlaybackStartedEffective) {
+                if (!movieThumb.isNullOrBlank()) {
+                    AsyncImage(
+                        model = movieThumb,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .blur(8.dp),
+                        alpha = 0.72f
+                    )
+                }
+
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .blur(8.dp),
-                    alpha = 0.72f
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Black.copy(alpha = 0.30f),
+                                    Color.Black.copy(alpha = 0.20f),
+                                    Color.Black.copy(alpha = 0.58f)
+                                )
+                            )
+                        )
                 )
             }
 
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Black.copy(alpha = 0.30f),
-                                Color.Black.copy(alpha = 0.20f),
-                                Color.Black.copy(alpha = 0.58f)
-                            )
-                        )
-                    )
-            )
-
-            BufferingInfoContent(
-                movieName = movieName,
-                currentEpisodeName = currentEpisodeName,
-                activeServerName = activeServerName,
-                isLandscape = isLandscape,
-                pulseAlpha = pulseAlpha,
-                downloadSpeedText = downloadSpeedText,
-                bufferedStatsText = bufferedStatsText,
-                bufferProgress = bufferProgress
-            )
-        }
-    } else if (!isWebViewMode && errorMessage == null && isPlaybackStartedEffective && (isLoading || isPlayerBuffering || isSeeking) && !showControls) {
-        // Buffer mid-stream sau khi phim đã bắt đầu phát (chỉ hiển thị khi Controls ẩn để triệt tiêu hoàn toàn trùng lặp 2 vòng xoay)
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.42f)),
-            contentAlignment = Alignment.Center
-        ) {
             BufferingInfoContent(
                 movieName = movieName,
                 currentEpisodeName = currentEpisodeName,
@@ -249,7 +234,7 @@ fun BoxScope.PlayerHudOverlays(
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             Icon(
-                if (hudValue <= 0.01f) Icons.Default.VolumeMute else Icons.Default.VolumeUp,
+                if (hudValue <= 0.01f) Icons.AutoMirrored.Filled.VolumeMute else Icons.AutoMirrored.Filled.VolumeUp,
                 contentDescription = null,
                 tint = Color.White,
                 modifier = Modifier.size(20.dp)
@@ -366,43 +351,57 @@ fun BoxScope.PlayerHudOverlays(
         }
     }
 
-    // 7. HUD Kéo trượt tua ngang (Swipe to Seek Preview)
+    // 7. HUD Kéo trượt tua ngang (Swipe to Seek Preview) - Nhỏ gọn ở TopCenter chuẩn Nuvio
     AnimatedVisibility(
         visible = hudType == HudIndicatorType.SEEK_GESTURE,
         enter = fadeIn(),
         exit = fadeOut(),
-        modifier = Modifier.align(Alignment.Center)
+        modifier = Modifier
+            .align(Alignment.TopCenter)
+            .padding(top = 42.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .background(Color.Black.copy(alpha = 0.85f), ShapeTokens.Card)
-                .padding(horizontal = 24.dp, vertical = 14.dp)
+        Surface(
+            shape = RoundedCornerShape(22.dp),
+            color = Color.Black.copy(alpha = 0.80f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+            shadowElevation = 6.dp
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 val isForward = seekGestureDeltaMs >= 0
-                Icon(
-                    if (isForward) Icons.Default.FastForward else Icons.Default.FastRewind,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(36.dp)
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(horizontalAlignment = Alignment.Start) {
-                    val deltaSec = seekGestureDeltaMs / 1000
-                    val deltaSign = if (isForward) "+" else ""
-                    Text(
-                        text = "$deltaSign${deltaSec}s",
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
-                    )
-                    Text(
-                        text = "${formatTime(seekGestureTargetMs)} / ${formatTime(effectiveTotalDuration)}",
-                        color = Color.White,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        if (isForward) Icons.Default.FastForward else Icons.Default.FastRewind,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
+
+                val deltaSec = seekGestureDeltaMs / 1000
+                val deltaSign = if (isForward) "+" else ""
+                Text(
+                    text = "$deltaSign${deltaSec}s",
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+
+                Text(
+                    text = "${formatTime(seekGestureTargetMs)} / ${formatTime(effectiveTotalDuration)}",
+                    color = Color.White.copy(alpha = 0.9f),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
             }
         }
     }

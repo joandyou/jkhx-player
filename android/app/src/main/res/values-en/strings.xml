@@ -57,6 +57,8 @@
     <string name="home_tag_completed_format">Completed (%1$s/%2$s)</string>
     <string name="home_tag_episode_format">Ep %s</string>
     <string name="home_logo_desc">JKHX Logo</string>
+    <string name="home_hero_play_now">Play Now</string>
+    <string name="home_hero_details">Details</string>
 
     <!-- MovieCard & History Card -->
     <string name="movie_card_delete_history">Delete</string>
