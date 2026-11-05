@@ -486,6 +486,12 @@
     <string name="settings_fusion_badge_enter_url">Please enter a Fusion badge JSON URL</string>
     <string name="settings_fusion_badge_url_invalid">URL must start with http:// or https://</string>
     <string name="settings_fusion_badge_limit_reached">You can only import up to 3 Fusion badge URLs.</string>
+    <string name="settings_fusion_badge_empty_list">No Fusion badge URLs added yet.</string>
+    <string name="settings_fusion_badge_import_success">Fusion badge imported successfully!</string>
+    <string name="settings_fusion_badge_activated">Fusion badge source activated</string>
+    <string name="settings_fusion_badge_deleted">Fusion badge URL deleted</string>
+    <string name="settings_fusion_badge_delete_action">Delete</string>
+    <string name="settings_stream_badge_position_desc">Customize badge placement above or below stream title</string>
     <string name="settings_group_subtitles_metadata">Subtitles &amp; Metadata Services</string>
     <string name="settings_group_ai_tts">Artificial Intelligence &amp; AI Voiceover</string>
     <string name="settings_status_key_configured">API Key configured</string>

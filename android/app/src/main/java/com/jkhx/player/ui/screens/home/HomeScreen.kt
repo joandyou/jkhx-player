@@ -106,6 +106,7 @@ fun HomeScreen(
     val isNovelEnabled by settingsManager.isNovelEnabled.collectAsState()
     val isLiveEnabled by settingsManager.isLiveEnabled.collectAsState()
     val updateCount by pluginManager.pluginsUpdateCounter.collectAsState()
+    val isPluginsInitialized by pluginManager.isInitialized.collectAsState()
     val coroutineScope = rememberCoroutineScope()
     val displayMode = LocalDisplayMode.current
     val isTablet = displayMode == DeviceDisplayMode.TABLET
@@ -208,45 +209,21 @@ fun HomeScreen(
         }
     }
 
-    // 1. Sync enabled plugins list respecting Safe Mode / 18+, Comic, Novel and Live filter
-    LaunchedEffect(updateCount, isAdultEnabled, isComicEnabled, isNovelEnabled, isLiveEnabled) {
-        val records = pluginManager.getInstalledRecords()
-            .filter {
-                it.isEnabled &&
-                (!it.manifest.isStremioAddon || it.manifest.hasCatalogs) &&
-                (isAdultEnabled || !it.manifest.isAdult) &&
-                (isComicEnabled || !it.manifest.isComic) &&
-                (isNovelEnabled || (!it.manifest.isNovel && it.manifest.categoryType != "novel")) &&
-                (isLiveEnabled || (!it.manifest.isLive && it.manifest.categoryType != "live"))
-            }
-        enabledPlugins = records
-        if (records.isEmpty()) {
-            // Plugins đang được tải bất đồng bộ từ IO thread, giữ nguyên selectedProviderId đã lưu từ SharedPreferences
-            return@LaunchedEffect
-        }
-
-        val savedProvider = settingsManager.lastSelectedProvider.value
-        if (selectedProviderId.isNullOrBlank() || records.none { it.manifest.id == selectedProviderId }) {
-            val target = records.find { it.manifest.id == savedProvider }
-                ?: records.find { it.manifest.id == selectedProviderId }
-                ?: records.firstOrNull()
-            selectedProviderId = target?.manifest?.id
-        }
-    }
-
-    // 2. Load feed whenever selected provider changes with task cancellation & cache support
+    // 1. Load feed whenever selected provider changes with task cancellation & cache support
     fun loadProviderFeed(providerId: String?, forceRefresh: Boolean = false) {
         val targetId = providerId?.ifBlank { null }
             ?: selectedProviderId?.ifBlank { null }
             ?: settingsManager.lastSelectedProvider.value?.ifBlank { null }
             ?: enabledPlugins.firstOrNull()?.manifest?.id
-            ?: pluginManager.getInstalledRecords().firstOrNull {
-                it.isEnabled &&
-                (isAdultEnabled || (!it.manifest.isAdult && it.manifest.categoryType != "adult")) &&
-                (isComicEnabled || (!it.manifest.isComic && it.manifest.categoryType != "comic")) &&
-                (isNovelEnabled || (!it.manifest.isNovel && it.manifest.categoryType != "novel")) &&
-                (isLiveEnabled || (!it.manifest.isLive && it.manifest.categoryType != "live"))
-            }?.manifest?.id
+            ?: if (pluginManager.isReady) {
+                pluginManager.getInstalledRecords().firstOrNull {
+                    it.isEnabled &&
+                    (isAdultEnabled || (!it.manifest.isAdult && it.manifest.categoryType != "adult")) &&
+                    (isComicEnabled || (!it.manifest.isComic && it.manifest.categoryType != "comic")) &&
+                    (isNovelEnabled || (!it.manifest.isNovel && it.manifest.categoryType != "novel")) &&
+                    (isLiveEnabled || (!it.manifest.isLive && it.manifest.categoryType != "live"))
+                }?.manifest?.id
+            } else null
 
         if (targetId.isNullOrBlank()) {
             loadJob?.cancel()
@@ -265,7 +242,9 @@ fun HomeScreen(
         if (selectedProviderId != targetId) {
             selectedProviderId = targetId
         }
-        settingsManager.setLastSelectedProvider(targetId)
+        if (enabledPlugins.any { it.manifest.id == targetId }) {
+            settingsManager.setLastSelectedProvider(targetId)
+        }
 
         // KIỂM TRA SESSION CACHE:
         // Nếu không yêu cầu làm mới (forceRefresh = false) và đã có trong SessionCacheManager:
@@ -306,6 +285,11 @@ fun HomeScreen(
             try {
                 val plugin = pluginManager.getPlugin(targetId)
                 if (plugin == null) {
+                    if (!pluginManager.isReady) {
+                        // PluginManager vẫn đang khởi tạo ở background, giữ trạng thái loading chờ LaunchedEffect
+                        isLoading = true
+                        return@launch
+                    }
                     errorMessage = context.getString(R.string.home_provider_not_ready, targetId)
                     isLoading = false
                     return@launch
@@ -434,9 +418,48 @@ fun HomeScreen(
         }
     }
 
+    // 2. Sync enabled plugins list respecting Safe Mode / 18+, Comic, Novel and Live filter
+    LaunchedEffect(isPluginsInitialized, updateCount, isAdultEnabled, isComicEnabled, isNovelEnabled, isLiveEnabled) {
+        val records = pluginManager.getInstalledRecords()
+            .filter {
+                it.isEnabled &&
+                (!it.manifest.isStremioAddon || it.manifest.hasCatalogs) &&
+                (isAdultEnabled || !it.manifest.isAdult) &&
+                (isComicEnabled || !it.manifest.isComic) &&
+                (isNovelEnabled || (!it.manifest.isNovel && it.manifest.categoryType != "novel")) &&
+                (isLiveEnabled || (!it.manifest.isLive && it.manifest.categoryType != "live"))
+            }
+        enabledPlugins = records
+
+        // Nếu PluginManager chưa khởi tạo xong hoặc danh sách rỗng, không vội fallback
+        if (!isPluginsInitialized || records.isEmpty()) {
+            return@LaunchedEffect
+        }
+
+        val savedProvider = settingsManager.lastSelectedProvider.value
+        // Tìm provider mục tiêu: Ưu tiên savedProvider -> selectedProviderId -> records.firstOrNull()
+        val target = records.find { it.manifest.id == savedProvider }
+            ?: records.find { it.manifest.id == selectedProviderId }
+            ?: records.firstOrNull()
+
+        val targetId = target?.manifest?.id
+        if (!targetId.isNullOrBlank()) {
+            if (selectedProviderId != targetId) {
+                selectedProviderId = targetId
+            }
+            if (targetId != savedProvider) {
+                settingsManager.setLastSelectedProvider(targetId)
+            }
+            // Tự động tải feed khi plugins vừa sẵn sàng nếu chưa được nạp hoặc danh sách feed đang trống
+            if (lastLoadedProviderId != targetId || sections.isEmpty()) {
+                loadProviderFeed(targetId, forceRefresh = false)
+            }
+        }
+    }
+
     LaunchedEffect(selectedProviderId) {
         val pid = selectedProviderId
-        if (!pid.isNullOrBlank() && pid != lastLoadedProviderId) {
+        if (!pid.isNullOrBlank() && pid != lastLoadedProviderId && pluginManager.isReady) {
             loadProviderFeed(pid)
         }
     }

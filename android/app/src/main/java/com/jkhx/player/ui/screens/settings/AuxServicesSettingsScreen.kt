@@ -11,6 +11,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -423,11 +424,10 @@ fun AuxServicesSettingsScreen(
                             0L to "No caching",
                             2L * 1024L * 1024L * 1024L to "2GiB",
                             5L * 1024L * 1024L * 1024L to "5GiB",
-                            10L * 1024L * 1024L * 1024L to "10GiB",
-                            -1L to "Infinite"
+                            10L * 1024L * 1024L * 1024L to "10GiB"
                         )
                         val currentCacheLabel = cacheOptions.firstOrNull { it.first == stremioCacheSize }?.second
-                            ?: if (stremioCacheSize == -1L) "Infinite" else if (stremioCacheSize == 0L) "No caching" else "${stremioCacheSize / (1024 * 1024 * 1024)}GiB"
+                            ?: if (stremioCacheSize == 0L) "No caching" else "${stremioCacheSize / (1024 * 1024 * 1024)}GiB"
 
                         Box {
                             Surface(
@@ -531,11 +531,10 @@ fun AuxServicesSettingsScreen(
                             "default" to "Mặc định",
                             "soft" to "Vừa",
                             "fast" to "Nhanh",
-                            "ultra-fast" to "Siêu nhanh",
-                            "custom" to "custom"
+                            "ultra-fast" to "Siêu nhanh"
                         )
                         val currentProfileLabel = profileOptions.firstOrNull { it.first.equals(stremioTorrentProfile, ignoreCase = true) }?.second
-                            ?: stremioTorrentProfile
+                            ?: profileOptions.first().second
 
                         Box {
                             Surface(
@@ -1468,12 +1467,12 @@ fun AuxServicesSettingsScreen(
             onActivate = { url ->
                 val nextRules = streamBadgeRules.setActiveSource(url)
                 settingsManager.setStreamBadgeRulesJson(StreamBadgeJsonHelper.encodeRules(nextRules))
-                Toast.makeText(context, "Đã kích hoạt nguồn nhãn Fusion", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.settings_fusion_badge_activated), Toast.LENGTH_SHORT).show()
             },
             onDelete = { url ->
                 val nextRules = streamBadgeRules.removeSource(url)
                 settingsManager.setStreamBadgeRulesJson(StreamBadgeJsonHelper.encodeRules(nextRules))
-                Toast.makeText(context, "Đã xóa URL nhãn Fusion", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.settings_fusion_badge_deleted), Toast.LENGTH_SHORT).show()
             },
             onImportUrl = { url ->
                 withContext(Dispatchers.IO) {
@@ -1588,66 +1587,153 @@ private fun BadgePositionDialog(
     onDismiss: () -> Unit,
     onSelect: (StreamBadgePlacement) -> Unit
 ) {
-    Dialog(onDismissRequest = onDismiss) {
+    var tempPlacement by remember { mutableStateOf(currentPlacement) }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
         Surface(
-            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .padding(vertical = 24.dp),
+            shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
-            modifier = Modifier.fillMaxWidth(0.9f)
+            tonalElevation = 6.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
         ) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                Text(
-                    text = stringResource(R.string.settings_stream_badge_position_title),
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(14.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(22.dp)
+            ) {
+                // Header (Icon + Title đồng bộ với BaseServiceDialog)
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable { onSelect(StreamBadgePlacement.BOTTOM) }
-                        .padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    RadioButton(
-                        selected = currentPlacement == StreamBadgePlacement.BOTTOM,
-                        onClick = { onSelect(StreamBadgePlacement.BOTTOM) }
+                    Icon(
+                        imageVector = Icons.Default.Tune,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = stringResource(R.string.settings_stream_badge_position_bottom),
-                        fontSize = 15.sp,
+                        text = stringResource(R.string.settings_stream_badge_position_title),
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable { onSelect(StreamBadgePlacement.TOP) }
-                        .padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    RadioButton(
-                        selected = currentPlacement == StreamBadgePlacement.TOP,
-                        onClick = { onSelect(StreamBadgePlacement.TOP) }
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = stringResource(R.string.settings_stream_badge_position_top),
-                        fontSize = 15.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
+
                 Spacer(modifier = Modifier.height(10.dp))
+
+                // Description
+                Text(
+                    text = stringResource(R.string.settings_stream_badge_position_desc),
+                    fontSize = 12.5.sp,
+                    lineHeight = 18.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Option 1: Dưới tiêu đề luồng
+                val isBottom = tempPlacement == StreamBadgePlacement.BOTTOM
+                Surface(
+                    onClick = { tempPlacement = StreamBadgePlacement.BOTTOM },
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isBottom) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                    border = BorderStroke(
+                        1.dp,
+                        if (isBottom) MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                        else MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = isBottom,
+                            onClick = { tempPlacement = StreamBadgePlacement.BOTTOM },
+                            colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = stringResource(R.string.settings_stream_badge_position_bottom),
+                            fontSize = 14.sp,
+                            fontWeight = if (isBottom) FontWeight.SemiBold else FontWeight.Normal,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Option 2: Trên tiêu đề luồng
+                val isTop = tempPlacement == StreamBadgePlacement.TOP
+                Surface(
+                    onClick = { tempPlacement = StreamBadgePlacement.TOP },
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isTop) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                    border = BorderStroke(
+                        1.dp,
+                        if (isTop) MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                        else MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = isTop,
+                            onClick = { tempPlacement = StreamBadgePlacement.TOP },
+                            colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = stringResource(R.string.settings_stream_badge_position_top),
+                            fontSize = 14.sp,
+                            fontWeight = if (isTop) FontWeight.SemiBold else FontWeight.Normal,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // Bottom Buttons (Hủy & Lưu đồng bộ BaseServiceDialog)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     TextButton(onClick = onDismiss) {
-                        Text(stringResource(R.string.common_cancel))
+                        Text(
+                            text = stringResource(R.string.common_cancel),
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Button(
+                        onClick = { onSelect(tempPlacement) },
+                        shape = RoundedCornerShape(20.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.common_save),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.padding(horizontal = 8.dp)
+                        )
                     }
                 }
             }
@@ -1679,31 +1765,48 @@ private fun BadgeUrlManagerDialog(
             modifier = Modifier
                 .fillMaxWidth(0.92f)
                 .fillMaxHeight(0.85f)
-                .padding(vertical = 20.dp),
+                .padding(vertical = 24.dp),
             shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(20.dp)
+                    .padding(22.dp)
             ) {
-                Text(
-                    text = stringResource(R.string.settings_stream_badge_urls_title),
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(6.dp))
+                // Header (Icon + Title đồng bộ với BaseServiceDialog)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Style,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = stringResource(R.string.settings_stream_badge_urls_title),
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Description
                 Text(
                     text = stringResource(R.string.settings_stream_badge_urls_desc),
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    lineHeight = 16.sp
+                    fontSize = 12.5.sp,
+                    lineHeight = 18.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
                 OutlinedTextField(
                     value = draftUrl,
@@ -1713,13 +1816,13 @@ private fun BadgeUrlManagerDialog(
                     },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text(stringResource(R.string.settings_fusion_badge_url_label)) },
-                    placeholder = { Text("https://raw.githubusercontent.com/.../badges.json") },
+                    placeholder = { Text("https://raw.githubusercontent.com/.../badges.json", fontSize = 12.sp) },
                     singleLine = false,
                     maxLines = 3,
                     shape = RoundedCornerShape(12.dp)
                 )
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1729,6 +1832,7 @@ private fun BadgeUrlManagerDialog(
                     Text(
                         text = stringResource(R.string.settings_fusion_badge_urls_imported, imports.size),
                         fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
@@ -1754,14 +1858,15 @@ private fun BadgeUrlManagerDialog(
                                 isImporting = false
                                 if (success) {
                                     draftUrl = ""
-                                    Toast.makeText(context, "Nhập nhãn Fusion thành công!", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, context.getString(R.string.settings_fusion_badge_import_success), Toast.LENGTH_SHORT).show()
                                 } else {
                                     errorMessage = msg
                                 }
                             }
                         },
                         enabled = !isImporting && draftUrl.isNotBlank(),
-                        shape = RoundedCornerShape(10.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
                         if (isImporting) {
                             CircularProgressIndicator(
@@ -1771,7 +1876,12 @@ private fun BadgeUrlManagerDialog(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                         }
-                        Text(stringResource(R.string.settings_fusion_badge_action_import))
+                        Text(
+                            text = stringResource(R.string.settings_fusion_badge_action_import),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
                     }
                 }
 
@@ -1790,9 +1900,9 @@ private fun BadgeUrlManagerDialog(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "Chưa có URL nhãn Fusion nào được thêm.",
+                            text = stringResource(R.string.settings_fusion_badge_empty_list),
                             fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                         )
                     }
                 } else {
@@ -1805,8 +1915,9 @@ private fun BadgeUrlManagerDialog(
                         items(items = imports, key = { it.sourceUrl }) { importItem ->
                             Surface(
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                shape = RoundedCornerShape(14.dp),
+                                color = if (importItem.isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
                                 border = BorderStroke(
                                     1.dp,
                                     if (importItem.isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
@@ -1823,7 +1934,8 @@ private fun BadgeUrlManagerDialog(
                                     RadioButton(
                                         selected = importItem.isActive,
                                         onClick = { onActivate(importItem.sourceUrl) },
-                                        modifier = Modifier.padding(top = 2.dp)
+                                        modifier = Modifier.padding(top = 2.dp),
+                                        colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Column(modifier = Modifier.weight(1f)) {
@@ -1849,8 +1961,9 @@ private fun BadgeUrlManagerDialog(
                                                     importItem.enabledFilterCount,
                                                     importItem.groups.size
                                                 ),
-                                            fontSize = 11.sp,
-                                            color = if (importItem.isActive) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
+                                            fontSize = 11.5.sp,
+                                            fontWeight = if (importItem.isActive) FontWeight.SemiBold else FontWeight.Normal,
+                                            color = if (importItem.isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                         Spacer(modifier = Modifier.height(6.dp))
                                         Row(
@@ -1871,7 +1984,8 @@ private fun BadgeUrlManagerDialog(
                                                 Spacer(modifier = Modifier.width(4.dp))
                                                 Text(
                                                     stringResource(R.string.settings_fusion_badge_preview_action),
-                                                    fontSize = 11.5.sp,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Medium,
                                                     color = MaterialTheme.colorScheme.primary
                                                 )
                                             }
@@ -1882,7 +1996,7 @@ private fun BadgeUrlManagerDialog(
                                             ) {
                                                 Icon(
                                                     Icons.Default.DeleteOutline,
-                                                    contentDescription = "Xóa",
+                                                    contentDescription = stringResource(R.string.settings_fusion_badge_delete_action),
                                                     modifier = Modifier.size(18.dp),
                                                     tint = MaterialTheme.colorScheme.error
                                                 )
@@ -1895,14 +2009,25 @@ private fun BadgeUrlManagerDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    TextButton(onClick = onDismiss) {
-                        Text(stringResource(R.string.common_cancel), fontSize = 14.sp)
+                    Button(
+                        onClick = onDismiss,
+                        shape = RoundedCornerShape(20.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.common_close),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.padding(horizontal = 8.dp)
+                        )
                     }
                 }
             }
@@ -1924,29 +2049,46 @@ private fun BadgePreviewDialog(
             modifier = Modifier
                 .fillMaxWidth(0.92f)
                 .fillMaxHeight(0.85f)
-                .padding(vertical = 20.dp),
+                .padding(vertical = 24.dp),
             shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(20.dp)
+                    .padding(22.dp)
             ) {
-                Text(
-                    text = stringResource(R.string.settings_fusion_badge_preview_title),
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(4.dp))
+                // Header (Icon + Title đồng bộ với BaseServiceDialog)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Visibility,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = stringResource(R.string.settings_fusion_badge_preview_title),
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
                 Text(
                     text = stringResource(R.string.settings_fusion_badge_preview_count, importItem.filters.size),
-                    fontSize = 12.sp,
+                    fontSize = 12.5.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(modifier = Modifier.height(14.dp))
+
+                Spacer(modifier = Modifier.height(16.dp))
 
                 val groupsMap = remember(importItem) {
                     val grouped = mutableMapOf<String, MutableList<StreamBadgeFilter>>()
@@ -2008,15 +2150,21 @@ private fun BadgePreviewDialog(
                                             modifier = Modifier
                                                 .background(
                                                     MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                                    RoundedCornerShape(6.dp)
+                                                    RoundedCornerShape(8.dp)
                                                 )
-                                                .padding(horizontal = 6.dp, vertical = 4.dp)
+                                                .border(
+                                                    1.dp,
+                                                    MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
+                                                    RoundedCornerShape(8.dp)
+                                                )
+                                                .padding(horizontal = 8.dp, vertical = 5.dp)
                                         ) {
                                             StreamBadgeChip(badge = badge, height = 20.dp)
                                             Spacer(modifier = Modifier.width(6.dp))
                                             Text(
                                                 text = f.name,
-                                                fontSize = 11.sp,
+                                                fontSize = 11.5.sp,
+                                                fontWeight = FontWeight.Medium,
                                                 color = MaterialTheme.colorScheme.onSurface
                                             )
                                         }
@@ -2027,14 +2175,25 @@ private fun BadgePreviewDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Button(onClick = onDismiss, shape = RoundedCornerShape(10.dp)) {
-                        Text(stringResource(R.string.common_close))
+                    Button(
+                        onClick = onDismiss,
+                        shape = RoundedCornerShape(20.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.common_close),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.padding(horizontal = 8.dp)
+                        )
                     }
                 }
             }

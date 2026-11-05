@@ -77,6 +77,10 @@ class PluginManager(
         } catch (_: Exception) {}
     }
 
+    private val _isInitialized = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val isInitialized: kotlinx.coroutines.flow.StateFlow<Boolean> = _isInitialized
+    val isReady: Boolean get() = _isInitialized.value
+
     private val _pluginsUpdateCounter = kotlinx.coroutines.flow.MutableStateFlow(0)
     val pluginsUpdateCounter: kotlinx.coroutines.flow.StateFlow<Int> = _pluginsUpdateCounter
 
@@ -92,8 +96,8 @@ class PluginManager(
 
     suspend fun loadInstalledPlugins() = withContext(Dispatchers.IO) {
         mutex.withLock {
-            installedPlugins.clear()
-            loadedPlugins.clear()
+            val tempInstalled = mutableMapOf<String, InstalledPluginRecord>()
+            val tempLoaded = mutableMapOf<String, com.jkhx.player.plugin.api.LoadedPlugin>()
 
             // 1. Read only from Database
             val dbPlugins = pluginDao?.getAllPluginsSync() ?: emptyList()
@@ -134,11 +138,11 @@ class PluginManager(
                             isEnabled = entity.isEnabled,
                             customDomain = entity.customDomain
                         )
-                        installedPlugins[entity.id] = record
+                        tempInstalled[entity.id] = record
 
                         if (entity.isEnabled) {
                             val loaded = runtime.loadPlugin(manifest, scriptFile.readText())
-                            loadedPlugins[entity.id] = loaded
+                            tempLoaded[entity.id] = loaded
                         }
                     } catch (e: Exception) {
                         println("[PluginManager] Error loading plugin ${entity.id}: ${e.message}")
@@ -183,7 +187,7 @@ class PluginManager(
                         isEnabled = addonEntity.isEnabled,
                         customDomain = null
                     )
-                    installedPlugins[pluginId] = record
+                    tempInstalled[pluginId] = record
 
                     if (addonEntity.isEnabled) {
                         val wrapper = StremioPluginWrapper(
@@ -192,7 +196,7 @@ class PluginManager(
                             client = stremioClient,
                             activeStreamAddonsProvider = { getActiveStreamAddons() }
                         )
-                        loadedPlugins[pluginId] = wrapper
+                        tempLoaded[pluginId] = wrapper
                     }
                 } catch (e: Exception) {
                     println("[PluginManager] Error loading Stremio addon ${addonEntity.url}: ${e.message}")
@@ -214,7 +218,7 @@ class PluginManager(
 
             // Sync thứ tự plugin
             loadPluginOrder()
-            val currentIds = installedPlugins.keys.toList()
+            val currentIds = tempInstalled.keys.toList()
             pluginOrderList.retainAll(currentIds.toSet())
             for (id in currentIds) {
                 if (id !in pluginOrderList) {
@@ -223,6 +227,13 @@ class PluginManager(
             }
             savePluginOrder()
 
+            // Cập nhật nguyên tử (Atomic Update) toàn bộ danh sách plugin sau khi đã nạp xong 100%
+            installedPlugins.clear()
+            installedPlugins.putAll(tempInstalled)
+            loadedPlugins.clear()
+            loadedPlugins.putAll(tempLoaded)
+
+            _isInitialized.value = true
             _pluginsUpdateCounter.value += 1
         }
     }

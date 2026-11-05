@@ -164,8 +164,13 @@ class SettingsManager(context: Context) {
     val lastSelectedProvider: StateFlow<String?> = _lastSelectedProvider.asStateFlow()
 
     fun setLastSelectedProvider(providerId: String?) {
-        prefs.edit().putString(KEY_LAST_SELECTED_PROVIDER, providerId).apply()
-        _lastSelectedProvider.value = providerId
+        val clean = providerId?.trim()?.ifBlank { null }
+        if (clean != null) {
+            prefs.edit().putString(KEY_LAST_SELECTED_PROVIDER, clean).apply()
+        } else {
+            prefs.edit().remove(KEY_LAST_SELECTED_PROVIDER).apply()
+        }
+        _lastSelectedProvider.value = clean
     }
 
     private val _lastSelectedStremioAddonUrl = MutableStateFlow(
@@ -914,25 +919,31 @@ class SettingsManager(context: Context) {
 
     // Cấu hình Kích thước bộ nhớ đệm (Cache Size) chuẩn Nuvio / Stremio
     private val _stremioCacheSize = MutableStateFlow(
-        prefs.getLong(KEY_STREMIO_CACHE_SIZE, 2L * 1024L * 1024L * 1024L) // Mặc định 2GiB
+        prefs.getLong(KEY_STREMIO_CACHE_SIZE, 2L * 1024L * 1024L * 1024L).let {
+            if (it <= -1L) 2L * 1024L * 1024L * 1024L else it
+        }
     )
     val stremioCacheSize: StateFlow<Long> = _stremioCacheSize.asStateFlow()
 
     fun setStremioCacheSize(bytes: Long) {
-        prefs.edit().putLong(KEY_STREMIO_CACHE_SIZE, bytes).apply()
-        _stremioCacheSize.value = bytes
+        val safeBytes = if (bytes <= -1L) 2L * 1024L * 1024L * 1024L else bytes
+        prefs.edit().putLong(KEY_STREMIO_CACHE_SIZE, safeBytes).apply()
+        _stremioCacheSize.value = safeBytes
     }
 
     // Cấu hình Hồ sơ torrent (Torrent Profile) chuẩn Nuvio / Stremio
     private val _stremioTorrentProfile = MutableStateFlow(
-        prefs.getString(KEY_STREMIO_TORRENT_PROFILE, "custom") ?: "custom"
+        prefs.getString(KEY_STREMIO_TORRENT_PROFILE, "default")?.let {
+            if (it.equals("custom", ignoreCase = true)) "default" else it
+        } ?: "default"
     )
     val stremioTorrentProfile: StateFlow<String> = _stremioTorrentProfile.asStateFlow()
 
     fun setStremioTorrentProfile(profile: String) {
         val clean = profile.trim()
-        prefs.edit().putString(KEY_STREMIO_TORRENT_PROFILE, clean).apply()
-        _stremioTorrentProfile.value = clean
+        val safeProfile = if (clean.equals("custom", ignoreCase = true)) "default" else clean
+        prefs.edit().putString(KEY_STREMIO_TORRENT_PROFILE, safeProfile).apply()
+        _stremioTorrentProfile.value = safeProfile
     }
 }
 

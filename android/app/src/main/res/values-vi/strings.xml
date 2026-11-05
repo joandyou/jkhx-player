@@ -486,8 +486,14 @@
     <string name="settings_fusion_badge_enter_url">Vui lòng nhập URL JSON nhãn Fusion</string>
     <string name="settings_fusion_badge_url_invalid">URL phải bắt đầu bằng http:// hoặc https://</string>
     <string name="settings_fusion_badge_limit_reached">Bạn chỉ có thể nhập tối đa 3 URL nhãn Fusion.</string>
+    <string name="settings_fusion_badge_empty_list">Chưa có URL nhãn Fusion nào được thêm.</string>
+    <string name="settings_fusion_badge_import_success">Nhập nhãn Fusion thành công!</string>
+    <string name="settings_fusion_badge_activated">Đã kích hoạt nguồn nhãn Fusion</string>
+    <string name="settings_fusion_badge_deleted">Đã xóa URL nhãn Fusion</string>
+    <string name="settings_fusion_badge_delete_action">Xóa</string>
+    <string name="settings_stream_badge_position_desc">Tùy chỉnh vị trí hiển thị nhãn luồng phim phía trên hoặc phía dưới tiêu đề luồng</string>
     <string name="settings_group_subtitles_metadata">Dịch Vụ Phụ Đề &amp; Siêu Dữ Liệu</string>
-    <string name="settings_group_ai_tts">Trí Tuệ Nhân Tạo &amp; Thuyết Minh AI</string>
+    <string name="settings_group_ai_tts">Cài Đặt Thuyết Minh AI</string>
     <string name="settings_status_key_configured">Đã cấu hình API Key</string>
     <string name="settings_status_key_not_set">Chưa cấu hình API Key</string>
     <string name="settings_status_tmdb_default">Dùng Key mặc định của app</string>
@@ -518,7 +524,7 @@
     <string name="settings_subsource_get_key_link">Lấy API Key Subsource tại subsource.net</string>
 
     <string name="settings_gemini_title">Dịch Phụ Đề Bằng Google Gemini AI</string>
-    <string name="settings_gemini_desc">Trí tuệ nhân tạo Gemini tự động bóc tách và dịch phụ đề nước ngoài sang Tiếng Việt chuẩn xác từng câu, giữ nguyên 100% timecode mốc thời gian, triệt tiêu hoàn toàn hiện tượng lệch nhịp phụ đề.</string>
+    <string name="settings_gemini_desc">Gemini AI tự động bóc tách và dịch phụ đề nước ngoài sang Tiếng Việt chuẩn xác từng câu, giữ nguyên 100% timecode mốc thời gian, triệt tiêu hoàn toàn hiện tượng lệch nhịp phụ đề.</string>
     <string name="settings_gemini_key_label">Google Gemini API Key</string>
     <string name="settings_gemini_key_placeholder">Nhập Gemini API Key từ Google AI Studio…</string>
     <string name="settings_gemini_saved_toast">Đã lưu Gemini API Key thành công!</string>
