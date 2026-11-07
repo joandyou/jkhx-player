@@ -553,9 +553,8 @@ fun HomeScreen(
                     }
                 }
             } else if (isLoading && sections.isEmpty()) {
-                CircularProgressIndicator(
-                    modifier = Modifier.align(Alignment.Center),
-                    color = MaterialTheme.colorScheme.primary
+                HomeSkeletonLoading(
+                    isTablet = isTablet
                 )
             } else if (errorMessage != null && sections.isEmpty()) {
                 Column(

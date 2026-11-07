@@ -9,12 +9,16 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -32,6 +36,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -121,16 +126,16 @@ internal fun PlayerSubtitlePanel(
                             if (isLandscape) {
                                 Modifier
                                     .align(Alignment.Center)
-                                    .fillMaxWidth(0.78f)
-                                    .fillMaxHeight(0.78f)
-                                    .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(16.dp))
-                                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                                    .fillMaxWidth(0.88f)
+                                    .fillMaxHeight(0.82f)
+                                    .background(Color.Black.copy(alpha = 0.70f), RoundedCornerShape(16.dp))
+                                    .padding(horizontal = 18.dp, vertical = 14.dp)
                             } else {
                                 Modifier
                                     .align(Alignment.BottomCenter)
                                     .fillMaxWidth()
-                                    .fillMaxHeight(0.72f)
-                                    .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+                                    .fillMaxHeight(0.78f)
+                                    .background(Color.Black.copy(alpha = 0.70f), RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
                                     .padding(horizontal = 14.dp, vertical = 12.dp)
                             }
                         )
@@ -177,19 +182,36 @@ internal fun PlayerSubtitlePanel(
                             }
                         }
 
-                        // 3 Cột: Ngôn ngữ | Phụ đề | Kiểu
-                        Row(
+                        // 3 Cột: Ngôn ngữ | Phụ đề & Tìm kiếm | Kiểu & Thuyết minh AI (hỗ trợ kéo ngang chuẩn Nuvio)
+                        BoxWithConstraints(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .weight(1f),
-                            horizontalArrangement = Arrangement.spacedBy(if (isLandscape) 16.dp else 8.dp)
+                                .weight(1f)
                         ) {
-                            // CỘT 1: Ngôn ngữ
-                            Column(
+                            val availableWidth = maxWidth
+                            val isWideScreen = availableWidth >= 780.dp
+                            val colSpacing = if (isLandscape) 16.dp else 12.dp
+                            val totalSpacing = colSpacing * 2
+                            val contentWidth = (availableWidth - totalSpacing).coerceAtLeast(0.dp)
+
+                            val col1Width = if (isWideScreen) contentWidth * 0.22f else 150.dp
+                            val col2Width = if (isWideScreen) contentWidth * 0.44f else 320.dp
+                            val col3Width = if (isWideScreen) contentWidth * 0.34f else 280.dp
+
+                            val horizontalScrollState = rememberScrollState()
+
+                            Row(
                                 modifier = Modifier
-                                    .weight(if (isLandscape) 1f else 0.95f)
-                                    .fillMaxHeight()
+                                    .fillMaxSize()
+                                    .horizontalScroll(horizontalScrollState),
+                                horizontalArrangement = Arrangement.spacedBy(colSpacing)
                             ) {
+                                // CỘT 1: Ngôn ngữ
+                                Column(
+                                    modifier = Modifier
+                                        .width(col1Width)
+                                        .fillMaxHeight()
+                                ) {
                                 Text(
                                     text = stringResource(R.string.player_subtitles_language_header),
                                     color = Color.White.copy(alpha = 0.6f),
@@ -317,7 +339,7 @@ internal fun PlayerSubtitlePanel(
                             // CỘT 2: Phụ đề (Unified Stream + Online Subtitles)
                             Column(
                                 modifier = Modifier
-                                    .weight(if (isLandscape) 1.35f else 1.3f)
+                                    .width(col2Width)
                                     .fillMaxHeight()
                             ) {
                                 // Header: Tiêu đề theo nhóm ngôn ngữ + Nút Sửa từ khóa + Nút Làm mới
@@ -416,14 +438,23 @@ internal fun PlayerSubtitlePanel(
                                             onValueChange = { tempSubSearchQuery = it },
                                             singleLine = true,
                                             textStyle = androidx.compose.ui.text.TextStyle(
-                                                fontSize = 12.sp,
+                                                fontSize = 12.5.sp,
                                                 color = Color.White,
                                                 fontWeight = FontWeight.Normal
                                             ),
                                             cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+                                            keyboardOptions = KeyboardOptions(
+                                                imeAction = ImeAction.Search
+                                            ),
+                                            keyboardActions = KeyboardActions(
+                                                onSearch = {
+                                                    onSearchQuerySubmit(tempSubSearchQuery.trim())
+                                                    isEditingSubSearchQuery = false
+                                                }
+                                            ),
                                             modifier = Modifier
                                                 .weight(1f)
-                                                .height(36.dp),
+                                                .height(38.dp),
                                             decorationBox = { innerTextField ->
                                                 Row(
                                                     modifier = Modifier
@@ -436,7 +467,7 @@ internal fun PlayerSubtitlePanel(
                                                     Icon(
                                                         imageVector = Icons.Default.Search,
                                                         contentDescription = null,
-                                                        tint = Color.White.copy(alpha = 0.4f),
+                                                        tint = Color.White.copy(alpha = 0.5f),
                                                         modifier = Modifier.size(16.dp)
                                                     )
                                                     Spacer(modifier = Modifier.width(6.dp))
@@ -453,12 +484,12 @@ internal fun PlayerSubtitlePanel(
                                                     if (tempSubSearchQuery.isNotEmpty()) {
                                                         IconButton(
                                                             onClick = { tempSubSearchQuery = "" },
-                                                            modifier = Modifier.size(20.dp)
+                                                            modifier = Modifier.size(22.dp)
                                                         ) {
                                                             Icon(
                                                                 imageVector = Icons.Default.Close,
                                                                 contentDescription = "Clear",
-                                                                tint = Color.White.copy(alpha = 0.5f),
+                                                                tint = Color.White.copy(alpha = 0.6f),
                                                                 modifier = Modifier.size(14.dp)
                                                             )
                                                         }
@@ -475,7 +506,7 @@ internal fun PlayerSubtitlePanel(
                                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                                             modifier = Modifier
-                                                .height(36.dp)
+                                                .height(38.dp)
                                                 .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.06f)
                                         ) {
                                             Text(stringResource(R.string.player_subtitles_search_action), fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
@@ -763,7 +794,7 @@ internal fun PlayerSubtitlePanel(
                         // CỘT 3: Kiểu
                         Column(
                             modifier = Modifier
-                                .weight(if (isLandscape) 1.2f else 1.15f)
+                                .width(col3Width)
                                 .fillMaxHeight()
                         ) {
                             Text(
@@ -1462,5 +1493,6 @@ internal fun PlayerSubtitlePanel(
             }
         }
     }
+}
 
 }

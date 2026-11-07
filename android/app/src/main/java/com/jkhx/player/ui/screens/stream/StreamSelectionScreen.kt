@@ -41,6 +41,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -119,8 +120,12 @@ fun StreamSelectionScreen(
 
     var allStreams by remember { mutableStateOf<List<UnifiedStreamItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
-    var selectedGroupFilter by rememberSaveable { mutableStateOf(ActivePlayerSession.lastSelectedStreamGroup) }
+    var selectedGroupFilter by rememberSaveable { mutableStateOf<String?>(null) }
     var refreshKey by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(Unit) {
+        ActivePlayerSession.lastSelectedStreamGroup = null
+    }
 
     // Hiệu ứng xoay mượt mà cho nút Refresh — xoay tròn đều khi tải, xoay nốt vòng và hạ cánh êm dịu khi hoàn thành
     val rotationAnimatable = remember { androidx.compose.animation.core.Animatable(0f) }
@@ -185,8 +190,25 @@ fun StreamSelectionScreen(
         }
     }
 
-    val availableGroups = remember(allStreams) {
-        allStreams.map { it.groupName }.distinct()
+    val availableGroups = remember(allStreams, selectedGroupFilter) {
+        val groups = allStreams.map { it.groupName }.distinct().toMutableList()
+        val current = selectedGroupFilter
+        if (!current.isNullOrBlank() && !groups.contains(current)) {
+            groups.add(current)
+        }
+        groups
+    }
+
+    // Cơ chế Nuvio Auto-Fallback: Sau khi hoàn thành quét luồng, nếu nguồn người dùng đang lọc không có luồng nào,
+    // tự động trở về tab "Tất cả" để người dùng không bị kẹt ở màn hình trống
+    LaunchedEffect(isLoading, allStreams) {
+        if (!isLoading && allStreams.isNotEmpty() && selectedGroupFilter != null) {
+            val hasStreamsInSelectedGroup = allStreams.any { it.groupName == selectedGroupFilter }
+            if (!hasStreamsInSelectedGroup) {
+                selectedGroupFilter = null
+                ActivePlayerSession.lastSelectedStreamGroup = null
+            }
+        }
     }
 
     val displayedStreams = remember(allStreams, selectedGroupFilter) {
@@ -414,7 +436,7 @@ fun StreamSelectionScreen(
 
             // Danh sách các Card Luồng Phát (Stream Cards)
             if (allStreams.isEmpty() && !isLoading) {
-                // Empty State
+                // Empty State chung
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -436,6 +458,61 @@ fun StreamSelectionScreen(
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(stringResource(R.string.common_retry))
                         }
+                    }
+                }
+            } else if (displayedStreams.isEmpty() && !isLoading) {
+                // Nguồn người dùng đang chọn không có luồng phát, nhưng các nguồn khác có luồng
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(32.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.streams_filter_empty, selectedGroupFilter ?: ""),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 14.sp,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        OutlinedButton(onClick = {
+                            selectedGroupFilter = null
+                            ActivePlayerSession.lastSelectedStreamGroup = null
+                        }) {
+                            Text(stringResource(R.string.streams_view_all_count, allStreams.size))
+                        }
+                    }
+                }
+            } else if (displayedStreams.isEmpty() && isLoading) {
+                // Đang tìm kiếm luồng từ nguồn đã chọn
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(32.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(36.dp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = if (selectedGroupFilter != null) {
+                                stringResource(R.string.streams_searching_source, selectedGroupFilter ?: "")
+                            } else {
+                                stringResource(R.string.streams_scanning)
+                            },
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 13.5.sp
+                        )
                     }
                 }
             } else {

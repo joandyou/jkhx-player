@@ -15,6 +15,7 @@ import com.jkhx.player.plugin.manager.stremio.StremioPluginWrapper
 import com.jkhx.player.plugin.runtime.QuickJsRuntime
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -912,40 +913,41 @@ class PluginManager(
         includeComic: Boolean = true,
         includeNovel: Boolean = true,
         includeLive: Boolean = true
-    ): Flow<List<MovieItem>> = flow {
-        val enabled = getEnabledPlugins(
-            includeAdult = includeAdult,
-            includeComic = includeComic,
-            includeNovel = includeNovel,
-            includeLive = includeLive
-        )
-        coroutineScope {
-            val deferreds = enabled.map { plugin ->
-                async {
-                    try {
-                        withTimeout(15000L) {
-                            val items = plugin.search(keyword, page).items
-                            items.mapNotNull { item ->
-                                val effectiveItem = if (item.providerId.isNullOrBlank()) item.copy(providerId = plugin.id) else item
-                                val pid = effectiveItem.providerId ?: plugin.id
-                                val visible = (includeAdult || !isAdultProvider(pid)) &&
-                                        (includeComic || !isComicProvider(pid)) &&
-                                        (includeNovel || !isNovelProvider(pid)) &&
-                                        (includeLive || !isLiveProvider(pid))
-                                if (visible) effectiveItem else null
-                            }
-                        }
-                    } catch (e: Exception) {
-                        println("[SearchAll] Plugin ${plugin.id} error: ${e.message}")
-                        emptyList()
-                    }
-                }
+    ): Flow<List<MovieItem>> = channelFlow {
+        val orderMap = synchronized(pluginOrderList) {
+            pluginOrderList.mapIndexed { idx, id -> id to idx }.toMap()
+        }
+        val records = installedPlugins.values
+            .filter {
+                it.isEnabled &&
+                (includeAdult || (!it.manifest.isAdult && !isAdultProvider(it.manifest.id))) &&
+                (includeComic || (!it.manifest.isComic && !isComicProvider(it.manifest.id))) &&
+                (includeNovel || (!it.manifest.isNovel && it.manifest.categoryType != "novel" && !isNovelProvider(it.manifest.id))) &&
+                (includeLive || (!it.manifest.isLive && it.manifest.categoryType != "live" && !isLiveProvider(it.manifest.id)))
             }
+            .sortedBy { orderMap[it.manifest.id] ?: Int.MAX_VALUE }
 
-            for (def in deferreds) {
-                val res = def.await()
-                if (res.isNotEmpty()) {
-                    emit(res)
+        records.forEach { record ->
+            launch {
+                try {
+                    val plugin = getPlugin(record.manifest.id) ?: return@launch
+                    withTimeout(15000L) {
+                        val items = plugin.search(keyword, page).items
+                        val validItems = items.mapNotNull { item ->
+                            val effectiveItem = if (item.providerId.isNullOrBlank()) item.copy(providerId = plugin.id) else item
+                            val pid = effectiveItem.providerId ?: plugin.id
+                            val visible = (includeAdult || !isAdultProvider(pid)) &&
+                                    (includeComic || !isComicProvider(pid)) &&
+                                    (includeNovel || !isNovelProvider(pid)) &&
+                                    (includeLive || !isLiveProvider(pid))
+                            if (visible) effectiveItem else null
+                        }
+                        if (validItems.isNotEmpty()) {
+                            send(validItems)
+                        }
+                    }
+                } catch (e: Exception) {
+                    println("[SearchAll] Plugin ${record.manifest.id} error: ${e.message}")
                 }
             }
         }

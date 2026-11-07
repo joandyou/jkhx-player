@@ -695,6 +695,9 @@
     <string name="streams_all_filter">All</string>
     <string name="streams_scanning">Scanning stream sources from Plugins &amp; Addons...</string>
     <string name="streams_empty">No streams found for this episode</string>
+    <string name="streams_filter_empty">Source \"%1$s\" has no streams for this episode</string>
+    <string name="streams_view_all_count">View all (%1$d streams)</string>
+    <string name="streams_searching_source">Searching streams from %1$s…</string>
     <string name="streams_reload">Rescan</string>
     <string name="plugins_stremio_subtitles_support">Subtitles Support</string>
     <string name="player_buffering_title">Buffering…</string>

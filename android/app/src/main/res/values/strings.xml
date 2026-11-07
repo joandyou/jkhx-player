@@ -695,6 +695,9 @@
     <string name="streams_all_filter">Tất cả</string>
     <string name="streams_scanning">Đang quét nguồn phát từ các Plugin &amp; Addon...</string>
     <string name="streams_empty">Không tìm thấy luồng phát nào cho tập phim này</string>
+    <string name="streams_filter_empty">Nguồn \"%1$s\" không có luồng phát cho tập này</string>
+    <string name="streams_view_all_count">Xem tất cả (%1$d luồng)</string>
+    <string name="streams_searching_source">Đang tìm kiếm luồng từ %1$s…</string>
     <string name="streams_reload">Quét lại</string>
     <string name="plugins_stremio_subtitles_support">Hỗ trợ Phụ đề</string>
     <string name="player_buffering_title">Đang tải bộ đệm…</string>

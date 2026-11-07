@@ -131,6 +131,9 @@ fun SearchScreen(
     var isDiscoverLoading by remember { mutableStateOf(false) }
     var isDiscoverLoadingMore by remember { mutableStateOf(false) }
 
+    var searchToken by remember { mutableIntStateOf(0) }
+    var discoverToken by remember { mutableIntStateOf(0) }
+
     val rotationAnimatable = remember { Animatable(0f) }
     val rotationAngle by rotationAnimatable.asState()
 
@@ -278,6 +281,7 @@ fun SearchScreen(
         val client = pluginManager.getStremioClient()
         val cacheKey = "${addon.url}_${selectedType}_${catalog.id}_${selectedFilterOption ?: ""}"
 
+        val currentToken = if (reset) ++discoverToken else discoverToken
         if (reset) {
             discoverJob?.cancel()
             ActiveSearchHolder.discoverPage = 1
@@ -318,6 +322,8 @@ fun SearchScreen(
                     )
                 }
 
+                if (reset && discoverToken != currentToken) return@launch
+
                 val items = metas.map { m ->
                     val isSeries = m.type.equals("series", true) || m.type.equals("tv", true)
                     MovieItem(
@@ -356,7 +362,9 @@ fun SearchScreen(
                 println("[SearchScreen Discover] Lỗi nạp catalog: ${e.message}")
             } finally {
                 if (reset) {
-                    isDiscoverLoading = false
+                    if (discoverToken == currentToken) {
+                        isDiscoverLoading = false
+                    }
                 } else {
                     isDiscoverLoadingMore = false
                 }
@@ -399,6 +407,7 @@ fun SearchScreen(
 
     // ==================== TÌM KIẾM ĐA NGUỒN ====================
     fun triggerSearch(keyword: String, saveToHistory: Boolean = false, forceRefresh: Boolean = false) {
+        val currentToken = ++searchToken
         searchJob?.cancel()
         ActiveSearchHolder.selectedPluginId = null
         val cleanKeyword = keyword.trim()
@@ -423,13 +432,14 @@ fun SearchScreen(
             SessionCacheManager.removeSearchResult(cleanKeyword)
         }
 
+        ActiveSearchHolder.isSearching = true
         searchJob = coroutineScope.launch {
             try {
                 if (!forceRefresh) {
                     delay(400) // debounce
                 }
+                if (searchToken != currentToken) return@launch
                 ActiveSearchHolder.searchResults.clear()
-                ActiveSearchHolder.isSearching = true
                 pluginManager.searchAll(
                     cleanKeyword,
                     includeAdult = isAdultEnabled,
@@ -437,17 +447,20 @@ fun SearchScreen(
                     includeNovel = isNovelEnabled,
                     includeLive = isLiveEnabled
                 ).collect { items ->
+                    if (searchToken != currentToken) return@collect
                     ActiveSearchHolder.searchResults.addAll(items)
                     if (saveToHistory && cleanKeyword.isNotBlank()) {
                         searchHistoryManager.addQuery(cleanKeyword)
                     }
                 }
-                if (ActiveSearchHolder.searchResults.isNotEmpty() && cleanKeyword.isNotBlank()) {
+                if (searchToken == currentToken && ActiveSearchHolder.searchResults.isNotEmpty() && cleanKeyword.isNotBlank()) {
                     searchHistoryManager.addQuery(cleanKeyword)
                     SessionCacheManager.putSearchResult(cleanKeyword, ActiveSearchHolder.searchResults.toList())
                 }
             } finally {
-                ActiveSearchHolder.isSearching = false
+                if (searchToken == currentToken) {
+                    ActiveSearchHolder.isSearching = false
+                }
             }
         }
     }
