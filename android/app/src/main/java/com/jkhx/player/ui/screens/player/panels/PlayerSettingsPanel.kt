@@ -62,7 +62,8 @@ internal fun PlayerSettingsPanel(
     audioTracks: List<AudioTrackOption>,
     selectedAudioTrackId: String?,
     formatAudioSpecs: (AudioTrackOption) -> String,
-    onAudioTrackSelected: (AudioTrackOption) -> Unit
+    onAudioTrackSelected: (AudioTrackOption) -> Unit,
+    onOpenExternalPlayer: (() -> Unit)? = null
 ) {
     AnimatedVisibility(
         visible = visible,
@@ -243,6 +244,31 @@ internal fun PlayerSettingsPanel(
                                     subtitle = specs.ifBlank { null },
                                     isSelected = isSelected,
                                     onClick = { onAudioTrackSelected(track) }
+                                )
+                            }
+                        }
+
+                        // Mục 4: Trình phát ngoài (VLC, MPV, MX Player)
+                        if (onOpenExternalPlayer != null) {
+                            item {
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 4.dp))
+                                Text(
+                                    text = stringResource(R.string.player_external_section_title).uppercase(),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    letterSpacing = 1.sp
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                SettingsOptionCard(
+                                    title = stringResource(R.string.player_open_external_action),
+                                    subtitle = stringResource(R.string.player_open_external_action_desc),
+                                    isSelected = false,
+                                    onClick = {
+                                        onDismiss()
+                                        onOpenExternalPlayer()
+                                    }
                                 )
                             }
                         }

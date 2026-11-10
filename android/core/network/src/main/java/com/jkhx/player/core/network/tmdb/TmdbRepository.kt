@@ -103,6 +103,34 @@ class TmdbRepository(
     }
 
     /**
+     * Tra cứu thông tin chi tiết một mùa của phim bộ (TV Season Details)
+     * Lấy danh sách tập phim: tên tập, tóm tắt, ảnh preview still, ngày phát sóng, điểm đánh giá
+     */
+    suspend fun getTvSeasonDetails(
+        tmdbId: String,
+        seasonNumber: Int,
+        language: String = TmdbConfig.getAppLanguage()
+    ): TmdbSeasonResponse? = withContext(Dispatchers.IO) {
+        val cleanId = tmdbId.trim()
+        if (cleanId.isBlank() || seasonNumber < 0) return@withContext null
+
+        val cacheKey = "tv_season_${cleanId}_${seasonNumber}_${language}"
+        TmdbCache.getSeason(cacheKey)?.let { return@withContext it }
+
+        val endpoint = "tv/$cleanId/season/$seasonNumber"
+        val params = mapOf("language" to language)
+        val bodyStr = fetchTmdbApi(endpoint, params) ?: return@withContext null
+
+        try {
+            val response = json.decodeFromString<TmdbSeasonResponse>(bodyStr)
+            TmdbCache.putSeason(cacheKey, response)
+            response
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
      * Tra cứu IMDb ID từ TMDB ID (dùng cho Stremio Addon stream matching và subtitle resolution)
      * Tối ưu hóa: kiểm tra cache, gọi trực tiếp endpoint /external_ids siêu nhẹ (<100ms),
      * tự động fallback giữa movie/tv và gọi full detail nếu cần.
@@ -227,6 +255,23 @@ class TmdbRepository(
             original.directors
         }
 
+        val tmdbWriters = tmdb.credits?.crew?.filter {
+            it.job.equals("Writer", ignoreCase = true) ||
+                it.job.equals("Screenplay", ignoreCase = true) ||
+                it.department.equals("Writing", ignoreCase = true)
+        }?.map { it.name }?.filter { it.isNotBlank() }?.distinct() ?: emptyList()
+        val writersList = if (tmdbWriters.isNotEmpty()) {
+            tmdbWriters
+        } else {
+            original.writers
+        }
+
+        val formattedDuration = tmdb.runtime?.takeIf { it > 0 }?.let { mins ->
+            val h = mins / 60
+            val m = mins % 60
+            if (h > 0) "${h}g ${m}ph" else "${m}ph"
+        } ?: original.duration
+
         val tmdbCountries = tmdb.productionCountries.map { it.name }.filter { it.isNotBlank() }
         val countriesList = if (tmdbCountries.isNotEmpty()) {
             tmdbCountries
@@ -255,6 +300,73 @@ class TmdbRepository(
             original.originName
         }
 
+        // Làm giàu thông tin chi tiết từng tập phim từ TMDB (tên tập, ngày phát sóng, điểm đánh giá, tóm tắt, thumbnail)
+        val isSeries = original.type.equals("series", ignoreCase = true) ||
+            original.type.equals("tv", ignoreCase = true) ||
+            original.type.equals("tvshows", ignoreCase = true) ||
+            original.type.equals("hoathinh", ignoreCase = true) ||
+            original.episodes.any { server -> server.episodes.size > 1 || server.episodes.any { (it.season ?: 0) > 0 } }
+
+        val enrichedEpisodes = if (original.episodes.isNotEmpty()) {
+            if (isSeries) {
+                // Thu thập tất cả các mùa xuất hiện
+                val allSeasons = original.episodes.flatMap { it.episodes }
+                    .mapNotNull { it.season?.takeIf { s -> s > 0 } }
+                    .distinct()
+                    .ifEmpty { listOf(1) }
+
+                val seasonDetailsMap = mutableMapOf<Int, TmdbSeasonResponse>()
+                for (sNum in allSeasons) {
+                    val sDetail = getTvSeasonDetails(resolvedTmdbId, sNum)
+                    if (sDetail != null) {
+                        seasonDetailsMap[sNum] = sDetail
+                    }
+                }
+
+                original.episodes.map { server ->
+                    server.copy(
+                        episodes = server.episodes.mapIndexed { idx, ep ->
+                            val sNum = ep.season?.takeIf { it > 0 } ?: 1
+                            val epNum = ep.number ?: (idx + 1)
+                            val tmdbSeason = seasonDetailsMap[sNum]
+                            val tmdbEp = tmdbSeason?.episodes?.firstOrNull { it.episodeNumber == epNum }
+                                ?: tmdbSeason?.episodes?.getOrNull(idx)
+
+                            if (tmdbEp != null) {
+                                ep.copy(
+                                    name = tmdbEp.name?.takeIf { it.isNotBlank() } ?: ep.name,
+                                    releaseDate = tmdbEp.airDate ?: ep.releaseDate,
+                                    rating = tmdbEp.voteAverage?.takeIf { it > 0.0 } ?: ep.rating,
+                                    overview = tmdbEp.overview?.takeIf { it.isNotBlank() } ?: ep.overview,
+                                    thumbnail = tmdbEp.stillPath?.let { TmdbConfig.proxiedImageUrl(it, "w500") } ?: ep.thumbnail
+                                )
+                            } else {
+                                ep
+                            }
+                        }
+                    )
+                }
+            } else {
+                // Phim lẻ (Single Movie): làm giàu tập duy nhất
+                original.episodes.map { server ->
+                    server.copy(
+                        episodes = server.episodes.map { ep ->
+                            ep.copy(
+                                name = ep.name.takeIf { it.isNotBlank() && !it.equals("phim lẻ", true) && !it.equals("full", true) }
+                                    ?: tmdbTitle ?: original.name,
+                                releaseDate = tmdb.releaseDate ?: original.year?.toString() ?: ep.releaseDate,
+                                rating = tmdb.voteAverage ?: original.rating ?: ep.rating,
+                                overview = tmdb.overview?.takeIf { it.isNotBlank() } ?: original.description ?: ep.overview,
+                                thumbnail = tmdbBackdrop ?: tmdbPoster ?: ep.thumbnail
+                            )
+                        }
+                    )
+                }
+            }
+        } else {
+            original.episodes
+        }
+
         original.copy(
             name = finalName,
             originName = finalOriginName,
@@ -262,6 +374,7 @@ class TmdbRepository(
             backdropUrl = tmdbBackdrop ?: original.backdropUrl ?: original.posterUrl,
             thumbUrl = tmdbBackdrop ?: original.thumbUrl,
             year = tmdbYear ?: original.year,
+            duration = formattedDuration,
             description = finalDescription,
             rating = tmdb.voteAverage ?: original.rating,
             voteCount = tmdb.voteCount ?: original.voteCount,
@@ -269,11 +382,13 @@ class TmdbRepository(
             actors = actorNames,
             castMembers = castList,
             directors = directorsList,
+            writers = writersList,
             countries = countriesList,
             genres = tmdbGenres,
             tmdbId = resolvedTmdbId,
             imdbId = tmdb.effectiveImdbId ?: original.imdbId,
-            trailerUrl = trailerKey?.let { "https://www.youtube.com/watch?v=$it" } ?: original.trailerUrl
+            trailerUrl = trailerKey?.let { "https://www.youtube.com/watch?v=$it" } ?: original.trailerUrl,
+            episodes = enrichedEpisodes
         )
     }
 
@@ -303,15 +418,30 @@ class TmdbRepository(
         val finalName = if (item.name.isNotBlank()) item.name else if (!tmdbTitle.isNullOrBlank()) tmdbTitle else item.name
         val finalOrigin = if (!item.originName.isNullOrBlank()) item.originName else tmdbOriginTitle
 
+        val hadExplicitTmdbId = !item.tmdbId.isNullOrBlank()
+        val finalPoster = if (hadExplicitTmdbId) {
+            tmdbPoster ?: item.posterUrl
+        } else {
+            item.posterUrl?.ifBlank { null } ?: tmdbPoster
+        }
+        val finalThumb = if (hadExplicitTmdbId) {
+            tmdbBackdrop ?: item.thumbUrl
+        } else {
+            item.thumbUrl?.takeIf { it.isNotBlank() && it != item.posterUrl } ?: tmdbBackdrop ?: item.thumbUrl
+        }
+
+        val existingRating = item.rating?.takeIf { it > 0.0 }
+        val keepImdbMarker = !hadExplicitTmdbId && existingRating != null && item.slug.contains(Regex("""tt\d+"""))
+
         item.copy(
             name = finalName,
             originName = finalOrigin,
-            posterUrl = tmdbPoster ?: item.posterUrl,
-            thumbUrl = tmdbBackdrop ?: item.thumbUrl,
-            year = tmdbYear ?: item.year,
-            rating = tmdb.voteAverage ?: item.rating,
-            tmdbId = resolvedTmdbId,
-            country = tmdbCountry ?: item.country
+            posterUrl = finalPoster,
+            thumbUrl = finalThumb,
+            year = item.year ?: tmdbYear,
+            rating = existingRating ?: tmdb.voteAverage,
+            tmdbId = if (keepImdbMarker) item.tmdbId else resolvedTmdbId,
+            country = item.country ?: tmdbCountry
         )
     }
 
@@ -447,7 +577,7 @@ class TmdbRepository(
                 } catch (_: Exception) {
                     null
                 }
-            }
+            }.distinctBy { it.tmdbId ?: it.slug }
         } catch (_: Exception) {
             emptyList()
         }

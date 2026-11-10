@@ -60,6 +60,7 @@ import com.jkhx.player.ui.components.MovieCard
 import com.jkhx.player.ui.theme.AppTheme
 import com.jkhx.player.ui.theme.LocalDisplayMode
 import com.jkhx.player.ui.theme.ShapeTokens
+import com.jkhx.player.ui.theme.tvFocusableItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -762,72 +763,60 @@ fun SearchScreen(
 
                                         Surface(
                                             onClick = { addonMenuExpanded = true },
-                                            shape = RoundedCornerShape(16.dp),
-                                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f))
+                                            shape = ShapeTokens.LargeChip,
+                                            color = MaterialTheme.colorScheme.primaryContainer,
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+                                            modifier = Modifier
+                                                .padding(end = 4.dp)
+                                                .tvFocusableItem(cornerRadius = 18.dp, focusedScale = 1.05f)
                                         ) {
                                             Row(
                                                 verticalAlignment = Alignment.CenterVertically,
-                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                                             ) {
-                                                Icon(
-                                                    Icons.Default.CloudQueue,
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.size(15.dp)
-                                                )
-                                                Spacer(modifier = Modifier.width(4.dp))
                                                 Text(
                                                     text = addonCleanName,
-                                                    fontSize = 12.5.sp,
+                                                    fontSize = 11.5.sp,
                                                     fontWeight = FontWeight.Bold,
                                                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis,
-                                                    modifier = Modifier.widthIn(max = 140.dp)
+                                                    modifier = Modifier.widthIn(max = 130.dp)
                                                 )
                                                 Spacer(modifier = Modifier.width(2.dp))
                                                 Icon(
-                                                    imageVector = Icons.Default.ArrowDropDown,
+                                                    Icons.Default.ArrowDropDown,
                                                     contentDescription = null,
-                                                    modifier = Modifier.size(18.dp),
-                                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                    modifier = Modifier.size(15.dp)
                                                 )
                                             }
                                         }
 
-                                        DropdownMenu(
-                                            expanded = addonMenuExpanded,
-                                            onDismissRequest = { addonMenuExpanded = false }
-                                        ) {
-                                        stremioAddons.forEachIndexed { idx, pair ->
-                                            val m = pair.second
-                                            val cleanName = StremioPluginWrapper.cleanCatalogTitle(m.name)
-                                            DropdownMenuItem(
-                                                text = {
-                                                    Text(
-                                                        text = cleanName,
-                                                        fontWeight = if (idx == selectedAddonIndex) FontWeight.Bold else FontWeight.Normal,
-                                                        color = if (idx == selectedAddonIndex) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                                    )
-                                                },
-                                                onClick = {
-                                                    if (selectedAddonIndex != idx) {
-                                                        settingsManager.setLastSelectedStremioAddonUrl(pair.first.url)
-                                                        settingsManager.setLastSelectedStremioType(null)
-                                                        settingsManager.setLastSelectedStremioCatalogId(null)
-                                                        settingsManager.setLastSelectedStremioFilter(null)
-                                                        selectedAddonIndex = idx
-                                                    }
-                                                    addonMenuExpanded = false
+                                        StremioAddonSelectorModal(
+                                            visible = addonMenuExpanded,
+                                            onDismissRequest = { addonMenuExpanded = false },
+                                            stremioAddons = stremioAddons,
+                                            selectedAddonUrl = currentAddon?.url,
+                                            onSelectAddon = { idx, pair ->
+                                                if (selectedAddonIndex != idx) {
+                                                    settingsManager.setLastSelectedStremioAddonUrl(pair.first.url)
+                                                    settingsManager.setLastSelectedStremioType(null)
+                                                    settingsManager.setLastSelectedStremioCatalogId(null)
+                                                    settingsManager.setLastSelectedStremioFilter(null)
+                                                    selectedAddonIndex = idx
                                                 }
-                                            )
-                                        }
+                                                addonMenuExpanded = false
+                                            },
+                                            onOpenAddonsClick = {
+                                                addonMenuExpanded = false
+                                                onOpenPluginsClick?.invoke()
+                                            }
+                                        )
                                     }
                                 }
                             }
                         }
-                    }
 
                         // Lịch sử tìm kiếm (nếu có, hiển thị dạng chip nhỏ gọn)
                         if (searchHistory.isNotEmpty()) {

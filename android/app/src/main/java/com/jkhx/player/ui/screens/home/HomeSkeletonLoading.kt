@@ -25,27 +25,27 @@ import com.jkhx.player.ui.theme.AppTheme
 import com.jkhx.player.ui.theme.ShapeTokens
 
 /**
- * Hiệu ứng cọ vẽ animate-pulse mờ ảo mô phỏng shimmer ánh sáng điện ảnh cao cấp
+ * Hiệu ứng cọ vẽ animate-pulse dịu nhẹ, chu kỳ nhanh tạo cảm giác tải tức thì
  */
 @Composable
 fun rememberSkeletonPulseBrush(): Brush {
     val transition = rememberInfiniteTransition(label = "skeleton_pulse")
     val alphaAnim by transition.animateFloat(
-        initialValue = 0.20f,
-        targetValue = 0.58f,
+        initialValue = 0.10f,
+        targetValue = 0.22f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1100, easing = FastOutSlowInEasing),
+            animation = tween(durationMillis = 550, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "skeleton_alpha"
     )
     val baseColor = MaterialTheme.colorScheme.surfaceVariant
-    val highlightColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+    val highlightColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f)
     return Brush.linearGradient(
         colors = listOf(
             baseColor.copy(alpha = alphaAnim * 0.75f),
             baseColor.copy(alpha = alphaAnim),
-            highlightColor.copy(alpha = alphaAnim * 0.85f),
+            highlightColor.copy(alpha = alphaAnim * 0.80f),
             baseColor.copy(alpha = alphaAnim * 0.75f)
         )
     )
@@ -72,7 +72,7 @@ fun SkeletonBlock(
 }
 
 /**
- * Placeholder cho phần HeroBanner đỉnh màn hình (50% viewport hoặc 400dp trên TV/Tablet)
+ * Placeholder cho phần HeroBanner Adaptive Cinema Showcase (Trái: Hàng Chips + Tiêu đề | Phải: Card Poster 2:3 cao sát Top Menu | Đáy: Thumbnail Strip)
  */
 @Composable
 fun HeroBannerSkeleton(
@@ -81,7 +81,7 @@ fun HeroBannerSkeleton(
     modifier: Modifier = Modifier
 ) {
     val configuration = LocalConfiguration.current
-    val bannerHeight = if (isTablet) 400.dp else (configuration.screenHeightDp.dp * 0.5f)
+    val bannerHeight = if (isTablet) 420.dp else (configuration.screenHeightDp.dp * 0.54f).coerceIn(405.dp, 460.dp)
 
     Box(
         modifier = modifier
@@ -93,7 +93,7 @@ fun HeroBannerSkeleton(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(bannerHeight * 0.65f)
+                .height(bannerHeight * 0.72f)
                 .align(Alignment.BottomCenter)
                 .background(
                     Brush.verticalGradient(
@@ -105,51 +105,88 @@ fun HeroBannerSkeleton(
                 )
         )
 
-        // Các khối placeholder chân HeroBanner
+        // Bố cục Adaptive Cinema Showcase (Trái: Thông tin phim | Phải: Card Poster lớn | Đáy: Dải Mini-Poster full width)
         Column(
             modifier = Modifier
-                .align(Alignment.BottomStart)
-                .fillMaxWidth()
-                .padding(horizontal = if (isTablet) 28.dp else 16.dp, vertical = 12.dp)
+                .fillMaxSize()
+                .statusBarsPadding()
+                .padding(
+                    top = if (isTablet) 88.dp else 90.dp,
+                    bottom = 8.dp
+                ),
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Badges row: Rating, Năm, Phân loại, Thể loại
             Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(bottom = 8.dp)
-            ) {
-                SkeletonBlock(brush = brush, width = 48.dp, height = 18.dp, cornerRadius = 6.dp)
-                SkeletonBlock(brush = brush, width = 40.dp, height = 18.dp, cornerRadius = 6.dp)
-                SkeletonBlock(brush = brush, width = 56.dp, height = 18.dp, cornerRadius = 6.dp)
-                SkeletonBlock(brush = brush, width = 62.dp, height = 18.dp, cornerRadius = 6.dp)
-            }
-
-            // Tên phim (Title) lớn
-            SkeletonBlock(
-                brush = brush,
-                width = if (isTablet) 320.dp else 220.dp,
-                height = if (isTablet) 28.dp else 22.dp,
-                cornerRadius = 6.dp
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-
-            // Tên gốc / Tóm tắt ngắn
-            SkeletonBlock(
-                brush = brush,
-                width = if (isTablet) 200.dp else 140.dp,
-                height = 13.dp,
-                cornerRadius = 4.dp
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Dãy chấm indicator
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(horizontal = if (isTablet) 24.dp else 16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                SkeletonBlock(brush = brush, width = 18.dp, height = 5.dp, cornerRadius = 3.dp)
-                repeat(4) {
-                    SkeletonBlock(brush = brush, width = 6.dp, height = 5.dp, cornerRadius = 3.dp)
+                // Cột Trái: Tiêu đề trên cùng -> Tên gốc -> Hàng Chips ở dưới
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = if (isTablet) 24.dp else 14.dp),
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    SkeletonBlock(
+                        brush = brush,
+                        width = if (isTablet) 300.dp else 190.dp,
+                        height = if (isTablet) 28.dp else 22.dp,
+                        cornerRadius = 6.dp
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    SkeletonBlock(
+                        brush = brush,
+                        width = if (isTablet) 200.dp else 130.dp,
+                        height = 14.dp,
+                        cornerRadius = 4.dp
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        SkeletonBlock(brush = brush, width = 68.dp, height = 22.dp, cornerRadius = 8.dp)
+                        SkeletonBlock(brush = brush, width = 44.dp, height = 22.dp, cornerRadius = 8.dp)
+                        SkeletonBlock(brush = brush, width = 58.dp, height = 22.dp, cornerRadius = 8.dp)
+                        SkeletonBlock(brush = brush, width = 36.dp, height = 22.dp, cornerRadius = 8.dp)
+                    }
+                }
+
+                // Cột Phải: Card Poster 2:3 lớn căn giữa
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight(0.95f)
+                        .aspectRatio(2f / 3f)
+                        .clip(RoundedCornerShape(if (isTablet) 16.dp else 14.dp))
+                        .background(brush)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Dải 8 Mini-Poster Thumbnail Strip ở đáy căn giữa full chiều rộng
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = if (isTablet) 24.dp else 16.dp)
+                ) {
+                    repeat(if (isTablet) 8 else 6) { idx ->
+                        SkeletonBlock(
+                            brush = brush,
+                            width = if (idx == 0) 44.dp else 38.dp,
+                            height = if (idx == 0) 62.dp else 54.dp,
+                            cornerRadius = 8.dp
+                        )
+                    }
                 }
             }
         }

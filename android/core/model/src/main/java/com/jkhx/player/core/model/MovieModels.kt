@@ -131,7 +131,11 @@ data class EpisodeData(
     val number: Int? = null,
     val season: Int? = null,
     val serverName: String? = null,
-    val data: JsonElement? = null
+    val data: JsonElement? = null,
+    val releaseDate: String? = null,
+    val rating: Double? = null,
+    val overview: String? = null,
+    val thumbnail: String? = null
 )
 
 @Serializable
@@ -188,6 +192,7 @@ data class MovieDetail(
     val actors: List<String> = emptyList(),
     val castMembers: List<CastMember> = emptyList(),
     val directors: List<String> = emptyList(),
+    val writers: List<String> = emptyList(),
     val genres: List<String> = emptyList(),
     val countries: List<String> = emptyList(),
     val rating: Double? = null,

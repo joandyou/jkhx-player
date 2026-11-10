@@ -75,12 +75,13 @@ class StremioPluginWrapper(
             slug = "${type}__${id}",
             name = displayName,
             originName = displayName,
-            thumbUrl = displayPoster,
+            thumbUrl = background?.takeIf { it.isNotBlank() } ?: displayPoster,
             posterUrl = displayPoster,
             year = displayYear,
             type = resolvedType,
             category = genres.firstOrNull(),
             providerId = this@StremioPluginWrapper.id,
+            rating = imdbRating?.takeIf { it.isNotBlank() }?.toDoubleOrNull(),
             tmdbId = if (id.startsWith("tmdb:", ignoreCase = true)) id.substringAfter(":") else null
         )
     }
@@ -219,7 +220,10 @@ class StremioPluginWrapper(
                             slug = "${slug}__${v.id}",
                             number = v.episode?.takeIf { it > 0 } ?: 1,
                             season = sNum,
-                            serverName = providerServerName
+                            serverName = providerServerName,
+                            releaseDate = v.released,
+                            thumbnail = v.thumbnail,
+                            overview = v.overview
                         )
                     }
                 )

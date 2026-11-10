@@ -84,6 +84,13 @@ import com.jkhx.player.ui.theme.PluginCategoryLive
 import com.jkhx.player.ui.theme.PluginCategoryMovie
 import com.jkhx.player.ui.theme.PluginCategoryNovel
 import androidx.compose.ui.res.stringResource
+import android.app.Activity
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import com.jkhx.player.ui.screens.player.findActivity
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -112,10 +119,25 @@ fun HomeScreen(
     val isTablet = displayMode == DeviceDisplayMode.TABLET
     val context = LocalContext.current
 
+    var lastBackPressTime by remember { mutableLongStateOf(0L) }
     var enabledPlugins by remember { mutableStateOf<List<InstalledPluginRecord>>(emptyList()) }
     var selectedProviderId by rememberSaveable { mutableStateOf<String?>(settingsManager.lastSelectedProvider.value) }
     var lastLoadedProviderId by remember { mutableStateOf<String?>(null) }
     var showProviderDropdown by remember { mutableStateOf(false) }
+
+    BackHandler {
+        if (showProviderDropdown) {
+            showProviderDropdown = false
+            return@BackHandler
+        }
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastBackPressTime < 2000L) {
+            (context.findActivity() ?: (context as? Activity))?.finish()
+        } else {
+            lastBackPressTime = currentTime
+            Toast.makeText(context, context.getString(R.string.app_exit_confirm), Toast.LENGTH_SHORT).show()
+        }
+    }
 
     val sections = remember { mutableStateListOf<HomeSection>() }
     val quickCategories = remember { mutableStateListOf<HomeSection>() }
@@ -330,18 +352,27 @@ fun HomeScreen(
                     quickCategories.addAll(validSections)
                 }
 
-                // Tự động làm giàu metadata TMDB cho các phim trên Hero Banner
+                // Tự động làm giàu metadata TMDB cho các phim trên Hero Banner (áp dụng cho nguồn Phim)
                 val firstSection = validSections.firstOrNull()
-                if (firstSection != null && firstSection.items.isNotEmpty()) {
+                val isMovieOrSeriesProvider = !pluginManager.isAdultProvider(targetId) &&
+                    !pluginManager.isComicProvider(targetId) &&
+                    !pluginManager.isNovelProvider(targetId) &&
+                    !pluginManager.isLiveProvider(targetId)
+                if (firstSection != null && firstSection.items.isNotEmpty() && isMovieOrSeriesProvider) {
                     launch {
                         try {
                             val heroCandidates = firstSection.items.take(8)
-                            val enrichedHero = heroCandidates.map { item ->
-                                if (!item.tmdbId.isNullOrBlank()) {
-                                    com.jkhx.player.JkhxApplication.instance.tmdbRepository.enrichMovieItem(item)
-                                } else {
-                                    item
-                                }
+                            val enrichedHero = coroutineScope {
+                                heroCandidates.map { item ->
+                                    async {
+                                        val itemRating = item.rating
+                                        if (!item.tmdbId.isNullOrBlank() || itemRating == null || itemRating <= 0.0) {
+                                            com.jkhx.player.JkhxApplication.instance.tmdbRepository.enrichMovieItem(item)
+                                        } else {
+                                            item
+                                        }
+                                    }
+                                }.awaitAll()
                             }
                             if (sections.isNotEmpty()) {
                                 val remaining = if (firstSection.items.size > 8) firstSection.items.drop(8) else emptyList()
@@ -619,7 +650,7 @@ fun HomeScreen(
                     contentPadding = PaddingValues(bottom = 100.dp)
                 ) {
                     // Item 0: Hero Banner (8 movies from first section of getHome)
-                    val heroMovies = sections.firstOrNull()?.items?.take(8) ?: emptyList()
+                    val heroMovies = sections.firstOrNull()?.items?.distinctBy { it.slug }?.take(8) ?: emptyList()
                     if (heroMovies.isNotEmpty()) {
                         item(key = "hero_banner") {
                             HeroBannerSection(
@@ -740,15 +771,16 @@ fun HomeScreen(
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
+                            val uniqueItems = remember(section.items) { section.items.distinctBy { it.slug } }
                             LazyRow(
                                 contentPadding = PaddingValues(horizontal = AppTheme.dimens.space16),
                                 horizontalArrangement = Arrangement.spacedBy(AppTheme.dimens.space12)
                             ) {
-                                items(
-                                    items = section.items,
-                                    key = { movie -> "${movie.providerId ?: selectedProviderId}_${movie.slug}" },
-                                    contentType = { "movie_card" }
-                                ) { movie ->
+                                itemsIndexed(
+                                    items = uniqueItems,
+                                    key = { index, movie -> "${movie.providerId ?: selectedProviderId}_${movie.slug}_$index" },
+                                    contentType = { _, _ -> "movie_card" }
+                                ) { _, movie ->
                                     val providerName = remember(movie.providerId, selectedProviderId) {
                                         pluginManager.getPluginName(movie.providerId ?: selectedProviderId ?: "")
                                     }
@@ -1104,6 +1136,7 @@ fun HomeScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun HeroBannerSection(
     movies: List<MovieItem>,
@@ -1112,6 +1145,7 @@ fun HeroBannerSection(
     if (movies.isEmpty()) return
 
     val pagerState = rememberPagerState(pageCount = { movies.size })
+    val thumbnailListState = rememberLazyListState()
     val displayMode = LocalDisplayMode.current
     val isTablet = displayMode == DeviceDisplayMode.TABLET
     val currentMovie = movies.getOrNull(pagerState.currentPage) ?: movies.first()
@@ -1121,9 +1155,15 @@ fun HeroBannerSection(
     var isUserInteracting by remember { mutableStateOf(false) }
     var isHeroFocused by remember { mutableStateOf(false) }
 
-    // Chiều cao thích ứng: 0.5f (50% màn hình) trên Điện thoại; 400dp trên Tablet / TV
+    // Chiều cao thích ứng cho bố cục Adaptive Cinema Showcase
     val configuration = LocalConfiguration.current
-    val bannerHeight = if (isTablet) 400.dp else (configuration.screenHeightDp.dp * 0.5f)
+    val bannerHeight = if (isTablet) 420.dp else (configuration.screenHeightDp.dp * 0.54f).coerceIn(405.dp, 460.dp)
+
+    // Tự động cuộn dải Mini-Poster Thumbnail theo trang hiện tại
+    LaunchedEffect(pagerState.currentPage) {
+        val targetIndex = (pagerState.currentPage - 2).coerceAtLeast(0)
+        thumbnailListState.animateScrollToItem(targetIndex)
+    }
 
     // Tự động slide mỗi 5 giây, tạm dừng khi người dùng chạm/giữ, cuộn hoặc đang duyệt bằng Remote TV
     LaunchedEffect(movies.size, isDragged, isUserInteracting, isHeroFocused) {
@@ -1155,33 +1195,10 @@ fun HeroBannerSection(
                 }
             }
     ) {
-        // --- 1. Ambient Glow Halo (Hào quang điện ảnh phía sau lấy cảm hứng từ ảnh phim) ---
-        val ambientBlurUrl = currentMovie.thumbUrl ?: currentMovie.posterUrl
-        if (!ambientBlurUrl.isNullOrBlank()) {
-            val blurContext = LocalContext.current
-            AsyncImage(
-                model = remember(ambientBlurUrl) {
-                    ImageRequest.Builder(blurContext)
-                        .data(ambientBlurUrl)
-                        .size(180, 100)
-                        .crossfade(false)
-                        .allowHardware(true)
-                        .build()
-                },
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .scale(1.25f)
-                    .blur(42.dp)
-                    .alpha(0.35f)
-            )
-        }
-
-        // --- 2. HorizontalPager hiển thị ảnh Backdrop 16:9 tràn viền ---
+        // --- 1. HorizontalPager hiển thị ảnh nền Backdrop mờ điện ảnh (hỗ trợ vuốt ngang toàn Banner) ---
         HorizontalPager(
             state = pagerState,
-            key = { page -> movies.getOrNull(page)?.let { "${it.providerId ?: ""}_${it.slug}" } ?: page },
+            key = { page -> movies.getOrNull(page)?.let { "${it.providerId ?: ""}_${it.slug}_$page" } ?: page },
             beyondViewportPageCount = 1,
             modifier = Modifier
                 .fillMaxSize()
@@ -1192,37 +1209,39 @@ fun HeroBannerSection(
         ) { page ->
             val movie = movies[page]
             val heroContext = LocalContext.current
-            // Ưu tiên thumbUrl (ảnh ngang 16:9), fallback về posterUrl
-            val imageUrl = movie.thumbUrl ?: movie.posterUrl
+            val backdropUrl = movie.thumbUrl ?: movie.posterUrl
 
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .clickable { onMovieClick(movie) }
             ) {
-                AsyncImage(
-                    model = remember(imageUrl) {
-                        ImageRequest.Builder(heroContext)
-                            .data(imageUrl)
-                            .size(1080)
-                            .crossfade(false)
-                            .allowHardware(true)
-                            .memoryCacheKey(imageUrl)
-                            .build()
-                    },
-                    contentDescription = movie.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
+                if (!backdropUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = remember(backdropUrl) {
+                            ImageRequest.Builder(heroContext)
+                                .data(backdropUrl)
+                                .size(1280)
+                                .crossfade(false)
+                                .allowHardware(true)
+                                .memoryCacheKey(backdropUrl)
+                                .build()
+                        },
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        alignment = Alignment.Center,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
         }
 
-        // --- 3. Lớp Gradient chuyển tiếp mượt mà ---
-        // Lớp đỉnh: Đảm bảo TopBar (Logo JKHX, nút chọn plugin, refresh, search) nổi rõ
+        // --- 2. Lớp phủ Gradient Vignette đa hướng: Giữ nền trong trẻo sắc nét, bảo vệ tương phản chữ ---
+        // Lớp đỉnh: Bảo vệ độ tương phản cho TopBar & Category Menu
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(120.dp)
+                .height(110.dp)
                 .align(Alignment.TopCenter)
                 .background(
                     Brush.verticalGradient(
@@ -1233,192 +1252,335 @@ fun HeroBannerSection(
                 )
         )
 
-        // Lớp đáy: Fade to Background cực mượt từ thân ảnh xuống đáy
+        // Lớp bảo vệ chữ bên trái: Gradient ngang giúp chữ và chips luôn sắc nét mà không làm tối nền bên phải
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.horizontalGradient(
+                        0.0f to Color(0xCC000000),
+                        0.42f to Color(0x66000000),
+                        0.72f to Color(0x15000000),
+                        1.0f to Color.Transparent
+                    )
+                )
+        )
+
+        // Lớp đáy: Chuyển mượt xuống màu Background chính ở chân banner
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(220.dp)
+                .height(140.dp)
                 .align(Alignment.BottomCenter)
                 .background(
                     Brush.verticalGradient(
                         0.0f to Color.Transparent,
-                        0.35f to Color(0x66000000),
-                        0.70f to MaterialTheme.colorScheme.background.copy(alpha = 0.85f),
-                        0.92f to MaterialTheme.colorScheme.background.copy(alpha = 0.98f),
+                        0.45f to MaterialTheme.colorScheme.background.copy(alpha = 0.65f),
+                        0.80f to MaterialTheme.colorScheme.background.copy(alpha = 0.92f),
                         1.0f to MaterialTheme.colorScheme.background
                     )
                 )
         )
 
-        // --- 4. Cụm thông tin Overlay chân Banner (Không nút thừa, thoáng đãng tối đa) ---
+        // --- 3. Bố cục Adaptive Cinema Showcase (Trái: Thông tin phim | Phải: Card Poster lớn | Đáy: Dải Mini-Poster full width) ---
         Column(
             modifier = Modifier
-                .align(Alignment.BottomStart)
-                .fillMaxWidth()
-                .padding(horizontal = if (isTablet) 28.dp else 16.dp, vertical = 12.dp)
+                .fillMaxSize()
+                .statusBarsPadding()
+                .padding(
+                    top = if (isTablet) 88.dp else 90.dp,
+                    bottom = 8.dp
+                ),
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Badges row: Rating (nếu có), Năm, Phân loại, Chất lượng, Thể loại
+            // Khối chính ở giữa: 2 cột (Trái: Thông tin phim, Phải: Card poster lớn) căn giữa theo chiều dọc
             Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(bottom = 6.dp)
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(horizontal = if (isTablet) 24.dp else 16.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // Điểm đánh giá (chỉ hiện khi có rating > 0.0)
-                val movieRating = currentMovie.rating
-                if (movieRating != null && movieRating > 0.0) {
-                    Surface(
-                        color = Color(0x55000000),
-                        shape = ShapeTokens.Chip,
-                        border = BorderStroke(0.5.dp, Color(0xFFFFD700).copy(alpha = 0.5f))
+                // CỘT TRÁI: Tiêu đề phim (nằm trên nhất, nếu dài thì xuống dòng) -> Tên gốc -> Hàng Chips bên dưới
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = if (isTablet) 24.dp else 14.dp),
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    // 1. Tiêu đề phim nằm trên nhất (nếu dài thì xuống dòng)
+                    Text(
+                        text = currentMovie.name,
+                        fontWeight = FontWeight.Black,
+                        fontSize = if (isTablet) 26.sp else 20.sp,
+                        lineHeight = if (isTablet) 32.sp else 25.sp,
+                        color = Color.White,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        style = TextStyle(
+                            shadow = Shadow(
+                                color = Color.Black.copy(alpha = 0.85f),
+                                offset = Offset(0f, 2f),
+                                blurRadius = 8f
+                            )
+                        ),
+                        modifier = Modifier.clickable { onMovieClick(currentMovie) }
+                    )
+
+                    // 2. Tên gốc (nếu có và khác tên hiển thị)
+                    val originName = currentMovie.originName?.trim()
+                    if (!originName.isNullOrBlank() && !originName.equals(currentMovie.name.trim(), ignoreCase = true)) {
+                        Text(
+                            text = originName,
+                            fontSize = if (isTablet) 14.sp else 12.5.sp,
+                            color = Color.White.copy(alpha = 0.75f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 3.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // 3. Hàng Chips bên dưới Tiêu đề & Tên gốc
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        // 1. Điểm đánh giá [★ 8.5 TMDB] hoặc [★ 9.0 IMDb] (nếu có)
+                        val movieRating = currentMovie.rating
+                        if (movieRating != null && movieRating > 0.0) {
+                            val isImdbSource = currentMovie.slug.contains(Regex("""tt\d+""")) && currentMovie.tmdbId.isNullOrBlank()
+                            val ratingSourceLabel = if (isImdbSource) "IMDb" else "TMDB"
+                            Surface(
+                                color = Color(0x55000000),
+                                shape = ShapeTokens.Chip,
+                                border = BorderStroke(0.5.dp, Color(0xFFFFD700).copy(alpha = 0.5f))
+                            ) {
+                                Text(
+                                    text = "★ ${String.format(java.util.Locale.US, "%.1f", movieRating)} $ratingSourceLabel",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFFFFD700),
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+
+                        // 2. Năm phát hành (VD: 2008)
+                        val movieYear = currentMovie.year
+                        if (movieYear != null && movieYear > 0) {
+                            Surface(
+                                color = Color(0x55000000),
+                                shape = ShapeTokens.Chip,
+                                border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.2f))
+                            ) {
+                                Text(
+                                    text = "$movieYear",
+                                    fontSize = 11.sp,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+
+                        // 3. Phân loại [Phim Lẻ / Phim Bộ]
+                        Surface(
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+                            shape = ShapeTokens.Chip,
+                            border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
                         ) {
                             Text(
-                                text = "★",
+                                text = if (currentMovie.type == "series") stringResource(R.string.home_tag_series) else stringResource(R.string.home_tag_movie),
                                 fontSize = 11.sp,
-                                color = Color(0xFFFFD700)
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                             )
-                            Spacer(modifier = Modifier.width(3.dp))
+                        }
+
+                        // 4. Chất lượng [HD / FHD]
+                        Surface(
+                            color = Color(0x55000000),
+                            shape = ShapeTokens.Chip,
+                            border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.2f))
+                        ) {
                             Text(
-                                text = String.format(java.util.Locale.US, "%.1f", movieRating),
+                                text = currentMovie.quality ?: stringResource(R.string.home_tag_hd),
                                 fontSize = 11.sp,
                                 color = Color.White,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                             )
+                        }
+
+                        // 5. Thể loại (nếu có)
+                        if (!currentMovie.category.isNullOrBlank()) {
+                            Surface(
+                                color = Color(0x55000000),
+                                shape = ShapeTokens.Chip,
+                                border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.2f))
+                            ) {
+                                Text(
+                                    text = currentMovie.category!!,
+                                    fontSize = 11.sp,
+                                    color = Color.White.copy(alpha = 0.9f),
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
                         }
                     }
                 }
 
-                // Năm phát hành
-                val movieYear = currentMovie.year
-                if (movieYear != null && movieYear > 0) {
-                    Surface(
-                        color = Color(0x55000000),
-                        shape = ShapeTokens.Chip,
-                        border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.2f))
-                    ) {
-                        Text(
-                            text = "${movieYear}",
-                            fontSize = 11.sp,
-                            color = Color.White.copy(alpha = 0.9f),
-                            fontWeight = FontWeight.Medium,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                }
-
-                // Phân loại: Phim Bộ / Phim Lẻ
-                Surface(
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
-                    shape = ShapeTokens.Chip,
-                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
-                ) {
-                    Text(
-                        text = if (currentMovie.type == "series") stringResource(R.string.home_tag_series) else stringResource(R.string.home_tag_movie),
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                }
-
-                // Chất lượng (FHD / HD...)
-                Surface(
-                    color = Color(0x55000000),
-                    shape = ShapeTokens.Chip,
-                    border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.2f))
-                ) {
-                    Text(
-                        text = currentMovie.quality ?: stringResource(R.string.home_tag_hd),
-                        fontSize = 11.sp,
-                        color = Color.White.copy(alpha = 0.85f),
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                }
-
-                // Thể loại (Category)
-                val categoryText = currentMovie.category?.trim()
-                if (!categoryText.isNullOrBlank()) {
-                    Surface(
-                        color = Color(0x55000000),
-                        shape = ShapeTokens.Chip,
-                        border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.2f))
-                    ) {
-                        Text(
-                            text = categoryText,
-                            fontSize = 11.sp,
-                            color = Color.White.copy(alpha = 0.85f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                }
-            }
-
-            // Tiêu đề phim
-            Text(
-                text = currentMovie.name,
-                fontWeight = FontWeight.Black,
-                fontSize = if (isTablet) 24.sp else 21.sp,
-                color = Color.White,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = TextStyle(
-                    shadow = Shadow(
-                        color = Color.Black.copy(alpha = 0.85f),
-                        offset = Offset(0f, 2f),
-                        blurRadius = 6f
-                    )
-                )
-            )
-
-            // Tên gốc (nếu có và khác tên hiển thị)
-            val originTitle = currentMovie.originName?.trim()
-            if (!originTitle.isNullOrBlank() && !originTitle.equals(currentMovie.name.trim(), ignoreCase = true)) {
-                Text(
-                    text = originTitle,
-                    fontSize = 12.5.sp,
-                    color = Color.White.copy(alpha = 0.75f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 1.dp)
-                )
-            }
-
-            // Dải chấm Pager Indicator Dots (Căn giữa tinh tế dưới chân banner)
-            if (movies.size > 1) {
-                Spacer(modifier = Modifier.height(10.dp))
-                Row(
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
+                // CỘT PHẢI: CARD POSTER LỚN TỶ LỆ 2:3 CĂN GIỮA CHIỀU DỌC
+                val posterContext = LocalContext.current
+                val posterUrl = currentMovie.posterUrl ?: currentMovie.thumbUrl
+                Card(
+                    shape = RoundedCornerShape(if (isTablet) 16.dp else 14.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 14.dp),
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 2.dp)
-                ) {
-                    repeat(movies.size.coerceAtMost(10)) { index ->
-                        val isSelected = pagerState.currentPage == index
-                        Box(
-                            modifier = Modifier
-                                .padding(horizontal = 3.dp)
-                                .clip(ShapeTokens.Badge)
-                                .background(
-                                    if (isSelected) MaterialTheme.colorScheme.primary
-                                    else Color.White.copy(alpha = 0.35f)
+                        .fillMaxHeight(0.95f)
+                        .aspectRatio(2f / 3f)
+                        .border(
+                            width = 1.5.dp,
+                            brush = Brush.verticalGradient(
+                                listOf(
+                                    Color.White.copy(alpha = 0.55f),
+                                    Color.White.copy(alpha = 0.15f)
                                 )
-                                .size(
-                                    width = if (isSelected) 16.dp else 4.dp,
-                                    height = 4.dp
-                                )
+                            ),
+                            shape = RoundedCornerShape(if (isTablet) 16.dp else 14.dp)
                         )
-                    }
+                        .onFocusChanged { state ->
+                            if (state.isFocused) isHeroFocused = true
+                        }
+                        .tvFocusableItem(cornerRadius = 16.dp, focusedScale = 1.05f)
+                        .clickable { onMovieClick(currentMovie) }
+                ) {
+                    AsyncImage(
+                        model = remember(posterUrl) {
+                            ImageRequest.Builder(posterContext)
+                                .data(posterUrl)
+                                .size(600, 900)
+                                .crossfade(true)
+                                .allowHardware(true)
+                                .memoryCacheKey(posterUrl)
+                                .build()
+                        },
+                        contentDescription = currentMovie.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
+            }
+
+            // DẢI 8 MINI-POSTER THUMBNAIL STRIP Ở ĐÁY HERO BANNER VÀ FULL CHIỀU RỘNG
+            if (movies.size > 1) {
+                Spacer(modifier = Modifier.height(8.dp))
+                HeroThumbnailStrip(
+                    movies = movies,
+                    currentPage = pagerState.currentPage,
+                    listState = thumbnailListState,
+                    isTablet = isTablet,
+                    onSelectPage = { index ->
+                        if (pagerState.currentPage == index) {
+                            onMovieClick(movies[index])
+                        } else {
+                            coroutineScope.launch {
+                                pagerState.animateScrollToPage(index)
+                            }
+                        }
+                    },
+                    onFocused = { isHeroFocused = it }
+                )
             }
         }
     }
+}
+
+@Composable
+private fun HeroThumbnailStrip(
+    movies: List<MovieItem>,
+    currentPage: Int,
+    listState: androidx.compose.foundation.lazy.LazyListState,
+    isTablet: Boolean,
+    onSelectPage: (Int) -> Unit,
+    onFocused: (Boolean) -> Unit
+) {
+    val thumbContext = LocalContext.current
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center
+    ) {
+        LazyRow(
+            state = listState,
+            contentPadding = PaddingValues(horizontal = if (isTablet) 24.dp else 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+        itemsIndexed(
+            items = movies,
+            key = { index, item -> "hero_thumb_${item.slug}_$index" }
+        ) { index, item ->
+            val isSelected = currentPage == index
+            val thumbUrl = item.posterUrl ?: item.thumbUrl
+            val cardWidth = if (isTablet) {
+                if (isSelected) 52.dp else 44.dp
+            } else {
+                if (isSelected) 44.dp else 37.dp
+            }
+            val cardHeight = if (isTablet) {
+                if (isSelected) 74.dp else 62.dp
+            } else {
+                if (isSelected) 62.dp else 52.dp
+            }
+
+            Box(
+                modifier = Modifier
+                    .size(width = cardWidth, height = cardHeight)
+                    .clip(RoundedCornerShape(8.dp))
+                    .border(
+                        width = if (isSelected) 1.8.dp else 0.8.dp,
+                        color = if (isSelected) Color.White else Color.White.copy(alpha = 0.22f),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    .alpha(if (isSelected) 1f else 0.52f)
+                    .onFocusChanged { state ->
+                        if (state.isFocused) {
+                            onFocused(true)
+                            onSelectPage(index)
+                        }
+                    }
+                    .tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.08f)
+                    .clickable { onSelectPage(index) }
+            ) {
+                AsyncImage(
+                    model = remember(thumbUrl) {
+                        ImageRequest.Builder(thumbContext)
+                            .data(thumbUrl)
+                            .size(160, 240)
+                            .crossfade(false)
+                            .allowHardware(true)
+                            .memoryCacheKey(thumbUrl)
+                            .build()
+                    },
+                    contentDescription = item.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+    }
+}
 }
 
 @Composable

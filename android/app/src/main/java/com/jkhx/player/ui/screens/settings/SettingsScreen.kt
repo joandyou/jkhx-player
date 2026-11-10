@@ -38,6 +38,7 @@ import com.jkhx.player.JkhxApplication
 import com.jkhx.player.R
 import com.jkhx.player.settings.AppLanguage
 import com.jkhx.player.settings.AppThemeMode
+import com.jkhx.player.settings.DefaultPlayerMode
 import com.jkhx.player.settings.DeviceDisplayMode
 import com.jkhx.player.settings.LocaleHelper
 import com.jkhx.player.settings.ProxyType
@@ -72,6 +73,7 @@ fun SettingsScreen(
     val themeMode by settingsManager.themeMode.collectAsState()
     val displayMode by settingsManager.displayMode.collectAsState()
     val currentLanguage by settingsManager.language.collectAsState()
+    val defaultPlayerMode by settingsManager.defaultPlayerMode.collectAsState()
     val adultMode by settingsManager.isAdultEnabled.collectAsState()
     val comicMode by settingsManager.isComicEnabled.collectAsState()
     val novelMode by settingsManager.isNovelEnabled.collectAsState()
@@ -294,7 +296,43 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // 2. TÀI KHOẢN & ĐỒNG BỘ ĐÁM MÂY
+            // 2. TRÌNH PHÁT VIDEO (Card riêng biệt)
+            SettingsSectionHeader(stringResource(R.string.settings_player_section_title))
+            SettingsCard {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = stringResource(R.string.settings_default_player_title),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = stringResource(R.string.settings_default_player_desc),
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        DefaultPlayerMode.entries.forEach { mode ->
+                            SettingPill(
+                                label = stringResource(mode.titleRes),
+                                isSelected = defaultPlayerMode == mode,
+                                onClick = { settingsManager.setDefaultPlayerMode(mode) }
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // 3. TÀI KHOẢN & ĐỒNG BỘ ĐÁM MÂY
             SettingsSectionHeader(stringResource(R.string.settings_sync_section))
             SettingsCard {
                 if (googleEmail.isNullOrBlank()) {
@@ -868,6 +906,11 @@ fun SettingsScreen(
                     AppInfoRow(
                         label = stringResource(R.string.settings_display_mode_section),
                         value = stringResource(displayMode.titleRes)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    AppInfoRow(
+                        label = stringResource(R.string.settings_default_player_title),
+                        value = stringResource(defaultPlayerMode.titleRes)
                     )
                 }
 

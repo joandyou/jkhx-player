@@ -125,6 +125,7 @@
     <string name="player_auto">Auto</string>
     <string name="player_off">Off</string>
     <string name="player_episodes_sheet_title">Episode List</string>
+    <string name="player_episodes_title_nuvio">Episodes</string>
     <string name="player_episodes_playing">Playing</string>
     <string name="player_episodes_count">%d episodes</string>
     <string name="player_settings_title">Playback Settings</string>
@@ -295,6 +296,20 @@
     <string name="detail_episodes_count">%d episodes</string>
     <string name="detail_episodes_progress">%1$d of %2$d episodes</string>
     <string name="detail_resume_episode">Resume %s</string>
+    <string name="episode_navigator_search_hint">Search title, plot or number</string>
+    <string name="episode_navigator_clear_search">Clear search</string>
+    <string name="episode_navigator_go_to">Go to</string>
+    <string name="episode_navigator_sort">Sort</string>
+    <string name="episode_navigator_count">%1$d of %2$d episodes</string>
+    <string name="episode_navigator_no_match">No episodes match ‘%1$s’</string>
+    <string name="episode_navigator_go_to_title">Jump to episode</string>
+    <string name="episode_navigator_episode_number">Episode number</string>
+    <string name="episode_navigator_go">Go</string>
+    <string name="episode_navigator_go_to_help">Type a number or choose one below.</string>
+    <string name="episode_navigator_out_of_range">%1$s has episodes from %2$d to %3$d</string>
+    <string name="episode_navigator_sort_title">Sort episodes</string>
+    <string name="episode_navigator_sort_first_to_last">Episode: first to last</string>
+    <string name="episode_navigator_sort_last_to_first">Episode: last to first</string>
 
     <!-- SearchScreen -->
     <string name="search_placeholder">Search movies &amp; comics across all plugins…</string>
@@ -681,6 +696,16 @@
     <string name="plugins_stremio_streams_support">Streams Provider</string>
     <string name="plugins_stremio_ping_test">Test</string>
     <string name="plugins_addon_configure">Configure</string>
+    <string name="plugins_addon_share">Share</string>
+    <string name="plugins_addon_shared_toast">Copied Addon link &amp; opened share</string>
+    <string name="detail_writer">Writers:</string>
+    <string name="detail_trailer">Trailer</string>
+    <string name="detail_info_section_title">Details</string>
+    <string name="detail_info_release">Release Info</string>
+    <string name="detail_info_duration">Runtime</string>
+    <string name="detail_info_country">Country of Origin</string>
+    <string name="detail_info_genres">Genres</string>
+    <string name="detail_info_status">Status</string>
     <string name="settings_subtitle_languages_title">Subtitle Search Languages</string>
     <string name="settings_subtitle_languages_desc">Select languages to search for online subtitles. English is always mandatory to support Gemini AI translation.</string>
     <string name="settings_subtitle_languages_mandatory">Mandatory (Required for Gemini AI translation)</string>
@@ -762,4 +787,46 @@
     <string name="cw_tag_movie">Movie</string>
     <string name="cw_tag_series">Series</string>
     <string name="cw_delete_confirm">Removed from watch history</string>
+
+    <!-- Stremio Addon Selector Modal Strings -->
+    <string name="search_addon_modal_title">Select Discovery Addon</string>
+    <string name="search_addon_search_placeholder">Search addons…</string>
+    <string name="search_addon_empty_filter">No matching addon found</string>
+    <string name="search_addon_manage_btn">Manage Addons</string>
+
+    <!-- App Exit Confirmation -->
+    <string name="app_exit_confirm">Press back again to exit</string>
+
+    <!-- Stream Download Strings -->
+    <string name="stream_download_title">Download Options</string>
+    <string name="stream_download_btn_desc">Download stream</string>
+    <string name="stream_download_in_app">Download Video</string>
+    <string name="stream_download_in_app_desc">Download in background to storage for offline watching</string>
+    <string name="stream_download_external">Download with 1DM / External App</string>
+    <string name="stream_download_external_desc">Forward stream link &amp; headers to 1DM, ADM...</string>
+    <string name="stream_download_external_chooser">Choose download application</string>
+    <string name="stream_download_external_error">No suitable download application found</string>
+    <string name="stream_download_copy_link">Copy Link</string>
+    <string name="stream_download_copy_link_desc">Copy stream link to clipboard</string>
+    <string name="stream_download_preparing">Preparing download...</string>
+    <string name="stream_download_started_toast">Started video download...</string>
+    <string name="stream_download_completed_title">Video download completed</string>
+    <string name="download_notification_channel_name">Video Downloads</string>
+    <string name="download_notification_channel_desc">In-app video download progress notifications</string>
+
+    <!-- External Player (Out-App) Strings -->
+    <string name="settings_player_section_title">Video Player</string>
+    <string name="player_mode_internal">ExoPlayer</string>
+    <string name="player_mode_external">External Player</string>
+    <string name="player_mode_always_ask">Always Ask</string>
+    <string name="player_open_external_chooser">Choose Video Player</string>
+    <string name="player_open_external_error">No suitable external video player found (VLC, MPV, MX Player...)</string>
+    <string name="stream_action_play_external">Play in External Player (VLC, MPV...)</string>
+    <string name="stream_action_play_external_desc">Forward stream and subtitles to VLC, MPV, MX Player or Just Player</string>
+    <string name="player_choose_engine_title">Choose Video Player</string>
+    <string name="player_external_section_title">External Player</string>
+    <string name="player_open_external_action">Open in External Player</string>
+    <string name="player_open_external_action_desc">Continue playback at this position in VLC, MPV or MX Player</string>
+    <string name="settings_default_player_title">Default Video Player</string>
+    <string name="settings_default_player_desc">Select internal ExoPlayer or external app (VLC, MPV, Just Player...)</string>
 </resources>

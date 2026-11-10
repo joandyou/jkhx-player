@@ -1559,6 +1559,9 @@ private fun DetailRecommendationSection(
     onMovieClick: (MovieItem) -> Unit
 ) {
     if (movies.isEmpty()) return
+    val uniqueMovies = remember(movies) {
+        movies.distinctBy { it.tmdbId ?: it.slug }
+    }
     Column(modifier = Modifier.padding(vertical = AppTheme.dimens.space10)) {
         Text(
             text = title,
@@ -1571,11 +1574,11 @@ private fun DetailRecommendationSection(
             contentPadding = PaddingValues(horizontal = AppTheme.dimens.space16),
             horizontalArrangement = Arrangement.spacedBy(AppTheme.dimens.space12)
         ) {
-            items(
-                items = movies,
-                key = { movie -> "${movie.providerId ?: "tmdb"}_${movie.tmdbId ?: movie.slug}" },
-                contentType = { "movie_card" }
-            ) { movie ->
+            itemsIndexed(
+                items = uniqueMovies,
+                key = { index, movie -> "${movie.providerId ?: "tmdb"}_${movie.tmdbId ?: movie.slug}_$index" },
+                contentType = { _, _ -> "movie_card" }
+            ) { _, movie ->
                 MovieCard(
                     movie = movie,
                     sourceBadge = "TMDB",

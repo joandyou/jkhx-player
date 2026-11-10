@@ -1143,6 +1143,48 @@ class PluginManager(
         stremioAddonDao?.insert(entity.copy(manifestJson = rawManifest))
     }
 
+    suspend fun moveStremioAddonOrder(url: String, moveUp: Boolean): Boolean = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val dao = stremioAddonDao ?: return@withLock false
+            val normalizedUrl = StremioBridgeClient.normalizeManifestUrl(url)
+            val addons = dao.getAllAddonsSync().toMutableList()
+            val index = addons.indexOfFirst {
+                it.url == normalizedUrl || it.url == url
+            }
+            if (index == -1) return@withLock false
+            val targetIndex = if (moveUp) index - 1 else index + 1
+            if (targetIndex < 0 || targetIndex >= addons.size) return@withLock false
+
+            val item = addons.removeAt(index)
+            addons.add(targetIndex, item)
+
+            // Chuẩn hóa và lưu lại orderIndex liên tục cho từng addon trong Database
+            for (i in addons.indices) {
+                val current = addons[i]
+                if (current.orderIndex != i) {
+                    dao.insert(current.copy(orderIndex = i))
+                }
+            }
+
+            // Đồng bộ thứ tự với danh sách plugin chung pluginOrderList nếu có
+            val pluginId = StremioPluginWrapper.makePluginId(item.id)
+            synchronized(pluginOrderList) {
+                val pIdx = pluginOrderList.indexOf(pluginId)
+                if (pIdx != -1) {
+                    val pTargetIdx = if (moveUp) pIdx - 1 else pIdx + 1
+                    if (pTargetIdx in pluginOrderList.indices) {
+                        pluginOrderList.removeAt(pIdx)
+                        pluginOrderList.add(pTargetIdx, pluginId)
+                        savePluginOrder()
+                    }
+                }
+            }
+
+            _pluginsUpdateCounter.value += 1
+            true
+        }
+    }
+
     override fun close() {
         for ((_, plugin) in loadedPlugins) {
             try {

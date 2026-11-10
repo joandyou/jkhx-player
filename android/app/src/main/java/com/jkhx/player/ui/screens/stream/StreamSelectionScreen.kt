@@ -21,12 +21,14 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -52,6 +54,11 @@ import com.jkhx.player.JkhxApplication
 import com.jkhx.player.R
 import com.jkhx.player.core.model.EpisodeData
 import com.jkhx.player.core.model.MovieDetail
+import com.jkhx.player.download.ExternalDownloaderHelper
+import com.jkhx.player.download.VideoDownloadManager
+import com.jkhx.player.player.ExternalPlayerHelper
+import com.jkhx.player.settings.DefaultPlayerMode
+import com.jkhx.player.ui.components.DownloadOptionsModal
 import com.jkhx.player.ui.theme.tvFocusableItem
 import com.jkhx.player.ui.screens.stream.badge.*
 import com.jkhx.player.ui.theme.AppTheme
@@ -77,12 +84,26 @@ fun StreamSelectionScreen(
     val badgePlacement by settingsManager.streamBadgePlacement.collectAsState()
     val showSizeBadges by settingsManager.showStreamSizeBadges.collectAsState()
     val showAddonIcon by settingsManager.showAddonIcon.collectAsState()
+    val defaultPlayerMode by settingsManager.defaultPlayerMode.collectAsState()
 
     val badgeRules = remember(badgeRulesJson) {
         StreamBadgeJsonHelper.decodeRules(badgeRulesJson)
     }
     val compiledFilters = remember(badgeRules) {
         StreamBadgeMatcher.getCompiledFilters(badgeRules)
+    }
+
+    val playStreamExternal: (UnifiedStreamItem) -> Unit = remember(context, movieDetail, episode) {
+        { streamItem ->
+            ExternalPlayerHelper.openInExternalPlayer(
+                context = context,
+                streamUrl = streamItem.streamUrl,
+                title = if (episode.name.isNotBlank()) "${movieDetail.name} - ${episode.name}" else movieDetail.name,
+                posterUrl = movieDetail.posterUrl ?: movieDetail.backdropUrl,
+                headers = streamItem.headers,
+                subtitles = streamItem.subtitles
+            )
+        }
     }
 
     val onCopyStream: (UnifiedStreamItem) -> Unit = remember(context) {
@@ -122,6 +143,8 @@ fun StreamSelectionScreen(
     var isLoading by remember { mutableStateOf(true) }
     var selectedGroupFilter by rememberSaveable { mutableStateOf<String?>(null) }
     var refreshKey by remember { mutableIntStateOf(0) }
+    var downloadModalStream by remember { mutableStateOf<UnifiedStreamItem?>(null) }
+    var askPlayerModalStream by remember { mutableStateOf<UnifiedStreamItem?>(null) }
 
     LaunchedEffect(Unit) {
         ActivePlayerSession.lastSelectedStreamGroup = null
@@ -536,19 +559,25 @@ fun StreamSelectionScreen(
                         }
 
                         // Danh sách Card luồng trong nhóm
-                        items(
+                        itemsIndexed(
                             items = streamsInGroup,
-                            key = { it.id }
-                        ) { streamItem ->
+                            key = { index, streamItem -> "${streamItem.id}_$index" }
+                        ) { _, streamItem ->
                             StreamCardItem(
                                 item = streamItem,
                                 compiledFilters = compiledFilters,
                                 badgePlacement = badgePlacement,
                                 showSizeBadges = showSizeBadges,
                                 showAddonIcon = showAddonIcon,
-                                onClick = { onStreamSelected(streamItem) },
+                                onClick = {
+                                    when (defaultPlayerMode) {
+                                        DefaultPlayerMode.EXTERNAL -> playStreamExternal(streamItem)
+                                        DefaultPlayerMode.ALWAYS_ASK -> askPlayerModalStream = streamItem
+                                        DefaultPlayerMode.INTERNAL -> onStreamSelected(streamItem)
+                                    }
+                                },
                                 onLongClick = { onCopyStream(streamItem) },
-                                onCopyStream = { onCopyStream(streamItem) }
+                                onDownloadClick = { downloadModalStream = streamItem }
                             )
                         }
                     }
@@ -559,6 +588,102 @@ fun StreamSelectionScreen(
                 }
             }
         }
+    }
+
+    // Modal tùy chọn tải xuống theo chuẩn Cloudstream
+    if (downloadModalStream != null) {
+        val stream = downloadModalStream!!
+        DownloadOptionsModal(
+            visible = true,
+            onDismiss = { downloadModalStream = null },
+            title = stream.title.ifBlank { movieDetail.name },
+            subtitle = if (stream.serverName.isNotBlank() && stream.serverName != stream.providerName) {
+                "${stream.providerName} • ${stream.serverName}"
+            } else {
+                stream.providerName
+            },
+            qualityBadge = stream.qualityBadge,
+            onPlayExternal = {
+                playStreamExternal(stream)
+            },
+            onDownloadInApp = {
+                val headers = buildMap {
+                    stream.headers.forEach { (k, v) -> put(k, v) }
+                }
+                VideoDownloadManager.enqueueDownload(
+                    context = context,
+                    url = stream.streamUrl,
+                    movieName = movieDetail.name,
+                    episodeName = episode.name,
+                    posterUrl = movieDetail.posterUrl ?: movieDetail.backdropUrl,
+                    quality = stream.qualityBadge,
+                    headers = headers
+                )
+            },
+            onDownloadExternal = {
+                ExternalDownloaderHelper.openInExternalDownloader(
+                    context = context,
+                    streamUrl = stream.streamUrl,
+                    title = if (episode.name.isNotBlank()) "${movieDetail.name} - ${episode.name}" else movieDetail.name,
+                    posterUrl = movieDetail.posterUrl ?: movieDetail.backdropUrl,
+                    headers = stream.headers
+                )
+            },
+            onCopyLink = {
+                onCopyStream(stream)
+            }
+        )
+    }
+
+    // Modal lựa chọn trình phát khi chế độ là "Luôn hỏi"
+    if (askPlayerModalStream != null) {
+        val stream = askPlayerModalStream!!
+        AlertDialog(
+            onDismissRequest = { askPlayerModalStream = null },
+            title = {
+                Text(
+                    text = stringResource(R.string.player_choose_engine_title),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = stream.title.ifBlank { movieDetail.name },
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Button(
+                        onClick = {
+                            val target = askPlayerModalStream
+                            askPlayerModalStream = null
+                            target?.let { onStreamSelected(it) }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.player_mode_internal))
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            val target = askPlayerModalStream
+                            askPlayerModalStream = null
+                            target?.let { playStreamExternal(it) }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.player_mode_external))
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { askPlayerModalStream = null }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            }
+        )
     }
 }
 
@@ -572,7 +697,7 @@ private fun StreamCardItem(
     showAddonIcon: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
-    onCopyStream: () -> Unit
+    onDownloadClick: () -> Unit
 ) {
     val matchedBadges = remember(item, compiledFilters) {
         StreamBadgeMatcher.matchBadges(item, compiledFilters)
@@ -690,7 +815,7 @@ private fun StreamCardItem(
                 }
 
                 IconButton(
-                    onClick = onCopyStream,
+                    onClick = onDownloadClick,
                     modifier = Modifier
                         .size(32.dp)
                         .background(
@@ -699,10 +824,10 @@ private fun StreamCardItem(
                         )
                 ) {
                     Icon(
-                        imageVector = Icons.Default.ContentCopy,
-                        contentDescription = stringResource(R.string.stream_copied_toast),
+                        imageVector = Icons.Default.Download,
+                        contentDescription = stringResource(R.string.stream_download_btn_desc),
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(17.dp)
                     )
                 }
             }

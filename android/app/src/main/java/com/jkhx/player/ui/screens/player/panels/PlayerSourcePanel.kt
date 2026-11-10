@@ -25,10 +25,12 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Tv
@@ -54,15 +56,21 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.jkhx.player.ActivePlayerSession
 import com.jkhx.player.R
 import com.jkhx.player.core.model.EpisodeData
 import com.jkhx.player.core.model.EpisodeStream
+import com.jkhx.player.download.ExternalDownloaderHelper
+import com.jkhx.player.player.ExternalPlayerHelper
+import com.jkhx.player.download.VideoDownloadManager
+import com.jkhx.player.ui.components.DownloadOptionsModal
 import com.jkhx.player.ui.screens.stream.UnifiedStreamItem
 import com.jkhx.player.ui.theme.tvFocusableItem
 import kotlinx.coroutines.delay
@@ -87,6 +95,9 @@ internal fun PlayerSourcePanel(
     onSelectStream: (UnifiedStreamItem) -> Unit,
     onCopyStreamUrl: (String) -> Unit
 ) {
+    val context = LocalContext.current
+    var downloadModalStream by remember { mutableStateOf<UnifiedStreamItem?>(null) }
+
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(),
@@ -372,10 +383,10 @@ internal fun PlayerSourcePanel(
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        items(
+                        itemsIndexed(
                             items = displayedStreams,
-                            key = { it.id }
-                        ) { item ->
+                            key = { index, item -> "${item.id}_$index" }
+                        ) { _, item ->
                             val isThisStreamPlaying = item.id == playingStreamId
 
                             Surface(
@@ -510,7 +521,7 @@ internal fun PlayerSourcePanel(
                                         Spacer(modifier = Modifier.height(6.dp))
 
                                         IconButton(
-                                            onClick = { onCopyStreamUrl(item.streamUrl) },
+                                            onClick = { downloadModalStream = item },
                                             modifier = Modifier
                                                 .size(32.dp)
                                                 .background(
@@ -519,10 +530,10 @@ internal fun PlayerSourcePanel(
                                                 )
                                         ) {
                                             Icon(
-                                                imageVector = Icons.Default.ContentCopy,
-                                                contentDescription = stringResource(R.string.stream_copied_toast),
+                                                imageVector = Icons.Default.Download,
+                                                contentDescription = stringResource(R.string.stream_download_btn_desc),
                                                 tint = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(16.dp)
+                                                modifier = Modifier.size(17.dp)
                                             )
                                         }
                                     }
@@ -555,6 +566,59 @@ internal fun PlayerSourcePanel(
                 }
             }
         }
+    }
+
+    // Modal tùy chọn tải xuống theo chuẩn Cloudstream
+    if (downloadModalStream != null) {
+        val stream = downloadModalStream!!
+        val movieDetail = ActivePlayerSession.movieDetail
+        DownloadOptionsModal(
+            visible = true,
+            onDismiss = { downloadModalStream = null },
+            title = stream.title.ifBlank { movieName },
+            subtitle = if (stream.serverName.isNotBlank() && stream.serverName != stream.providerName) {
+                "${stream.providerName} • ${stream.serverName}"
+            } else {
+                stream.providerName
+            },
+            qualityBadge = stream.qualityBadge,
+            onPlayExternal = {
+                ExternalPlayerHelper.openInExternalPlayer(
+                    context = context,
+                    streamUrl = stream.streamUrl,
+                    title = if (currentEpisode.name.isNotBlank()) "$movieName - ${currentEpisode.name}" else movieName,
+                    posterUrl = movieDetail?.posterUrl ?: movieDetail?.backdropUrl,
+                    headers = stream.headers,
+                    subtitles = stream.subtitles
+                )
+            },
+            onDownloadInApp = {
+                val headers = buildMap {
+                    stream.headers.forEach { (k, v) -> put(k, v) }
+                }
+                VideoDownloadManager.enqueueDownload(
+                    context = context,
+                    url = stream.streamUrl,
+                    movieName = movieName,
+                    episodeName = currentEpisode.name,
+                    posterUrl = movieDetail?.posterUrl ?: movieDetail?.backdropUrl,
+                    quality = stream.qualityBadge,
+                    headers = headers
+                )
+            },
+            onDownloadExternal = {
+                ExternalDownloaderHelper.openInExternalDownloader(
+                    context = context,
+                    streamUrl = stream.streamUrl,
+                    title = if (currentEpisode.name.isNotBlank()) "$movieName - ${currentEpisode.name}" else movieName,
+                    posterUrl = movieDetail?.posterUrl ?: movieDetail?.backdropUrl,
+                    headers = stream.headers
+                )
+            },
+            onCopyLink = {
+                onCopyStreamUrl(stream.streamUrl)
+            }
+        )
     }
 }
 

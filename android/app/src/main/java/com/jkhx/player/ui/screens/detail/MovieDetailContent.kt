@@ -2,7 +2,10 @@ package com.jkhx.player.ui.screens.detail
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -102,11 +105,8 @@ fun MovieDetailContent(
 ) {
     val context = LocalContext.current
 
-    // 1. Phân giải danh sách máy chủ (servers)
-    var selectedServerIndex by rememberSaveable(detail.slug) { mutableIntStateOf(0) }
-    val safeServerIndex = selectedServerIndex.coerceIn(0, (detail.episodes.size - 1).coerceAtLeast(0))
-    val currentServer = detail.episodes.getOrNull(safeServerIndex)
-        ?: detail.episodes.firstOrNull()
+    // 1. Phân giải danh sách máy chủ (servers) - Mặc định sử dụng server đầu tiên
+    val currentServer = detail.episodes.firstOrNull()
         ?: EpisodeServer(serverName = providerDisplayName, episodes = emptyList())
 
     val allEpisodes = currentServer.episodes
@@ -149,13 +149,24 @@ fun MovieDetailContent(
         mutableIntStateOf(seasonGroups.firstOrNull()?.seasonNumber ?: 1)
     }
 
+    var episodeSearchQuery by rememberSaveable(detail.slug) { mutableStateOf("") }
+    var highlightedEpisodeId by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = rememberCoroutineScope()
+
     // Đảm bảo selectedSeasonNumber luôn hợp lệ
     val activeSeasonGroup = seasonGroups.find { it.seasonNumber == selectedSeasonNumber }
         ?: seasonGroups.firstOrNull()
 
     val currentSeasonEpisodes = activeSeasonGroup?.episodes ?: allEpisodes
-    val displayedEpisodes = remember(currentSeasonEpisodes, isEpisodeSortDescending) {
-        if (isEpisodeSortDescending) currentSeasonEpisodes.reversed() else currentSeasonEpisodes
+    val displayedEpisodes = remember(currentSeasonEpisodes, episodeSearchQuery, isEpisodeSortDescending) {
+        val filtered = if (episodeSearchQuery.isBlank()) {
+            currentSeasonEpisodes
+        } else {
+            currentSeasonEpisodes.filterIndexed { index, ep ->
+                ep.matchesEpisodeQuery(episodeSearchQuery, index)
+            }
+        }
+        if (isEpisodeSortDescending) filtered.reversed() else filtered
     }
 
     // 3. Phân giải tập đang xem dở hoặc tập đầu tiên cho nút CTA Play chính
@@ -191,6 +202,27 @@ fun MovieDetailContent(
     val castList = remember(detail.castMembers, detail.actors) {
         if (detail.castMembers.isNotEmpty()) detail.castMembers
         else detail.actors.map { CastMember(name = it) }
+    }
+
+    val infoRows = remember(detail) {
+        buildList {
+            val relInfo = detail.year?.toString()
+            if (!relInfo.isNullOrBlank()) {
+                add(R.string.detail_info_release to relInfo)
+            }
+            if (!detail.duration.isNullOrBlank()) {
+                add(R.string.detail_info_duration to detail.duration!!)
+            }
+            if (detail.countries.isNotEmpty()) {
+                add(R.string.detail_info_country to detail.countries.joinToString(", "))
+            }
+            if (detail.genres.isNotEmpty()) {
+                add(R.string.detail_info_genres to detail.genres.joinToString(" • "))
+            }
+            if (!detail.status.isNullOrBlank()) {
+                add(R.string.detail_info_status to detail.status!!)
+            }
+        }
     }
 
     LazyColumn(
@@ -602,7 +634,7 @@ fun MovieDetailContent(
                 if (detail.directors.isNotEmpty()) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(bottom = 6.dp)
+                        modifier = Modifier.padding(bottom = 4.dp)
                     ) {
                         Text(
                             text = stringResource(R.string.detail_director),
@@ -613,6 +645,28 @@ fun MovieDetailContent(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = detail.directors.joinToString(", "),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+
+                // Biên kịch
+                if (detail.writers.isNotEmpty()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.detail_writer),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = detail.writers.joinToString(", "),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurface
@@ -695,8 +749,8 @@ fun MovieDetailContent(
                                         )
                                     } else {
                                         Text(
-                                            text = cast.name.take(1).uppercase(),
-                                            fontSize = 20.sp,
+                                            text = cast.name.initials(),
+                                            fontSize = 17.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -729,37 +783,6 @@ fun MovieDetailContent(
             }
         }
 
-        // =========================================================================
-        // 7. MULTI-SERVER SELECTION (NẾU CÓ NHIỀU NGUỒN PHÁT, BỎ CHỮ "NGUỒN PHÁT")
-        // =========================================================================
-        if (detail.episodes.size > 1) {
-            item(key = "movie_server_chips") {
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    itemsIndexed(detail.episodes) { index, srv ->
-                        val isSelected = index == safeServerIndex
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = { selectedServerIndex = index },
-                            label = {
-                                Text(
-                                    text = srv.serverName,
-                                    fontSize = 12.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                )
-                            },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.primary,
-                                selectedLabelColor = MaterialTheme.colorScheme.onPrimary
-                            ),
-                            modifier = Modifier.tvFocusableItem(cornerRadius = 8.dp, focusedScale = 1.05f)
-                        )
-                    }
-                }
-            }
-        }
 
         // =========================================================================
         // 8. ĐÁY MÀN HÌNH: CÁC MÙA & DANH SÁCH CARD TẬP PHIM (NUVIO EPISODE CARDS)
@@ -787,7 +810,10 @@ fun MovieDetailContent(
                             items(seasonGroups) { sGroup ->
                                 val isSelected = sGroup.seasonNumber == selectedSeasonNumber
                                 Surface(
-                                    onClick = { selectedSeasonNumber = sGroup.seasonNumber },
+                                    onClick = {
+                                        selectedSeasonNumber = sGroup.seasonNumber
+                                        episodeSearchQuery = ""
+                                    },
                                     shape = RoundedCornerShape(10.dp),
                                     color = if (isSelected) MaterialTheme.colorScheme.primary
                                             else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
@@ -813,57 +839,62 @@ fun MovieDetailContent(
                 }
             }
 
-            // Thanh đếm số tập & nút đảo thứ tự (Sort asc/desc)
+            // Thanh điều hướng & tìm kiếm tập phim chuẩn Nuvio
             item(key = "movie_episodes_control_bar") {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = if (isSeries) {
-                            stringResource(R.string.detail_episodes_progress, displayedEpisodes.size, currentSeasonEpisodes.size)
-                        } else {
-                            stringResource(R.string.detail_episodes_count, displayedEpisodes.size)
-                        },
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    if (displayedEpisodes.size > 1) {
-                        TextButton(
-                            onClick = onToggleEpisodeSort,
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.SwapVert,
-                                contentDescription = stringResource(R.string.detail_sort_chapters),
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = stringResource(if (isEpisodeSortDescending) R.string.detail_sort_desc else R.string.detail_sort_asc),
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
+                val currentSortOrder = if (isEpisodeSortDescending) EpisodeSortOrder.LastToFirst else EpisodeSortOrder.FirstToLast
+                EpisodeNavigatorBar(
+                    query = episodeSearchQuery,
+                    onQueryChange = { episodeSearchQuery = it },
+                    sortOrder = currentSortOrder,
+                    onSortOrderChange = { newOrder ->
+                        if (newOrder != currentSortOrder) {
+                            onToggleEpisodeSort()
+                        }
+                    },
+                    shownCount = displayedEpisodes.size,
+                    totalCount = currentSeasonEpisodes.size,
+                    seasonLabel = activeSeasonGroup?.seasonLabel ?: stringResource(R.string.detail_season_n, 1),
+                    episodes = currentSeasonEpisodes,
+                    isWatched = { ep ->
+                        watchHistory?.let { h ->
+                            h.lastEpisodeId == ep.id || h.lastEpisodeName == ep.name
+                        } ?: false
+                    },
+                    upNextEpisodeId = resumeEpisode?.id ?: firstEpisode?.id,
+                    onGoToEpisode = { targetEp ->
+                        coroutineScope.launch {
+                            val epIndex = displayedEpisodes.indexOf(targetEp)
+                            if (epIndex >= 0) {
+                                val baseIndex = 5 + (if (castList.isNotEmpty()) 1 else 0) + (if (isSeries && seasonGroups.isNotEmpty()) 1 else 0) + 1
+                                listState.animateScrollToItem((baseIndex + epIndex).coerceAtLeast(0))
+                                highlightedEpisodeId = targetEp.id
+                                kotlinx.coroutines.delay(1600L)
+                                if (highlightedEpisodeId == targetEp.id) highlightedEpisodeId = null
+                            }
                         }
                     }
+                )
+            }
+
+            // Giao diện khi tìm kiếm không có tập nào khớp
+            if (displayedEpisodes.isEmpty() && episodeSearchQuery.isNotBlank()) {
+                item(key = "movie_episodes_empty_state") {
+                    EpisodeNavigatorEmptyState(
+                        query = episodeSearchQuery,
+                        onClear = { episodeSearchQuery = "" }
+                    )
                 }
             }
 
             // Danh sách các Card Tập Phim chuẩn Nuvio
             itemsIndexed(
                 items = displayedEpisodes,
-                key = { _, ep -> "${currentServer.serverName}_${ep.id}_${ep.slug}" }
+                key = { index, ep -> "${currentServer.serverName}_${ep.id}_${ep.slug}_$index" }
             ) { displayIndex, episode ->
                 val actualIndex = allEpisodes.indexOf(episode).coerceAtLeast(0)
                 val isCurrentPlaying = watchHistory?.lastEpisodeId == episode.id ||
                     watchHistory?.lastEpisodeName == episode.name
+                val isHighlighted = highlightedEpisodeId == episode.id
 
                 val watchProgressRatio = remember(watchHistory, isCurrentPlaying) {
                     if (isCurrentPlaying && (watchHistory?.durationMs ?: 0L) > 0L) {
@@ -879,11 +910,170 @@ fun MovieDetailContent(
                         actualIndex = actualIndex,
                         isSeries = isSeries,
                         isCurrentPlaying = isCurrentPlaying,
+                        isHighlighted = isHighlighted,
                         watchProgressRatio = watchProgressRatio,
                         onClick = {
                             onPlayEpisode(currentServer, actualIndex, episode, isEpisodeSortDescending)
                         }
                     )
+                }
+            }
+        }
+
+        // =========================================================================
+        // 8.5. TRAILER & BẢNG THÔNG TIN CHI TIẾT (CHUẨN NUVIO)
+        // =========================================================================
+        if (!detail.trailerUrl.isNullOrBlank()) {
+            item(key = "movie_trailer_section") {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.detail_trailer),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+
+                    val youtubeVideoId = remember(detail.trailerUrl) {
+                        detail.trailerUrl?.let { url ->
+                            Regex("""(?:v=|youtu\.be/|embed/)([a-zA-Z0-9_-]{11})""").find(url)?.groupValues?.get(1)
+                        }
+                    }
+                    val trailerThumbnail = remember(youtubeVideoId, detail.backdropUrl, detail.posterUrl) {
+                        if (youtubeVideoId != null) {
+                            "https://img.youtube.com/vi/$youtubeVideoId/hqdefault.jpg"
+                        } else {
+                            detail.backdropUrl ?: detail.posterUrl
+                        }
+                    }
+
+                    Surface(
+                        onClick = {
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(detail.trailerUrl))
+                                context.startActivity(intent)
+                            } catch (_: Exception) {}
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                        modifier = Modifier
+                            .width(200.dp)
+                            .height(116.dp)
+                            .tvFocusableItem(cornerRadius = 12.dp, focusedScale = 1.03f)
+                    ) {
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            if (trailerThumbnail != null) {
+                                AsyncImage(
+                                    model = remember(trailerThumbnail) {
+                                        ImageRequest.Builder(context)
+                                            .data(trailerThumbnail)
+                                            .crossfade(true)
+                                            .build()
+                                    },
+                                    contentDescription = stringResource(R.string.detail_trailer),
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black.copy(alpha = 0.35f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.PlayArrow,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onPrimary,
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(topStart = 4.dp, bottomEnd = 4.dp),
+                                color = Color.Black.copy(alpha = 0.75f),
+                                modifier = Modifier.align(Alignment.BottomStart)
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.detail_trailer),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Bảng "Thông tin" chi tiết (Release info, duration, country, genres, status...)
+        if (infoRows.isNotEmpty() && (!detail.tmdbId.isNullOrBlank() || !isSeries)) {
+            item(key = "movie_additional_info_section") {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.detail_info_section_title),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+
+                    infoRows.forEachIndexed { index, (labelRes, value) ->
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 9.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = stringResource(labelRes),
+                                    fontSize = 13.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = value,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(start = 16.dp),
+                                    fontSize = 13.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.Medium,
+                                    textAlign = TextAlign.End,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            if (index < infoRows.lastIndex) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(0.6.dp)
+                                        .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -945,39 +1135,103 @@ private fun MovieEpisodeCardItem(
     actualIndex: Int,
     isSeries: Boolean,
     isCurrentPlaying: Boolean,
+    isHighlighted: Boolean = false,
     watchProgressRatio: Float,
     onClick: () -> Unit
 ) {
+    val context = LocalContext.current
+    val hasTmdbId = !detail.tmdbId.isNullOrBlank()
+    val sNum = episode.season ?: seasonNumber
+    val epNum = episode.number ?: (actualIndex + 1)
+    val badgeCode = if (isSeries) "M$sNum T$epNum" else "T$epNum"
+
+    // Hàng 1: Tiêu đề
+    // - Phim Bộ: Số tập - Tiêu đề tập (Nếu có TMDB ID) hoặc Số tập - Tên Phim (Nếu không có TMDB)
+    // - Phim Lẻ: Giữ yêu cầu như phim bộ
+    val cardTitle = remember(detail.name, episode.name, isSeries, episode.number, actualIndex, hasTmdbId) {
+        val rawClean = episode.name.trim().replace(Regex("^(Tập\\s*)+", RegexOption.IGNORE_CASE), "Tập ").trim()
+        if (isSeries) {
+            if (hasTmdbId) {
+                val cleanEpName = if (rawClean.isBlank() || rawClean.equals("phim lẻ", ignoreCase = true) || rawClean.equals("full", ignoreCase = true)) {
+                    "Tập $epNum"
+                } else if (!rawClean.startsWith("tập", ignoreCase = true) && !rawClean.startsWith("t", ignoreCase = true) && rawClean.toIntOrNull() != null) {
+                    "Tập $rawClean"
+                } else {
+                    rawClean
+                }
+                if (cleanEpName.startsWith("tập", ignoreCase = true) || cleanEpName.startsWith("t$epNum", ignoreCase = true)) {
+                    cleanEpName.replace(Regex("^(Tập\\s*)+", RegexOption.IGNORE_CASE), "Tập ")
+                } else {
+                    "Tập $epNum - $cleanEpName"
+                }
+            } else {
+                if (rawClean.startsWith("tập", ignoreCase = true)) {
+                    rawClean
+                } else {
+                    "Tập $epNum - ${detail.name}"
+                }
+            }
+        } else {
+            if (hasTmdbId && rawClean.isNotBlank() && !rawClean.equals("phim lẻ", ignoreCase = true) && !rawClean.equals("full", ignoreCase = true)) {
+                rawClean.replace(Regex("^(Tập\\s*)+", RegexOption.IGNORE_CASE), "Tập ")
+            } else {
+                detail.name
+            }
+        }
+    }
+
+    // Hàng 2: Ngày tháng phát hành - Điểm TMDB
+    val releaseDateStr = episode.releaseDate?.takeIf { it.isNotBlank() }
+        ?: if (!isSeries) detail.year?.toString() else null
+    val formattedDate = remember(releaseDateStr) {
+        formatReleaseDateForDisplay(releaseDateStr)
+    }
+    val epRating = episode.rating?.takeIf { it > 0.0 }
+        ?: if (!isSeries) detail.rating?.takeIf { it > 0.0 } else null
+
+    // Hàng 3: Nội dung tóm tắt của tập phim (Nếu có TMDB ID)
+    val epOverview = episode.overview?.trim()?.takeIf { it.isNotBlank() }
+        ?: if (!isSeries) detail.description?.trim()?.takeIf { it.isNotBlank() } else null
+
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(12.dp),
-        color = if (isCurrentPlaying) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+        color = if (isHighlighted) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+                else if (isCurrentPlaying) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
                 else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
         border = BorderStroke(
-            1.dp,
-            if (isCurrentPlaying) MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
+            if (isHighlighted) 2.dp else 1.dp,
+            if (isHighlighted) MaterialTheme.colorScheme.primary
+            else if (isCurrentPlaying) MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
             else MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
         ),
         modifier = Modifier
             .fillMaxWidth()
+            .height(118.dp)
             .tvFocusableItem(cornerRadius = 12.dp, focusedScale = 1.02f)
     ) {
         Row(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .padding(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Thumbnail 16:9 với góc bo tròn
+            val imageUrl = episode.thumbnail ?: detail.backdropUrl ?: detail.posterUrl
             Box(
                 modifier = Modifier
-                    .width(115.dp)
-                    .height(68.dp)
+                    .width(132.dp)
+                    .fillMaxHeight()
                     .clip(RoundedCornerShape(8.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 AsyncImage(
-                    model = detail.backdropUrl ?: detail.posterUrl,
+                    model = remember(imageUrl) {
+                        ImageRequest.Builder(context)
+                            .data(imageUrl)
+                            .crossfade(true)
+                            .build()
+                    },
                     contentDescription = episode.name,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
@@ -991,15 +1245,11 @@ private fun MovieEpisodeCardItem(
                 )
 
                 // Badge Mùa & Tập (M1 T1) ở góc trên bên trái
-                val sNum = episode.season ?: seasonNumber
-                val epNum = episode.number ?: (actualIndex + 1)
-                val badgeCode = if (isSeries) "M$sNum T$epNum" else "T$epNum"
-
                 Surface(
                     shape = RoundedCornerShape(4.dp),
-                    color = Color.Black.copy(alpha = 0.75f),
+                    color = Color.Black.copy(alpha = 0.78f),
                     modifier = Modifier
-                        .padding(4.dp)
+                        .padding(5.dp)
                         .align(Alignment.TopStart)
                 ) {
                     Text(
@@ -1020,14 +1270,14 @@ private fun MovieEpisodeCardItem(
                         Surface(
                             shape = CircleShape,
                             color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(28.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Default.PlayArrow,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.onPrimary,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
                         }
@@ -1050,61 +1300,72 @@ private fun MovieEpisodeCardItem(
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // Thông tin tập phim bên phải
-            val cardTitle = remember(detail.name, episode.name, isSeries, episode.number, actualIndex) {
-                if (isSeries) {
-                    val epName = episode.name.trim()
-                    val epNum = episode.number ?: (actualIndex + 1)
-                    val cleanEpName = if (epName.isBlank() || epName.equals("phim lẻ", ignoreCase = true) || epName.equals("full", ignoreCase = true)) {
-                        "Tập $epNum"
-                    } else if (!epName.startsWith("tập", ignoreCase = true) && !epName.startsWith("t", ignoreCase = true) && epName.toIntOrNull() != null) {
-                        "Tập $epName"
-                    } else {
-                        epName
-                    }
-                    "${detail.name} - $cleanEpName"
-                } else {
-                    detail.name
-                }
-            }
-
+            // Cột thông tin 3 hàng bên phải
             Column(
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+                verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically)
             ) {
+                // Hàng 1: Tiêu đề tập
                 Text(
                     text = cardTitle,
-                    fontSize = 14.sp,
+                    fontSize = 14.5.sp,
                     fontWeight = if (isCurrentPlaying) FontWeight.Bold else FontWeight.SemiBold,
                     color = if (isCurrentPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
 
-                Spacer(modifier = Modifier.height(4.dp))
-
+                // Hàng 2: Ngày phát hành & Điểm TMDB
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    if (detail.quality != null) {
+                    if (!formattedDate.isNullOrBlank()) {
+                        Text(
+                            text = formattedDate,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    if (epRating != null) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = Color(0xFF00B4D8).copy(alpha = 0.18f),
+                            border = BorderStroke(0.6.dp, Color(0xFF00B4D8).copy(alpha = 0.65f))
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 4.5.dp, vertical = 1.5.dp)
+                            ) {
+                                Text(
+                                    text = "TMDB",
+                                    fontSize = 8.5.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = Color(0xFF00B4D8)
+                                )
+                                Spacer(modifier = Modifier.width(3.5.dp))
+                                Text(
+                                    text = String.format(java.util.Locale.US, "%.1f", epRating),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF00B4D8)
+                                )
+                            }
+                        }
+                    }
+
+                    if (detail.quality != null && formattedDate == null) {
                         Text(
                             text = detail.quality ?: "HD",
                             fontSize = 11.5.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    if (detail.year != null) {
-                        Text(
-                            text = "•",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = "${detail.year}",
-                            fontSize = 11.5.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+
                     if (isCurrentPlaying) {
                         Text(
                             text = "•",
@@ -1119,17 +1380,43 @@ private fun MovieEpisodeCardItem(
                         )
                     }
                 }
-            }
 
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                contentDescription = null,
-                tint = if (isCurrentPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                modifier = Modifier
-                    .padding(end = 4.dp)
-                    .size(18.dp)
-            )
+                // Hàng 3: Nội dung tóm tắt của tập phim (Nếu có TMDB ID)
+                if (hasTmdbId && !epOverview.isNullOrBlank()) {
+                    Text(
+                        text = epOverview,
+                        fontSize = 11.5.sp,
+                        lineHeight = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
         }
+    }
+}
+
+private fun formatReleaseDateForDisplay(dateStr: String?): String? {
+    if (dateStr.isNullOrBlank()) return null
+    val raw = dateStr.trim()
+    val match = Regex("""^(\d{4})-(\d{1,2})-(\d{1,2})""").find(raw)
+    if (match != null) {
+        val (y, m, d) = match.destructured
+        val day = d.toIntOrNull() ?: d
+        val month = m.toIntOrNull() ?: m
+        return "$day Tháng $month, $y"
+    }
+    val yearMatch = Regex("""^(\d{4})""").find(raw)
+    return yearMatch?.value ?: raw
+}
+
+private fun String.initials(): String {
+    val parts = trim().split(" ").filter { it.isNotBlank() }
+    return when {
+        parts.size >= 2 -> "${parts.first().first().uppercaseChar()}${parts.last().first().uppercaseChar()}"
+        parts.size == 1 -> parts.first().take(2).uppercase()
+        else -> ""
     }
 }
 
@@ -1139,6 +1426,12 @@ private fun MovieSectionRow(
     movies: List<MovieItem>,
     onMovieClick: ((providerId: String, slug: String) -> Unit)?
 ) {
+    if (movies.isEmpty()) return
+
+    val uniqueMovies = remember(movies) {
+        movies.distinctBy { it.tmdbId ?: it.slug }
+    }
+
     Column {
         Text(
             text = title,
@@ -1151,7 +1444,10 @@ private fun MovieSectionRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            items(movies, key = { it.slug }) { movie ->
+            itemsIndexed(
+                items = uniqueMovies,
+                key = { index, movie -> "${movie.tmdbId ?: movie.slug}_$index" }
+            ) { _, movie ->
                 MovieCard(
                     movie = movie,
                     onClick = {

@@ -8,6 +8,7 @@ import java.util.concurrent.ConcurrentHashMap
  */
 object TmdbCache {
     private val memoryCache = ConcurrentHashMap<String, TmdbDetailResponse>()
+    private val seasonCache = ConcurrentHashMap<String, TmdbSeasonResponse>()
 
     fun get(key: String): TmdbDetailResponse? = memoryCache[key]
 
@@ -23,7 +24,22 @@ object TmdbCache {
         memoryCache[key] = response
     }
 
+    fun getSeason(key: String): TmdbSeasonResponse? = seasonCache[key]
+
+    fun putSeason(key: String, response: TmdbSeasonResponse) {
+        if (seasonCache.size > 200) {
+            val iterator = seasonCache.keys().iterator()
+            var count = 0
+            while (iterator.hasNext() && count < 30) {
+                seasonCache.remove(iterator.next())
+                count++
+            }
+        }
+        seasonCache[key] = response
+    }
+
     fun clear() {
         memoryCache.clear()
+        seasonCache.clear()
     }
 }

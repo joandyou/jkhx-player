@@ -142,6 +142,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import com.jkhx.player.player.ExternalPlayerHelper
 import com.jkhx.player.ui.screens.player.panels.PlayerResumeDialog
 import com.jkhx.player.ui.screens.player.panels.PlayerSettingsPanel
 import com.jkhx.player.ui.screens.player.panels.PlayerEpisodesPanel
@@ -2704,6 +2705,11 @@ fun PlayerScreen(
                 selectedAudioTrackId = track.id
                 exoPlayerManager.setAudioTrack(track)
                 showSettingsDialog = false
+            },
+            onOpenExternalPlayer = {
+                exoPlayerManager.player.pause()
+                val pos = exoPlayerManager.player.currentPosition.coerceAtLeast(0L)
+                ExternalPlayerHelper.launchFromActiveSession(context, currentEpisode, pos)
             }
         )
 

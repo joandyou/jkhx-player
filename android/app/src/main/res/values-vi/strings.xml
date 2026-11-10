@@ -125,6 +125,7 @@
     <string name="player_auto">Tự động</string>
     <string name="player_off">Tắt</string>
     <string name="player_episodes_sheet_title">Danh sách tập</string>
+    <string name="player_episodes_title_nuvio">Tập phim</string>
     <string name="player_episodes_playing">Đang phát</string>
     <string name="player_episodes_count">%d tập</string>
     <string name="player_settings_title">Cài đặt phát</string>
@@ -295,6 +296,20 @@
     <string name="detail_episodes_count">%d tập</string>
     <string name="detail_episodes_progress">%1$d / %2$d tập</string>
     <string name="detail_resume_episode">Xem tiếp %s</string>
+    <string name="episode_navigator_search_hint">Tìm kiếm theo tên, nội dung hoặc số tập</string>
+    <string name="episode_navigator_clear_search">Xóa tìm kiếm</string>
+    <string name="episode_navigator_go_to">Đi đến</string>
+    <string name="episode_navigator_sort">Sắp xếp</string>
+    <string name="episode_navigator_count">%1$d / %2$d tập</string>
+    <string name="episode_navigator_no_match">Không có tập nào khớp với ‘%1$s’</string>
+    <string name="episode_navigator_go_to_title">Đi đến tập phim</string>
+    <string name="episode_navigator_episode_number">Số tập</string>
+    <string name="episode_navigator_go">Đi</string>
+    <string name="episode_navigator_go_to_help">Nhập số tập hoặc chọn một tập bên dưới.</string>
+    <string name="episode_navigator_out_of_range">%1$s có các tập từ %2$d đến %3$d</string>
+    <string name="episode_navigator_sort_title">Sắp xếp tập phim</string>
+    <string name="episode_navigator_sort_first_to_last">Tập: Cũ nhất trước</string>
+    <string name="episode_navigator_sort_last_to_first">Tập: Mới nhất trước</string>
 
     <!-- SearchScreen -->
     <string name="search_placeholder">Tìm kiếm phim, truyện trên toàn bộ plugins…</string>
@@ -681,6 +696,16 @@
     <string name="plugins_stremio_streams_support">Nguồn phát (Streams)</string>
     <string name="plugins_stremio_ping_test">Kiểm tra</string>
     <string name="plugins_addon_configure">Cài đặt</string>
+    <string name="plugins_addon_share">Chia sẻ</string>
+    <string name="plugins_addon_shared_toast">Đã sao chép liên kết Addon &amp; mở chia sẻ</string>
+    <string name="detail_writer">Biên kịch:</string>
+    <string name="detail_trailer">Trailer</string>
+    <string name="detail_info_section_title">Thông tin</string>
+    <string name="detail_info_release">Thông tin phát hành</string>
+    <string name="detail_info_duration">Thời lượng</string>
+    <string name="detail_info_country">Quốc gia sản xuất</string>
+    <string name="detail_info_genres">Thể loại</string>
+    <string name="detail_info_status">Trạng thái</string>
     <string name="settings_subtitle_languages_title">Ngôn ngữ tìm kiếm phụ đề</string>
     <string name="settings_subtitle_languages_desc">Chọn các ngôn ngữ muốn tìm kiếm phụ đề trực tuyến. Tiếng Anh luôn được bật cố định để hỗ trợ tính năng dịch phụ đề bằng Gemini AI.</string>
     <string name="settings_subtitle_languages_mandatory">Bắt buộc (Dùng cho dịch Gemini AI)</string>
@@ -762,4 +787,46 @@
     <string name="cw_tag_movie">Phim</string>
     <string name="cw_tag_series">Phim bộ</string>
     <string name="cw_delete_confirm">Đã xóa khỏi lịch sử xem</string>
+
+    <!-- Stremio Addon Selector Modal Strings -->
+    <string name="search_addon_modal_title">Chọn Addon Khám Phá</string>
+    <string name="search_addon_search_placeholder">Tìm kiếm addon…</string>
+    <string name="search_addon_empty_filter">Không tìm thấy addon phù hợp</string>
+    <string name="search_addon_manage_btn">Quản lý Addon</string>
+
+    <!-- App Exit Confirmation -->
+    <string name="app_exit_confirm">Nhấn lần nữa để thoát</string>
+
+    <!-- Stream Download Strings -->
+    <string name="stream_download_title">Tùy chọn tải xuống</string>
+    <string name="stream_download_btn_desc">Tải xuống luồng phát</string>
+    <string name="stream_download_in_app">Tải xuống video</string>
+    <string name="stream_download_in_app_desc">Tải ngầm vào bộ nhớ máy, xem offline mọi lúc</string>
+    <string name="stream_download_external">Tải bằng 1DM / Ứng dụng ngoài</string>
+    <string name="stream_download_external_desc">Chuyển tiếp link &amp; headers sang 1DM, ADM...</string>
+    <string name="stream_download_external_chooser">Chọn ứng dụng tải xuống</string>
+    <string name="stream_download_external_error">Không tìm thấy ứng dụng phù hợp để tải xuống</string>
+    <string name="stream_download_copy_link">Sao chép liên kết</string>
+    <string name="stream_download_copy_link_desc">Lưu link luồng phát vào bộ nhớ tạm</string>
+    <string name="stream_download_preparing">Đang chuẩn bị tải...</string>
+    <string name="stream_download_started_toast">Bắt đầu tải xuống video vào bộ nhớ...</string>
+    <string name="stream_download_completed_title">Đã tải xong video</string>
+    <string name="download_notification_channel_name">Tải xuống video</string>
+    <string name="download_notification_channel_desc">Thông báo tiến trình tải xuống video trong ứng dụng</string>
+
+    <!-- External Player (Out-App) Strings -->
+    <string name="settings_player_section_title">Trình phát video</string>
+    <string name="player_mode_internal">ExoPlayer</string>
+    <string name="player_mode_external">Trình phát ngoài</string>
+    <string name="player_mode_always_ask">Luôn hỏi</string>
+    <string name="player_open_external_chooser">Chọn ứng dụng phát video</string>
+    <string name="player_open_external_error">Không tìm thấy ứng dụng phát video phù hợp (VLC, MPV, MX Player...)</string>
+    <string name="stream_action_play_external">Phát bằng trình phát ngoài (VLC, MPV...)</string>
+    <string name="stream_action_play_external_desc">Chuyển tiếp luồng và phụ đề sang VLC, MPV, MX Player hoặc Just Player</string>
+    <string name="player_choose_engine_title">Chọn trình phát video</string>
+    <string name="player_external_section_title">Trình phát ngoài</string>
+    <string name="player_open_external_action">Mở trong trình phát ngoài</string>
+    <string name="player_open_external_action_desc">Tiếp tục xem tại vị trí này trong VLC, MPV hoặc MX Player</string>
+    <string name="settings_default_player_title">Trình phát video mặc định</string>
+    <string name="settings_default_player_desc">Chọn trình phát nội bộ ExoPlayer hoặc ứng dụng ngoài (VLC, MPV, Just Player...)</string>
 </resources>

@@ -77,6 +77,18 @@ enum class AppLanguage(val code: String, val titleRes: Int) {
     }
 }
 
+enum class DefaultPlayerMode(val key: String, val titleRes: Int) {
+    INTERNAL("internal", R.string.player_mode_internal),
+    EXTERNAL("external", R.string.player_mode_external),
+    ALWAYS_ASK("always_ask", R.string.player_mode_always_ask);
+
+    companion object {
+        fun fromKey(key: String?): DefaultPlayerMode {
+            return entries.firstOrNull { it.key == key } ?: INTERNAL
+        }
+    }
+}
+
 class SettingsManager(context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences("jkhx_settings_pref", Context.MODE_PRIVATE)
@@ -235,6 +247,17 @@ class SettingsManager(context: Context) {
     fun setPlayerLandscape(isLandscape: Boolean) {
         prefs.edit().putBoolean(KEY_PLAYER_IS_LANDSCAPE, isLandscape).apply()
         _isPlayerLandscape.value = isLandscape
+    }
+
+    // --- Default Playback Engine (Nội bộ vs Trình phát ngoài) ---
+    private val _defaultPlayerMode = MutableStateFlow(
+        DefaultPlayerMode.fromKey(prefs.getString(KEY_DEFAULT_PLAYER_MODE, DefaultPlayerMode.INTERNAL.key))
+    )
+    val defaultPlayerMode: StateFlow<DefaultPlayerMode> = _defaultPlayerMode.asStateFlow()
+
+    fun setDefaultPlayerMode(mode: DefaultPlayerMode) {
+        prefs.edit().putString(KEY_DEFAULT_PLAYER_MODE, mode.key).apply()
+        _defaultPlayerMode.value = mode
     }
 
     // --- Episode / Chapter Sort Order Persistence (Mặc định: true - Mới nhất trước) ---
@@ -681,6 +704,7 @@ class SettingsManager(context: Context) {
         private const val KEY_LAST_SELECTED_STREMIO_CATALOG_ID = "pref_last_selected_stremio_catalog_id"
         private const val KEY_LAST_SELECTED_STREMIO_FILTER = "pref_last_selected_stremio_filter"
         private const val KEY_PLAYER_IS_LANDSCAPE = "pref_player_is_landscape"
+        private const val KEY_DEFAULT_PLAYER_MODE = "pref_default_player_mode"
         private const val KEY_MOVIE_EPISODE_SORT_DESCENDING = "pref_movie_episode_sort_descending"
         private const val KEY_COMIC_EPISODE_SORT_DESCENDING = "pref_comic_episode_sort_descending"
         private const val KEY_NOVEL_EPISODE_SORT_DESCENDING = "pref_novel_episode_sort_descending"

@@ -1,5 +1,8 @@
 package com.jkhx.player.ui.screens.plugins
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -31,7 +34,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import com.jkhx.player.ui.theme.tvFocusableItem
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -524,6 +529,7 @@ fun PluginsScreen() {
                     // TAB 2: STREMIO ADDONS
                     StremioAddonsTab(
                         stremioAddons = stremioAddons,
+                        isTablet = isTablet,
                         onOpenAddAddon = {
                             newStremioUrl = ""
                             addStremioError = null
@@ -546,6 +552,13 @@ fun PluginsScreen() {
                                 SyncManager.getInstance(context).onStremioAddonDeleted(url)
                                 statusMessage = context.getString(R.string.plugins_stremio_deleted_toast, url)
                                 reloadData()
+                            }
+                        },
+                        onMoveOrder = { url, moveUp ->
+                            coroutineScope.launch {
+                                if (pluginManager.moveStremioAddonOrder(url, moveUp)) {
+                                    stremioAddons = pluginManager.getStremioAddons()
+                                }
                             }
                         },
                         onPingTest = { url ->
@@ -1650,7 +1663,7 @@ private fun RepositoryStoreTab(
                 .fillMaxSize()
                 .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
-            contentPadding = PaddingValues(bottom = 100.dp)
+            contentPadding = PaddingValues(bottom = if (LocalConfiguration.current.screenWidthDp >= 600) 96.dp else 170.dp)
         ) {
             items(repositories, key = { it.first.url }) { (entity, manifest) ->
                 val isRepoRefreshing = (refreshingRepoUrls[entity.url] == true) || isRefreshingAll
@@ -1964,9 +1977,11 @@ private fun PluginCheckResult.toLocalizedMessage(context: android.content.Contex
 @Composable
 private fun StremioAddonsTab(
     stremioAddons: List<StremioAddonEntity>,
+    isTablet: Boolean,
     onOpenAddAddon: () -> Unit,
     onToggleEnabled: (url: String, enabled: Boolean) -> Unit,
     onDeleteAddon: (url: String) -> Unit,
+    onMoveOrder: (url: String, moveUp: Boolean) -> Unit,
     onPingTest: (url: String) -> Unit,
     pingResults: Map<String, Pair<Boolean, Long>?>
 ) {
@@ -1983,7 +1998,7 @@ private fun StremioAddonsTab(
             .fillMaxSize()
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
-        contentPadding = PaddingValues(bottom = 100.dp)
+        contentPadding = PaddingValues(bottom = if (isTablet) 96.dp else 170.dp)
     ) {
         // Danh sách Addon đã cài đặt hoặc Empty State
         if (stremioAddons.isEmpty()) {
@@ -2033,7 +2048,9 @@ private fun StremioAddonsTab(
                 }
             }
         } else {
-            items(stremioAddons, key = { it.url }) { addon ->
+            itemsIndexed(stremioAddons, key = { _, it -> it.url }) { index, addon ->
+                val canMoveUp = index > 0
+                val canMoveDown = index < stremioAddons.size - 1
                 val sManifest = remember(addon.manifestJson) {
                     try {
                         json.decodeFromString<StremioManifest>(addon.manifestJson)
@@ -2051,7 +2068,7 @@ private fun StremioAddonsTab(
                         .border(1.dp, CardBorderColor, ShapeTokens.Card)
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
-                        // Hàng 1: Icon + Tên Addon (chiếm trọn dòng với Ellipsis) + Switch
+                        // Hàng 1: Icon + Tên Addon (chiếm trọn dòng với Ellipsis) + Nút di chuyển ↑ / ↓ + Switch
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.fillMaxWidth()
@@ -2096,7 +2113,41 @@ private fun StremioAddonsTab(
                                 modifier = Modifier.weight(1f)
                             )
 
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+
+                            // Nút di chuyển lên (↑)
+                            IconButton(
+                                onClick = { onMoveOrder(addon.url, true) },
+                                enabled = canMoveUp,
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .tvFocusableItem(cornerRadius = 18.dp, focusedScale = 1.15f)
+                            ) {
+                                Text(
+                                    text = "↑",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = if (canMoveUp) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                                )
+                            }
+
+                            // Nút di chuyển xuống (↓)
+                            IconButton(
+                                onClick = { onMoveOrder(addon.url, false) },
+                                enabled = canMoveDown,
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .tvFocusableItem(cornerRadius = 18.dp, focusedScale = 1.15f)
+                            ) {
+                                Text(
+                                    text = "↓",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = if (canMoveDown) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(4.dp))
 
                             Switch(
                                 checked = addon.isEnabled,
@@ -2268,6 +2319,44 @@ private fun StremioAddonsTab(
                                             color = MaterialTheme.colorScheme.primary
                                         )
                                     }
+                                }
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .clip(ShapeTokens.Chip)
+                                        .clickable {
+                                            try {
+                                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                val clip = ClipData.newPlainText("Addon URL", addon.url)
+                                                clipboard.setPrimaryClip(clip)
+
+                                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                    type = "text/plain"
+                                                    putExtra(Intent.EXTRA_SUBJECT, addon.name)
+                                                    putExtra(Intent.EXTRA_TEXT, addon.url)
+                                                }
+                                                context.startActivity(Intent.createChooser(shareIntent, context.getString(R.string.plugins_addon_share)))
+                                                Toast.makeText(context, context.getString(R.string.plugins_addon_shared_toast), Toast.LENGTH_SHORT).show()
+                                            } catch (e: Exception) {
+                                                Toast.makeText(context, "Không thể chia sẻ: ${e.message}", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                        .padding(horizontal = 6.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Share,
+                                        contentDescription = stringResource(R.string.plugins_addon_share),
+                                        modifier = Modifier.size(14.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        stringResource(R.string.plugins_addon_share),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
                                 }
                             }
 

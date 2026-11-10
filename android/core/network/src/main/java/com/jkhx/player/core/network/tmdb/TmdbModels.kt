@@ -135,6 +135,40 @@ data class TmdbPagedResponse(
     val totalResults: Int = 0
 )
 
+@Serializable
+data class TmdbEpisodeDetail(
+    val id: Long? = null,
+    val name: String? = null,
+    val overview: String? = null,
+    @SerialName("episode_number")
+    val episodeNumber: Int? = null,
+    @SerialName("season_number")
+    val seasonNumber: Int? = null,
+    @SerialName("air_date")
+    val airDate: String? = null,
+    @SerialName("still_path")
+    val stillPath: String? = null,
+    @SerialName("vote_average")
+    val voteAverage: Double? = null,
+    @SerialName("vote_count")
+    val voteCount: Int? = null,
+    val runtime: Int? = null
+)
+
+@Serializable
+data class TmdbSeasonResponse(
+    val id: Long? = null,
+    val name: String? = null,
+    val overview: String? = null,
+    @SerialName("season_number")
+    val seasonNumber: Int? = null,
+    @SerialName("air_date")
+    val airDate: String? = null,
+    @SerialName("poster_path")
+    val posterPath: String? = null,
+    val episodes: List<TmdbEpisodeDetail> = emptyList()
+)
+
 data class TmdbCatalogDefinition(
     val id: String,
     val name: String,
