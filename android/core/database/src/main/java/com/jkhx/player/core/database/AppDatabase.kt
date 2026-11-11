@@ -17,6 +17,10 @@ import com.jkhx.player.core.database.dao.RepositoryDao
 import com.jkhx.player.core.database.entity.RepositoryEntity
 import com.jkhx.player.core.database.dao.StremioAddonDao
 import com.jkhx.player.core.database.entity.StremioAddonEntity
+import com.jkhx.player.core.database.dao.LocalLibraryDao
+import com.jkhx.player.core.database.entity.LocalLibraryEntity
+import com.jkhx.player.core.database.dao.RemoteServerDao
+import com.jkhx.player.core.database.entity.RemoteServerEntity
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
@@ -39,6 +43,52 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
     }
 }
 
+val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `local_library` (
+                `id` TEXT NOT NULL PRIMARY KEY,
+                `title` TEXT NOT NULL,
+                `type` TEXT NOT NULL,
+                `uri` TEXT NOT NULL,
+                `subtitleUri` TEXT,
+                `coverUrl` TEXT,
+                `author` TEXT,
+                `description` TEXT,
+                `chapterCount` INTEGER NOT NULL DEFAULT 1,
+                `episodesJson` TEXT NOT NULL,
+                `addedAt` INTEGER NOT NULL,
+                `lastOpenedAt` INTEGER NOT NULL DEFAULT 0
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_local_library_type` ON `local_library` (`type`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_local_library_lastOpenedAt` ON `local_library` (`lastOpenedAt`)")
+    }
+}
+
+val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `remote_servers` (
+                `id` TEXT NOT NULL PRIMARY KEY,
+                `name` TEXT NOT NULL,
+                `protocol` TEXT NOT NULL,
+                `host` TEXT NOT NULL,
+                `port` INTEGER NOT NULL,
+                `useSsl` INTEGER NOT NULL DEFAULT 0,
+                `basePath` TEXT NOT NULL DEFAULT '/',
+                `username` TEXT,
+                `password` TEXT,
+                `isAnonymous` INTEGER NOT NULL DEFAULT 0,
+                `addedAt` INTEGER NOT NULL,
+                `lastConnectedAt` INTEGER NOT NULL DEFAULT 0
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_remote_servers_protocol` ON `remote_servers` (`protocol`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_remote_servers_addedAt` ON `remote_servers` (`addedAt`)")
+    }
+}
+
 @Database(
     entities = [
         HistoryEntity::class,
@@ -46,9 +96,11 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
         PlaybackProgressEntity::class,
         PluginEntity::class,
         RepositoryEntity::class,
-        StremioAddonEntity::class
+        StremioAddonEntity::class,
+        LocalLibraryEntity::class,
+        RemoteServerEntity::class
     ],
-    version = 6,
+    version = 8,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -58,6 +110,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun pluginDao(): PluginDao
     abstract fun repositoryDao(): RepositoryDao
     abstract fun stremioAddonDao(): StremioAddonDao
+    abstract fun localLibraryDao(): LocalLibraryDao
+    abstract fun remoteServerDao(): RemoteServerDao
 
     companion object {
         @Volatile
@@ -70,7 +124,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "jkhx_player.db"
                 )
-                    .addMigrations(MIGRATION_5_6)
+                    .addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance

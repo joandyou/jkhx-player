@@ -216,6 +216,13 @@ class JkhxApplication : Application(), ImageLoaderFactory {
             override fun onActivityDestroyed(activity: android.app.Activity) { if (currentActivity === activity) currentActivity = null }
         })
 
+        // Đăng ký LocalMediaPlugin cho chế độ Thư Viện Nội Bộ (Offline Media)
+        val localMediaPlugin = com.jkhx.player.local.LocalMediaPlugin(
+            context = this,
+            localLibraryDao = database.localLibraryDao()
+        )
+        pluginManager.registerBuiltInPlugin("local", localMediaPlugin)
+
         // Pure clean client: NO hardcoded/bundled plugins copied from assets!
         // Plugins are installed dynamically by user from manifest.json repositories.
         applicationScope.launch(Dispatchers.IO) {

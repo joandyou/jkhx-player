@@ -72,9 +72,14 @@ object SrtParser {
     }
 
     /**
-     * Bóc tách toàn bộ nội dung file SRT hoặc WebVTT thành danh sách SubtitleCue
+     * Bóc tách toàn bộ nội dung file SRT, WebVTT hoặc ASS/SSA thành danh sách SubtitleCue
      */
     fun parse(content: String): List<SubtitleCue> {
+        if (content.contains("[Events]", ignoreCase = true) && content.contains("Dialogue:", ignoreCase = true)) {
+            val assCues = parseAss(content)
+            if (assCues.isNotEmpty()) return assCues
+        }
+
         val normalized = content.removePrefix("\uFEFF").replace("\r\n", "\n").replace("\r", "\n")
         val lines = normalized.lines()
         val result = mutableListOf<SubtitleCue>()
@@ -171,6 +176,83 @@ object SrtParser {
         flushCue()
 
         return result
+    }
+
+    /**
+     * Bóc tách nội dung file phụ đề ASS / SSA sang danh sách SubtitleCue
+     */
+    fun parseAss(content: String): List<SubtitleCue> {
+        val normalized = content.removePrefix("\uFEFF").replace("\r\n", "\n").replace("\r", "\n")
+        val lines = normalized.lines()
+        val result = mutableListOf<SubtitleCue>()
+        var inEvents = false
+        var startIndex = 1
+        var endIndex = 2
+        var textIndex = 9
+        var formatParsed = false
+        var cueIndex = 1
+
+        for (rawLine in lines) {
+            val line = rawLine.trim()
+            if (line.isEmpty() || line.startsWith(";")) continue
+            if (line.startsWith("[Events]", ignoreCase = true)) {
+                inEvents = true
+                continue
+            }
+            if (inEvents && line.startsWith("[") && line.endsWith("]")) {
+                inEvents = false
+                continue
+            }
+            if (inEvents) {
+                if (line.startsWith("Format:", ignoreCase = true)) {
+                    val formatCols = line.substringAfter(":").split(',').map { it.trim().lowercase() }
+                    val sIdx = formatCols.indexOf("start")
+                    val eIdx = formatCols.indexOf("end")
+                    val tIdx = formatCols.indexOf("text")
+                    if (sIdx != -1) startIndex = sIdx
+                    if (eIdx != -1) endIndex = eIdx
+                    if (tIdx != -1) textIndex = tIdx
+                    formatParsed = true
+                    continue
+                }
+                if (line.startsWith("Dialogue:", ignoreCase = true)) {
+                    val data = line.substringAfter(":").trim()
+                    val maxSplit = if (formatParsed) textIndex + 1 else 10
+                    val parts = data.split(',', limit = maxSplit)
+                    if (parts.size >= 3) {
+                        val startRaw = parts.getOrNull(startIndex)?.trim().orEmpty()
+                        val endRaw = parts.getOrNull(endIndex)?.trim().orEmpty()
+                        val textRaw = if (parts.size >= maxSplit) parts.last() else parts.getOrNull(textIndex).orEmpty()
+
+                        val cleanText = textRaw
+                            .replace("\\N", "\n")
+                            .replace("\\n", "\n")
+                            .replace("\\h", " ")
+                            .replace(ASS_TAG_REGEX, "")
+                            .replace(TAG_REGEX, "")
+                            .trim()
+
+                        if (cleanText.isNotBlank() && startRaw.isNotBlank() && endRaw.isNotBlank()) {
+                            val startMs = timecodeToMs(startRaw)
+                            val endMs = timecodeToMs(endRaw)
+                            if (endMs > startMs) {
+                                result.add(
+                                    SubtitleCue(
+                                        index = cueIndex++,
+                                        startTime = msToSrtTimecode(startMs),
+                                        endTime = msToSrtTimecode(endMs),
+                                        text = cleanText,
+                                        startTimeMs = startMs,
+                                        endTimeMs = endMs
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return result.sortedBy { it.startTimeMs }
     }
 
     /**

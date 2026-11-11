@@ -81,4 +81,48 @@ data class StremioAddonEntity(
     val addedAt: Long = System.currentTimeMillis()
 )
 
+@Entity(
+    tableName = "local_library",
+    indices = [
+        androidx.room.Index(value = ["type"]),
+        androidx.room.Index(value = ["lastOpenedAt"])
+    ]
+)
+data class LocalLibraryEntity(
+    @PrimaryKey val id: String,
+    val title: String,
+    val type: String, // "movie", "series", "novel", "comic"
+    val uri: String,
+    val subtitleUri: String? = null,
+    val coverUrl: String? = null,
+    val author: String? = null,
+    val description: String? = null,
+    val chapterCount: Int = 1,
+    val episodesJson: String = "[]",
+    val addedAt: Long = System.currentTimeMillis(),
+    val lastOpenedAt: Long = 0L
+)
+
+@Entity(
+    tableName = "remote_servers",
+    indices = [
+        androidx.room.Index(value = ["protocol"]),
+        androidx.room.Index(value = ["addedAt"])
+    ]
+)
+data class RemoteServerEntity(
+    @PrimaryKey val id: String,
+    val name: String,
+    val protocol: String, // "webdav", "smb", "sftp"
+    val host: String,
+    val port: Int,
+    val useSsl: Boolean = false,
+    val basePath: String = "/",
+    val username: String? = null,
+    val password: String? = null,
+    val isAnonymous: Boolean = false,
+    val addedAt: Long = System.currentTimeMillis(),
+    val lastConnectedAt: Long = 0L
+)
+
 

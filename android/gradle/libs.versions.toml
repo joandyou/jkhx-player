@@ -14,6 +14,8 @@ coil = "2.7.0"
 kotlinxSerialization = "1.7.3"
 ksp = "2.0.21-1.0.27"
 playServicesAuth = "21.2.0"
+smbj = "0.13.0"
+jsch = "0.2.23"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -54,6 +56,8 @@ kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 coil-svg = { group = "io.coil-kt", name = "coil-svg", version.ref = "coil" }
 play-services-auth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "playServicesAuth" }
+smbj = { group = "com.hierynomus", name = "smbj", version.ref = "smbj" }
+jsch = { group = "com.github.mwiede", name = "jsch", version.ref = "jsch" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

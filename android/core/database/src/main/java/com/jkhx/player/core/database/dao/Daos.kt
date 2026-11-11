@@ -160,4 +160,68 @@ interface StremioAddonDao {
     suspend fun clearAll()
 }
 
+@Dao
+interface LocalLibraryDao {
+    @Query("SELECT * FROM local_library ORDER BY lastOpenedAt DESC, addedAt DESC")
+    fun getAll(): Flow<List<com.jkhx.player.core.database.entity.LocalLibraryEntity>>
+
+    @Query("SELECT * FROM local_library ORDER BY lastOpenedAt DESC, addedAt DESC")
+    suspend fun getAllSync(): List<com.jkhx.player.core.database.entity.LocalLibraryEntity>
+
+    @Query("SELECT * FROM local_library WHERE type = :type ORDER BY lastOpenedAt DESC, addedAt DESC")
+    fun getByType(type: String): Flow<List<com.jkhx.player.core.database.entity.LocalLibraryEntity>>
+
+    @Query("SELECT * FROM local_library WHERE id = :id LIMIT 1")
+    suspend fun getById(id: String): com.jkhx.player.core.database.entity.LocalLibraryEntity?
+
+    @Query("SELECT * FROM local_library WHERE uri = :uri LIMIT 1")
+    suspend fun getByUri(uri: String): com.jkhx.player.core.database.entity.LocalLibraryEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(item: com.jkhx.player.core.database.entity.LocalLibraryEntity)
+
+    @Update
+    suspend fun update(item: com.jkhx.player.core.database.entity.LocalLibraryEntity)
+
+    @Query("UPDATE local_library SET lastOpenedAt = :timestamp WHERE id = :id")
+    suspend fun updateLastOpened(id: String, timestamp: Long = System.currentTimeMillis())
+
+    @Query("UPDATE local_library SET subtitleUri = :subtitleUri WHERE id = :id")
+    suspend fun updateSubtitleUri(id: String, subtitleUri: String?)
+
+    @Query("DELETE FROM local_library WHERE id = :id")
+    suspend fun delete(id: String)
+
+    @Query("DELETE FROM local_library")
+    suspend fun clearAll()
+}
+
+@Dao
+interface RemoteServerDao {
+    @Query("SELECT * FROM remote_servers ORDER BY addedAt DESC")
+    fun getAll(): Flow<List<com.jkhx.player.core.database.entity.RemoteServerEntity>>
+
+    @Query("SELECT * FROM remote_servers ORDER BY addedAt DESC")
+    suspend fun getAllSync(): List<com.jkhx.player.core.database.entity.RemoteServerEntity>
+
+    @Query("SELECT * FROM remote_servers WHERE id = :id LIMIT 1")
+    suspend fun getById(id: String): com.jkhx.player.core.database.entity.RemoteServerEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(server: com.jkhx.player.core.database.entity.RemoteServerEntity)
+
+    @Update
+    suspend fun update(server: com.jkhx.player.core.database.entity.RemoteServerEntity)
+
+    @Query("UPDATE remote_servers SET lastConnectedAt = :timestamp WHERE id = :id")
+    suspend fun updateLastConnected(id: String, timestamp: Long = System.currentTimeMillis())
+
+    @Delete
+    suspend fun delete(server: com.jkhx.player.core.database.entity.RemoteServerEntity)
+
+    @Query("DELETE FROM remote_servers WHERE id = :id")
+    suspend fun deleteById(id: String)
+}
+
+
 

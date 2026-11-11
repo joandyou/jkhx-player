@@ -1,6 +1,7 @@
 package com.jkhx.player.core.player.subtitle
 
 import android.content.Context
+import android.net.Uri
 import com.jkhx.player.core.player.subtitle.cache.SubtitleCacheManager
 import com.jkhx.player.core.player.subtitle.model.OnlineSubtitleItem
 import com.jkhx.player.core.player.subtitle.model.SubtitleCue
@@ -146,7 +147,7 @@ class SubtitleManager(
             val text = downloaded.readText(Charsets.UTF_8)
             try { tempFile.delete() } catch (_: Exception) {}
             text
-        } else if (!item.downloadUrl.isNullOrBlank() && item.downloadUrl.startsWith("http", ignoreCase = true)) {
+        } else if (!item.downloadUrl.isNullOrBlank() && (item.downloadUrl.startsWith("http", ignoreCase = true) || item.downloadUrl.startsWith("content://", ignoreCase = true) || item.downloadUrl.startsWith("file://", ignoreCase = true))) {
             downloadRawSubtitleText(item.downloadUrl)
         } else {
             val tempFile = File(context.cacheDir, "temp_sub_${System.currentTimeMillis()}.${item.format}")
@@ -171,9 +172,39 @@ class SubtitleManager(
     }
 
     /**
-     * Tải trực tiếp nội dung phụ đề từ URL (hỗ trợ .srt, .vtt, .zip, UTF-8/UTF-16 và retry khi AI đang khởi tạo)
+     * Tải trực tiếp nội dung phụ đề từ URL (hỗ trợ .srt, .vtt, .ass, .ssa, .zip, UTF-8/UTF-16/Windows-1258 và retry khi AI đang khởi tạo, hỗ trợ content:// & file://)
      */
     suspend fun downloadRawSubtitleText(url: String): String = withContext(Dispatchers.IO) {
+        if (url.startsWith("content://", ignoreCase = true) || url.startsWith("file://", ignoreCase = true)) {
+            val uri = Uri.parse(url)
+            val bytes = if (url.startsWith("file://", ignoreCase = true)) {
+                File(uri.path ?: "").readBytes()
+            } else {
+                context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    ?: throw Exception("Không thể đọc file từ uri: $url")
+            }
+            if (bytes.isEmpty()) throw Exception("File phụ đề rỗng")
+
+            // Kiểm tra nếu là file nén ZIP (PK header 0x50 0x4B 0x03 0x04)
+            if (bytes.size >= 4 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4B.toByte() &&
+                bytes[2] == 0x03.toByte() && bytes[3] == 0x04.toByte()
+            ) {
+                ZipInputStream(ByteArrayInputStream(bytes)).use { zis ->
+                    var entry = zis.nextEntry
+                    while (entry != null) {
+                        val name = entry.name.lowercase()
+                        if (!entry.isDirectory && (name.endsWith(".srt") || name.endsWith(".vtt") || name.endsWith(".sub") || name.endsWith(".ass") || name.endsWith(".ssa"))) {
+                            val entryBytes = zis.readBytes()
+                            return@withContext decodeSubtitleBytes(entryBytes)
+                        }
+                        entry = zis.nextEntry
+                    }
+                }
+            }
+
+            return@withContext decodeSubtitleBytes(bytes)
+        }
+
         var lastError: Exception? = null
         for (attempt in 1..3) {
             try {
@@ -203,7 +234,7 @@ class SubtitleManager(
                         var entry = zis.nextEntry
                         while (entry != null) {
                             val name = entry.name.lowercase()
-                            if (!entry.isDirectory && (name.endsWith(".srt") || name.endsWith(".vtt") || name.endsWith(".sub") || name.endsWith(".ass"))) {
+                            if (!entry.isDirectory && (name.endsWith(".srt") || name.endsWith(".vtt") || name.endsWith(".sub") || name.endsWith(".ass") || name.endsWith(".ssa"))) {
                                 val entryBytes = zis.readBytes()
                                 return@withContext decodeSubtitleBytes(entryBytes)
                             }
@@ -242,7 +273,15 @@ class SubtitleManager(
                 return String(bytes, 3, bytes.size - 3, Charsets.UTF_8)
             }
         }
-        return String(bytes, Charsets.UTF_8)
+        return try {
+            String(bytes, Charsets.UTF_8)
+        } catch (_: Exception) {
+            try {
+                String(bytes, java.nio.charset.Charset.forName("windows-1258"))
+            } catch (_: Exception) {
+                String(bytes, Charsets.ISO_8859_1)
+            }
+        }
     }
 
     /**

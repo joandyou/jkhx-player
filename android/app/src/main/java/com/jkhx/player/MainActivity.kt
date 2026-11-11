@@ -1,5 +1,6 @@
 package com.jkhx.player
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -45,6 +46,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -71,6 +73,7 @@ import com.jkhx.player.ui.screens.home.HomeScreen
 import com.jkhx.player.ui.screens.movielist.MovieListScreen
 import com.jkhx.player.ui.screens.player.PlayerScreen
 import com.jkhx.player.ui.screens.reader.ReaderScreen
+import com.jkhx.player.ui.screens.local.LocalLibraryScreen
 import com.jkhx.player.ui.screens.plugins.PluginsScreen
 import com.jkhx.player.ui.screens.search.SearchScreen
 import com.jkhx.player.ui.screens.settings.SettingsScreen
@@ -122,9 +125,16 @@ class MainActivity : ComponentActivity() {
         com.jkhx.player.sync.SyncManager.getInstance(this).triggerAutoPullSync()
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleDeepLink(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableHighRefreshRate()
+        handleDeepLink(intent)
         setContent {
             val settingsManager = JkhxApplication.instance.settingsManager
             val themeMode by settingsManager.themeMode.collectAsState()
@@ -167,6 +177,32 @@ class MainActivity : ComponentActivity() {
             }
         } catch (_: Exception) {}
     }
+
+    private fun handleDeepLink(intent: Intent?) {
+        val uri = intent?.data ?: return
+        try {
+            if (uri.scheme == "jkhx" && uri.host == "plugin" && uri.path?.startsWith("/auth") == true) {
+                val pluginId = uri.getQueryParameter("id") ?: uri.getQueryParameter("plugin")
+                val token = uri.getQueryParameter("token") ?: uri.getQueryParameter("auth_token")
+                if (!pluginId.isNullOrBlank() && !token.isNullOrBlank()) {
+                    val storage = com.jkhx.player.plugin.runtime.SharedPreferencesPluginStorage(this)
+                    storage.set(pluginId, "auth_token", token)
+                    val pluginName = pluginId
+                    Toast.makeText(
+                        this,
+                        getString(R.string.plugin_auth_sync_success, pluginName),
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        } catch (e: Exception) {
+            Toast.makeText(
+                this,
+                getString(R.string.plugin_auth_sync_error, e.message ?: "Unknown"),
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
 }
 
 sealed class Screen(val route: String, val titleRes: Int) {
@@ -175,6 +211,7 @@ sealed class Screen(val route: String, val titleRes: Int) {
     object Favorites : Screen("favorites", R.string.nav_favorites)
     object Plugins : Screen("plugins", R.string.nav_plugins)
     object Settings : Screen("settings", R.string.nav_settings)
+    object LocalLibrary : Screen("local_library", R.string.local_library_title)
 }
 
 object ActivePlayerSession {
@@ -368,6 +405,7 @@ fun MainAppNavigation(displayMode: DeviceDisplayMode = DeviceDisplayMode.MOBILE)
                                         Screen.Favorites -> Icon(Icons.Default.Favorite, contentDescription = null, tint = iconColor, modifier = Modifier.size(24.dp))
                                         Screen.Plugins -> Icon(Icons.Default.Extension, contentDescription = null, tint = iconColor, modifier = Modifier.size(24.dp))
                                         Screen.Settings -> Icon(Icons.Default.Settings, contentDescription = null, tint = iconColor, modifier = Modifier.size(24.dp))
+                                        Screen.LocalLibrary -> Icon(Icons.Default.Folder, contentDescription = null, tint = iconColor, modifier = Modifier.size(24.dp))
                                     }
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
@@ -526,6 +564,7 @@ fun NuvioFloatingBottomBar(
                                 Screen.Favorites -> Icon(Icons.Default.Favorite, contentDescription = null, tint = iconColor, modifier = Modifier.size(22.dp))
                                 Screen.Plugins -> Icon(Icons.Default.Extension, contentDescription = null, tint = iconColor, modifier = Modifier.size(22.dp))
                                 Screen.Settings -> Icon(Icons.Default.Settings, contentDescription = null, tint = iconColor, modifier = Modifier.size(22.dp))
+                                Screen.LocalLibrary -> Icon(Icons.Default.Folder, contentDescription = null, tint = iconColor, modifier = Modifier.size(22.dp))
                             }
                         }
 
@@ -557,7 +596,11 @@ fun AppNavHost(
 
     val openPlaybackFromHistory: (HistoryEntity, Boolean) -> Unit = remember(navController, context) {
         { history, forceStreamSelection ->
-            val isComicOrNovelInitial = pluginManager.isComicProvider(history.providerId) || pluginManager.isNovelProvider(history.providerId)
+            val isComicOrNovelInitial = if (history.providerId == "local") {
+                true
+            } else {
+                pluginManager.isComicProvider(history.providerId) || pluginManager.isNovelProvider(history.providerId)
+            }
             if (!forceStreamSelection && !isComicOrNovelInitial) {
                 Toast.makeText(context, context.getString(R.string.home_resuming_episode, history.movieName), Toast.LENGTH_SHORT).show()
                 val initialEpId = history.lastEpisodeId?.takeIf { it.isNotBlank() } ?: history.movieSlug
@@ -716,7 +759,11 @@ fun AppNavHost(
                     }
 
                     if (targetServer != null && targetEpisode != null) {
-                        val isComicOrNovel = pluginManager.isComicProvider(activeProviderId) || pluginManager.isNovelProvider(activeProviderId)
+                        val isComicOrNovel = if (activeProviderId == "local") {
+                            validDetail.type == "novel" || validDetail.type == "comic"
+                        } else {
+                            pluginManager.isComicProvider(activeProviderId) || pluginManager.isNovelProvider(activeProviderId)
+                        }
                         val isStremio = activeProviderId.startsWith("stremio_") || plugin is com.jkhx.player.plugin.manager.stremio.StremioPluginWrapper
                         val sortedTargetEps = targetServer.episodes
                         val targetIndex = sortedTargetEps.indexOfFirst {
@@ -997,6 +1044,17 @@ fun AppNavHost(
                             popUpTo(navController.graph.findStartDestination().id)
                             launchSingleTop = true
                         }
+                    },
+                    onOpenLocalLibrary = {
+                        navController.navigate(Screen.LocalLibrary.route)
+                    }
+                )
+            }
+            composable(Screen.LocalLibrary.route) {
+                LocalLibraryScreen(
+                    onBack = { navController.popBackStack() },
+                    onMovieClick = { providerId, slug ->
+                        navController.navigate("detail/$providerId/${URLEncoder.encode(slug, "UTF-8")}")
                     }
                 )
             }
@@ -1052,7 +1110,11 @@ fun AppNavHost(
                             jsonString.toByteArray(Charsets.UTF_8),
                             android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP
                         )
-                        val isComicOrNovel = JkhxApplication.instance.pluginManager.isComicProvider(providerId) || JkhxApplication.instance.pluginManager.isNovelProvider(providerId)
+                        val isComicOrNovel = if (providerId == "local") {
+                            episode.data?.toString()?.contains("novel") == true || episode.data?.toString()?.contains("comic") == true
+                        } else {
+                            JkhxApplication.instance.pluginManager.isComicProvider(providerId) || JkhxApplication.instance.pluginManager.isNovelProvider(providerId)
+                        }
                         if (isComicOrNovel) {
                             navController.navigate("reader/$providerId/$safeToken")
                         } else {

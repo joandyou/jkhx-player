@@ -863,7 +863,16 @@ class PluginManager(
             .mapNotNull { loadedPlugins[it.manifest.id] }
     }
 
+    private val builtInPlugins = ConcurrentHashMap<String, LoadedPlugin>()
+
+    fun registerBuiltInPlugin(pluginId: String, plugin: LoadedPlugin) {
+        builtInPlugins[pluginId] = plugin
+    }
+
+    fun getBuiltInPlugin(pluginId: String): LoadedPlugin? = builtInPlugins[pluginId]
+
     suspend fun getPlugin(pluginId: String): LoadedPlugin? = withContext(Dispatchers.IO) {
+        builtInPlugins[pluginId]?.let { return@withContext it }
         val record = installedPlugins[pluginId] ?: return@withContext null
         if (!record.isEnabled) return@withContext null
 
@@ -903,6 +912,7 @@ class PluginManager(
     }
 
     fun getPluginName(pluginId: String): String {
+        builtInPlugins[pluginId]?.let { return it.name }
         return installedPlugins[pluginId]?.manifest?.name ?: pluginId
     }
 

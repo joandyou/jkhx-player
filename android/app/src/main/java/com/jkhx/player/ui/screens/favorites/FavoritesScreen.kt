@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,7 +33,8 @@ import kotlinx.coroutines.launch
 fun FavoritesScreen(
     onMovieClick: (providerId: String, slug: String) -> Unit,
     onBack: (() -> Unit)? = null,
-    onExploreClick: (() -> Unit)? = null
+    onExploreClick: (() -> Unit)? = null,
+    onOpenLocalLibrary: (() -> Unit)? = null
 ) {
     val favoriteDao = remember { JkhxApplication.instance.database.favoriteDao() }
     val pluginManager = JkhxApplication.instance.pluginManager
@@ -94,6 +96,15 @@ fun FavoritesScreen(
                     }
                 },
                 actions = {
+                    if (onOpenLocalLibrary != null) {
+                        IconButton(onClick = onOpenLocalLibrary) {
+                            Icon(
+                                imageVector = Icons.Default.Folder,
+                                contentDescription = stringResource(R.string.local_library_title),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
                     if (displayFavorites.isNotEmpty()) {
                         IconButton(onClick = { showClearDialog = true }) {
                             Icon(

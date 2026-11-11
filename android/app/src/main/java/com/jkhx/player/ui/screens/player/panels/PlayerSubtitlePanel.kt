@@ -1,6 +1,11 @@
 package com.jkhx.player.ui.screens.player.panels
 
+import android.content.Intent
+import android.net.Uri
+import android.provider.OpenableColumns
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -107,6 +112,42 @@ internal fun PlayerSubtitlePanel(
     val context = LocalContext.current
     var isEditingSubSearchQuery by remember { mutableStateOf(false) }
     var tempSubSearchQuery by remember { mutableStateOf("") }
+
+    val localSubLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: Exception) {}
+
+            var fileName = "subtitle.srt"
+            try {
+                context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (nameIndex != -1 && cursor.moveToFirst()) {
+                        fileName = cursor.getString(nameIndex) ?: "subtitle.srt"
+                    }
+                }
+            } catch (_: Exception) {}
+
+            val ext = fileName.substringAfterLast('.', "srt").lowercase()
+            val localSubItem = OnlineSubtitleItem(
+                id = "local_${System.currentTimeMillis()}",
+                name = fileName,
+                source = "local",
+                language = if (selectedLangGroup != "none") selectedLangGroup else "vi",
+                languageName = "Nội bộ",
+                format = ext,
+                downloadUrl = uri.toString()
+            )
+            onApplyOnlineSub(localSubItem)
+            Toast.makeText(context, context.getString(R.string.player_local_sub_loaded, fileName), Toast.LENGTH_SHORT).show()
+        }
+    }
 
         AnimatedVisibility(
             visible = visible,
@@ -268,6 +309,43 @@ internal fun PlayerSubtitlePanel(
                                                     color = Color.White,
                                                     fontSize = col1FontSize,
                                                     fontWeight = if (isNoneSelected) FontWeight.Bold else FontWeight.Normal,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    // 1.1. Nạp file phụ đề từ thiết bị (.srt, .vtt, .ass, .zip)
+                                    item {
+                                        Surface(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(col1ItemHeight)
+                                                .tvFocusableItem(cornerRadius = col1ItemHeight / 2, focusedScale = 1.05f),
+                                            shape = RoundedCornerShape(col1ItemHeight / 2),
+                                            color = Color.Transparent,
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+                                            onClick = {
+                                                localSubLauncher.launch(arrayOf("*/*"))
+                                            }
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxSize().padding(horizontal = col1PaddingH),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.FolderOpen,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                                Text(
+                                                    text = stringResource(R.string.player_subtitles_load_local),
+                                                    color = Color.White,
+                                                    fontSize = col1FontSize,
+                                                    fontWeight = FontWeight.Medium,
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis
                                                 )

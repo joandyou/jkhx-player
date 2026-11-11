@@ -404,8 +404,14 @@ class ExoPlayerManager(
             setTransferListener(internalTransferListener)
         }
 
-        val upstreamDataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
+        val baseDataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
             .setTransferListener(internalTransferListener)
+
+        val upstreamDataSourceFactory = com.jkhx.player.core.remote.datasource.RemoteDataSourceFactory(
+            context = context,
+            upstreamFactory = baseDataSourceFactory,
+            transferListener = internalTransferListener
+        )
 
         val isTorrentStream = stream.torrentInfoHash != null ||
             stream.stremioServerUrl != null ||

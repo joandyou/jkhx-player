@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
@@ -1243,6 +1244,7 @@ private fun PluginSettingsDialog(
     var isLoading by remember { mutableStateOf(true) }
     var settingItems by remember { mutableStateOf<List<PluginSettingItem>>(emptyList()) }
     val settingValues = remember { mutableStateMapOf<String, String>() }
+    var activeLoginUrl by remember { mutableStateOf<String?>(null) }
 
     fun saveSetting(key: String, value: String) {
         settingValues[key] = value
@@ -1483,6 +1485,95 @@ private fun PluginSettingsDialog(
                                         }
                                     }
                                 }
+                                "webview_login", "login" -> {
+                                    val currentToken = settingValues["auth_token"] ?: currentVal
+                                    val isLoggedIn = currentToken.isNotBlank() && currentToken.length > 8
+
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        // Trạng thái tài khoản
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(
+                                                    if (isLoggedIn) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                                                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                                    ShapeTokens.Card
+                                                )
+                                                .padding(horizontal = 10.dp, vertical = 8.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = if (isLoggedIn) Icons.Default.CheckCircle else Icons.Default.AccountCircle,
+                                                contentDescription = null,
+                                                tint = if (isLoggedIn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = if (isLoggedIn) stringResource(R.string.plugin_login_status_logged_in)
+                                                    else stringResource(R.string.plugin_login_status_guest),
+                                                    fontSize = 13.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = if (isLoggedIn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                                )
+                                                if (isLoggedIn) {
+                                                    val previewToken = if (currentToken.length > 16) "${currentToken.take(8)}...${currentToken.takeLast(6)}" else currentToken
+                                                    Text(
+                                                        text = "Token: $previewToken",
+                                                        fontSize = 11.sp,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        // Cụm nút bấm
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Button(
+                                                onClick = {
+                                                    activeLoginUrl = item.defaultValue.ifBlank { "about:blank" }
+                                                },
+                                                modifier = Modifier.weight(1f),
+                                                shape = ShapeTokens.Card,
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                                            ) {
+                                                Icon(Icons.AutoMirrored.Filled.Login, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = if (isLoggedIn) stringResource(R.string.plugin_login_relogin)
+                                                    else stringResource(R.string.plugin_login_btn),
+                                                    fontSize = 12.5.sp,
+                                                    maxLines = 1
+                                                )
+                                            }
+
+                                            if (isLoggedIn) {
+                                                OutlinedButton(
+                                                    onClick = {
+                                                        saveSetting("auth_token", "")
+                                                        saveSetting(item.key, "")
+                                                        Toast.makeText(context, "Đã đăng xuất tài khoản", Toast.LENGTH_SHORT).show()
+                                                    },
+                                                    shape = ShapeTokens.Card,
+                                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                                                ) {
+                                                    Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text(
+                                                        text = stringResource(R.string.plugin_login_logout),
+                                                        fontSize = 12.5.sp,
+                                                        color = MaterialTheme.colorScheme.error,
+                                                        maxLines = 1
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                                 else -> {
                                     var textInput by remember(currentVal) { mutableStateOf(currentVal) }
                                     OutlinedTextField(
@@ -1590,6 +1681,25 @@ private fun PluginSettingsDialog(
         containerColor = MaterialTheme.colorScheme.surface,
         shape = ShapeTokens.Card
     )
+
+    if (activeLoginUrl != null) {
+        PluginWebviewLoginDialog(
+            pluginId = pluginId,
+            pluginName = pluginName,
+            targetUrl = activeLoginUrl ?: "about:blank",
+            onDismiss = { activeLoginUrl = null },
+            onTokenCaptured = { token ->
+                saveSetting("auth_token", token)
+                saveSetting("webview_login", token)
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.plugin_login_success, pluginName),
+                    Toast.LENGTH_SHORT
+                ).show()
+                activeLoginUrl = null
+            }
+        )
+    }
 }
 
 // -------------------------------------------------------------

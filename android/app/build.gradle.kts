@@ -14,8 +14,8 @@ android {
         applicationId = "com.jkhx.player"
         minSdk = 26
         targetSdk = 35
-        versionCode = 22
-        versionName = "1.0.21"
+        versionCode = 23
+        versionName = "1.0.22"
 
         ndk {
             abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a", "x86_64"))
@@ -58,6 +58,17 @@ android {
     buildFeatures {
         compose = true
     }
+
+    packaging {
+        resources {
+            excludes += listOf(
+                "META-INF/INDEX.LIST",
+                "META-INF/io.netty.versions.properties",
+                "org/bouncycastle/pqc/**",
+                "org/bouncycastle/x509/*.properties"
+            )
+        }
+    }
 }
 
 dependencies {
@@ -86,6 +97,7 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.ui)
     implementation("androidx.media:media:1.7.0")
+    implementation("androidx.documentfile:documentfile:1.0.1")
     implementation(libs.coil.compose)
     implementation(libs.coil.svg)
     implementation(libs.kotlinx.coroutines.core)
