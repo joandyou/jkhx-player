@@ -259,6 +259,7 @@
     <string name="reader_tts_prev_paragraph">Previous paragraph</string>
     <string name="reader_tts_next_paragraph">Next paragraph</string>
     <string name="reader_tts_paragraph_label">Para %1$d/%2$d</string>
+    <string name="reader_tts_reading_title">Chapter title</string>
     <string name="reader_tts_channel_name">Novel Audiobook (TTS)</string>
     <string name="reader_tts_channel_desc">Novel audiobook playback notification</string>
     <string name="reader_tts_default_chapter">Chapter</string>

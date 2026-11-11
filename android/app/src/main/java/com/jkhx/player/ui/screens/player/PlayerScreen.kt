@@ -900,7 +900,7 @@ fun PlayerScreen(
     val isTtsEnabled by settingsManager.isTtsEnabled.collectAsState()
     val ttsEngine by settingsManager.ttsEngine.collectAsState()
     val ttsVoice by settingsManager.ttsVoice.collectAsState()
-    val ttsSpeechRate by settingsManager.ttsSpeechRate.collectAsState()
+    val ttsSpeechRate by settingsManager.ttsMovieSpeechRate.collectAsState()
     val ttsDuckingVolume by settingsManager.ttsDuckingVolume.collectAsState()
     val ttsApiEndpoint by settingsManager.ttsApiEndpoint.collectAsState()
     val ttsApiKey by settingsManager.ttsApiKey.collectAsState()
@@ -917,7 +917,7 @@ fun PlayerScreen(
                 engineType = com.jkhx.player.core.player.tts.model.TtsEngineType.entries.firstOrNull { it.id == settingsManager.ttsEngine.value }
                     ?: com.jkhx.player.core.player.tts.model.TtsEngineType.GEMINI_38_FLASH_TTS,
                 voiceId = settingsManager.ttsVoice.value,
-                speechRate = settingsManager.ttsSpeechRate.value,
+                speechRate = settingsManager.ttsMovieSpeechRate.value,
                 duckingVolume = settingsManager.ttsDuckingVolume.value,
                 apiEndpoint = settingsManager.ttsApiEndpoint.value,
                 apiKey = settingsManager.getEffectiveTtsApiKey(),
@@ -2723,7 +2723,7 @@ fun PlayerScreen(
             selectedLangGroup = selectedLangGroup,
             onSelectLangGroup = { selectedLangGroup = it },
             onSelectNoneTrack = {
-                selectedSubtitleTrackId = null
+                selectedSubtitleTrackId = "off"
                 activeOnlineSubId = null
                 ttsManager.stopAudio()
                 currentSubCues = emptyList()
@@ -2789,6 +2789,7 @@ fun PlayerScreen(
             downloadingSubItemId = downloadingSubItemId,
             translatedEnglishSubIds = translatedEnglishSubIds,
             isTranslatingWithGemini = isTranslatingWithGemini,
+            geminiTranslateProgress = geminiTranslateProgress,
             onApplyOnlineSub = { item ->
                 applyOnlineSub(item)
             },

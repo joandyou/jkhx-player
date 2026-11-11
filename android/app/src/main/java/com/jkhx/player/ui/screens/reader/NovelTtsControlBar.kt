@@ -40,6 +40,7 @@ fun NovelTtsControlBar(
     val isPlaying by novelTtsManager.isPlaying.collectAsState()
     val isLoading by novelTtsManager.isLoading.collectAsState()
     val currentParagraphIndex by novelTtsManager.currentParagraphIndex.collectAsState()
+    val isReadingHeader by novelTtsManager.isReadingHeader.collectAsState()
     val paragraphs by novelTtsManager.paragraphs.collectAsState()
     val speechRate by novelTtsManager.speechRate.collectAsState()
     val sleepTimerMinutes by novelTtsManager.sleepTimerMinutes.collectAsState()
@@ -68,11 +69,15 @@ fun NovelTtsControlBar(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = stringResource(
-                        R.string.reader_tts_paragraph_label,
-                        currentParagraphIndex + 1,
-                        maxOf(1, paragraphs.size)
-                    ),
+                    text = if (isReadingHeader || currentParagraphIndex < 0) {
+                        stringResource(R.string.reader_tts_reading_title)
+                    } else {
+                        stringResource(
+                            R.string.reader_tts_paragraph_label,
+                            currentParagraphIndex + 1,
+                            maxOf(1, paragraphs.size)
+                        )
+                    },
                     fontSize = 11.5.sp,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.primary
@@ -135,9 +140,9 @@ fun NovelTtsControlBar(
             // Thanh trượt tua đoạn văn
             if (paragraphs.size > 1) {
                 Slider(
-                    value = currentParagraphIndex.toFloat(),
+                    value = if (isReadingHeader || currentParagraphIndex < 0) 0f else currentParagraphIndex.coerceAtLeast(0).toFloat(),
                     onValueChange = { novelTtsManager.seekToParagraph(it.toInt()) },
-                    valueRange = 0f..(paragraphs.size - 1).toFloat(),
+                    valueRange = 0f..maxOf(1f, (paragraphs.size - 1).toFloat()),
                     steps = if (paragraphs.size > 2) paragraphs.size - 2 else 0,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -171,7 +176,7 @@ fun NovelTtsControlBar(
                             else -> 0.95f
                         }
                         novelTtsManager.setSpeechRate(nextSpeed)
-                        settingsManager?.setTtsSpeechRate(nextSpeed)
+                        settingsManager?.setTtsNovelSpeechRate(nextSpeed)
                     }
                 ) {
                     Text(
@@ -188,15 +193,16 @@ fun NovelTtsControlBar(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(AppTheme.dimens.space14)
                 ) {
+                    val canGoPrev = currentParagraphIndex > 0 || !isReadingHeader
                     IconButton(
                         onClick = { novelTtsManager.previousParagraph() },
-                        enabled = currentParagraphIndex > 0,
+                        enabled = canGoPrev,
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
                             Icons.Default.SkipPrevious,
                             contentDescription = stringResource(R.string.reader_tts_prev_paragraph),
-                            tint = if (currentParagraphIndex > 0) Color.White else Color.Gray,
+                            tint = if (canGoPrev) Color.White else Color.Gray,
                             modifier = Modifier.size(24.dp)
                         )
                     }
@@ -528,7 +534,7 @@ fun NovelTtsSettingsSheet(
                     Surface(
                         onClick = {
                             novelTtsManager.setSpeechRate(rate)
-                            settingsManager.setTtsSpeechRate(rate)
+                            settingsManager.setTtsNovelSpeechRate(rate)
                         },
                         shape = ShapeTokens.Chip,
                         color = if (isSpeedSelected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.08f),

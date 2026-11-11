@@ -17,6 +17,7 @@ class TtsCacheManager(context: Context) {
 
     fun getAudioFile(key: String): File? {
         val candidates = listOf(
+            File(cacheDir, "$key.wav"),
             File(cacheDir, "$key.opus"),
             File(cacheDir, "$key.webm"),
             File(cacheDir, "$key.mp3")
@@ -26,6 +27,11 @@ class TtsCacheManager(context: Context) {
 
     fun saveAudio(key: String, bytes: ByteArray): File {
         val ext = when {
+            bytes.size >= 12 &&
+                bytes[0] == 0x52.toByte() && bytes[1] == 0x49.toByte() &&
+                bytes[2] == 0x46.toByte() && bytes[3] == 0x46.toByte() &&
+                bytes[8] == 0x57.toByte() && bytes[9] == 0x41.toByte() &&
+                bytes[10] == 0x56.toByte() && bytes[11] == 0x45.toByte() -> "wav"
             bytes.size >= 4 && bytes[0] == 0x1A.toByte() && bytes[1] == 0x45.toByte() && bytes[2] == 0xDF.toByte() && bytes[3] == 0xA3.toByte() -> "opus"
             bytes.size >= 4 && bytes[0] == 0x4F.toByte() && bytes[1] == 0x67.toByte() && bytes[2] == 0x67.toByte() && bytes[3] == 0x53.toByte() -> "opus"
             else -> "mp3"

@@ -165,7 +165,9 @@ class NovelAudioService : Service() {
         totalParagraphs: Int
     ): Notification {
         val storyName = ActivePlayerSession.movieName.ifBlank { getString(R.string.reader_tts_reading_novel) }
-        val contentText = if (totalParagraphs > 0) {
+        val contentText = if (paragraphIdx < 0) {
+            "$chapterTitle • ${getString(R.string.reader_tts_reading_title)}"
+        } else if (totalParagraphs > 0) {
             "$chapterTitle • ${getString(R.string.reader_tts_paragraph_label, paragraphIdx + 1, totalParagraphs)}"
         } else {
             chapterTitle
@@ -181,7 +183,7 @@ class NovelAudioService : Service() {
                 PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
                 PlaybackStateCompat.ACTION_STOP
             )
-            .setState(state, paragraphIdx.toLong(), 1f)
+            .setState(state, paragraphIdx.coerceAtLeast(0).toLong(), 1f)
             .build()
         mediaSession?.setPlaybackState(playbackState)
 

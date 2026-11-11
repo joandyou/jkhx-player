@@ -259,6 +259,7 @@
     <string name="reader_tts_prev_paragraph">Đoạn trước</string>
     <string name="reader_tts_next_paragraph">Đoạn sau</string>
     <string name="reader_tts_paragraph_label">Đoạn %1$d/%2$d</string>
+    <string name="reader_tts_reading_title">Tiêu đề chương</string>
     <string name="reader_tts_channel_name">Đọc truyện (TTS)</string>
     <string name="reader_tts_channel_desc">Thông báo phát âm thanh đọc truyện chữ</string>
     <string name="reader_tts_default_chapter">Chương truyện</string>

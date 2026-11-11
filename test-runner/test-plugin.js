@@ -1,12 +1,75 @@
 // test-runner/test-plugin.js
 import fs from 'fs';
 import path from 'path';
+import { execFileSync } from 'child_process';
 
 // Polyfills for Node.js test environment matching QuickJS runtime
-if (!globalThis.fetch) {
-  const nodeFetch = await import('node-fetch');
-  globalThis.fetch = nodeFetch.default;
+function curlFetch(url, options = {}) {
+  const args = ["-s", "-i", "-L", "--http2"];
+  if (options.method && options.method.toUpperCase() !== "GET") {
+    args.push("-X", options.method.toUpperCase());
+  }
+  const headers = options.headers || {};
+  for (const [k, v] of Object.entries(headers)) {
+    args.push("-H", `${k}: ${v}`);
+  }
+  if (options.body) {
+    args.push("--data", options.body);
+  }
+  args.push(url);
+
+  try {
+    const stdout = execFileSync("curl", args, { maxBuffer: 15 * 1024 * 1024, encoding: "utf8" });
+    const headerEnd = stdout.indexOf("\r\n\r\n");
+    const headerBlock = headerEnd >= 0 ? stdout.substring(0, headerEnd) : "";
+    const body = headerEnd >= 0 ? stdout.substring(headerEnd + 4) : stdout;
+    const statusMatch = headerBlock.match(/HTTP\/[\d.]+\s+(\d+)/);
+    const status = statusMatch ? parseInt(statusMatch[1], 10) : 200;
+
+    return {
+      status,
+      ok: status >= 200 && status < 300,
+      statusText: status === 200 ? "OK" : "",
+      text: async () => body,
+      json: async () => JSON.parse(body),
+      headers: {
+        get: (name) => {
+          const m = headerBlock.match(new RegExp(`^${name}:\\s*(.*)$`, "im"));
+          return m ? m[1].trim() : null;
+        }
+      }
+    };
+  } catch (err) {
+    return {
+      status: 500,
+      ok: false,
+      statusText: err.message,
+      text: async () => "",
+      json: async () => ({}),
+      headers: { get: () => null }
+    };
+  }
 }
+
+const originalFetch = globalThis.fetch;
+globalThis.fetch = async function(url, options = {}) {
+  if (originalFetch) {
+    try {
+      const res = await originalFetch(url, options);
+      if (res.status === 403 || res.status === 503) {
+        const cloned = res.clone();
+        const text = await cloned.text();
+        if (text.includes("Just a moment...") || text.includes("Cloudflare")) {
+          return curlFetch(url, options);
+        }
+      }
+      return res;
+    } catch (_) {
+      return curlFetch(url, options);
+    }
+  }
+  return curlFetch(url, options);
+};
 
 globalThis.context = {
   storage: {

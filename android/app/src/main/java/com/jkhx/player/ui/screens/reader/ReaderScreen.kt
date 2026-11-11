@@ -141,7 +141,7 @@ fun ReaderScreen(
     val novelThemeIndex by settingsManager.novelThemeIndex.collectAsState()
 
     val ttsVoice by settingsManager.ttsVoice.collectAsState()
-    val ttsSpeechRate by settingsManager.ttsSpeechRate.collectAsState()
+    val ttsSpeechRate by settingsManager.ttsNovelSpeechRate.collectAsState()
     val ttsEngine by settingsManager.ttsEngine.collectAsState()
     val ttsApiEndpoint by settingsManager.ttsApiEndpoint.collectAsState()
     val ttsApiKey by settingsManager.ttsApiKey.collectAsState()
@@ -151,6 +151,7 @@ fun ReaderScreen(
     var isTtsActive by remember { mutableStateOf(novelTtsManager.isPlaying.value) }
     var showTtsSettingsSheet by remember { mutableStateOf(false) }
     val ttsParagraphIndex by novelTtsManager.currentParagraphIndex.collectAsState()
+    val isReadingHeader by novelTtsManager.isReadingHeader.collectAsState()
     val isTtsPlaying by novelTtsManager.isPlaying.collectAsState()
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -292,11 +293,15 @@ fun ReaderScreen(
         }
     }
 
-    // Tự động cuộn theo đoạn văn đang được đọc
-    LaunchedEffect(ttsParagraphIndex, isTtsActive, isTtsPlaying) {
-        if (isTtsActive && isTtsPlaying && ttsParagraphIndex in paragraphs.indices) {
+    // Tự động cuộn theo tiêu đề chương hoặc đoạn văn đang được đọc
+    LaunchedEffect(ttsParagraphIndex, isReadingHeader, isTtsActive, isTtsPlaying) {
+        if (isTtsActive && isTtsPlaying) {
             try {
-                listState.animateScrollToItem(maxOf(0, ttsParagraphIndex + 1))
+                if (isReadingHeader || ttsParagraphIndex < 0) {
+                    listState.animateScrollToItem(0)
+                } else if (ttsParagraphIndex in paragraphs.indices) {
+                    listState.animateScrollToItem(maxOf(0, ttsParagraphIndex + 1))
+                }
             } catch (_: Exception) {}
         }
     }
@@ -580,26 +585,47 @@ fun ReaderScreen(
                     )
                 ) {
                     item {
-                        Text(
-                            text = currentEpisode.name,
-                            fontSize = (novelFontSize + 4).sp,
-                            fontWeight = FontWeight.Bold,
-                            color = novelTextColor,
+                        val isHeaderHighlighted = isTtsActive && isTtsPlaying && (isReadingHeader || ttsParagraphIndex < 0)
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isHeaderHighlighted) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent,
+                            border = if (isHeaderHighlighted) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)) else null,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable(
+                                .padding(bottom = AppTheme.dimens.space24)
+                                .combinedClickable(
                                     interactionSource = remember { MutableInteractionSource() },
-                                    indication = null
-                                ) {
-                                    showControls = !showControls
-                                }
-                                .padding(bottom = AppTheme.dimens.space24),
-                            textAlign = TextAlign.Center
-                        )
+                                    indication = null,
+                                    onClick = {
+                                        if (isTtsActive) {
+                                            novelTtsManager.seekToHeader()
+                                        } else {
+                                            showControls = !showControls
+                                        }
+                                    },
+                                    onLongClick = {
+                                        showControls = !showControls
+                                    }
+                                )
+                        ) {
+                            Text(
+                                text = currentEpisode.name,
+                                fontSize = (novelFontSize + 4).sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isHeaderHighlighted) MaterialTheme.colorScheme.primary else novelTextColor,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(
+                                        horizontal = if (isHeaderHighlighted) AppTheme.dimens.space8 else 0.dp,
+                                        vertical = if (isHeaderHighlighted) AppTheme.dimens.space6 else 0.dp
+                                    ),
+                                textAlign = TextAlign.Center
+                            )
+                        }
                     }
 
                     itemsIndexed(paragraphs) { pIdx, paragraph ->
-                        val isHighlighted = isTtsActive && isTtsPlaying && ttsParagraphIndex == pIdx
+                        val isHighlighted = isTtsActive && isTtsPlaying && !isReadingHeader && ttsParagraphIndex == pIdx
                         Surface(
                             shape = RoundedCornerShape(8.dp),
                             color = if (isHighlighted) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent,

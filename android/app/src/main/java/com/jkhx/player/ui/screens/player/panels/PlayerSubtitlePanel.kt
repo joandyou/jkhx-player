@@ -79,6 +79,7 @@ internal fun PlayerSubtitlePanel(
     downloadingSubItemId: String?,
     translatedEnglishSubIds: Collection<String>,
     isTranslatingWithGemini: Boolean,
+    geminiTranslateProgress: Float = 0f,
     onApplyOnlineSub: (OnlineSubtitleItem) -> Unit,
     onTranslateWithGemini: (OnlineSubtitleItem) -> Unit,
     // Column 3: Offset & AI Sync
@@ -245,15 +246,18 @@ internal fun PlayerSubtitlePanel(
                                 ) {
                                     // 1. "Không có"
                                     item {
-                                        val isNoneSelected = selectedLangGroup == "none" || selectedSubtitleTrackId == "off"
+                                        val isNoneSelected = selectedLangGroup == "none"
                                         Surface(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .height(col1ItemHeight)
                                                 .tvFocusableItem(cornerRadius = col1ItemHeight / 2, focusedScale = 1.05f),
                                             shape = RoundedCornerShape(col1ItemHeight / 2),
-                                            color = if (isNoneSelected && selectedSubtitleTrackId == "off") MaterialTheme.colorScheme.primary else Color.Transparent,
-                                            onClick = onSelectNoneTrack
+                                            color = if (isNoneSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                            onClick = {
+                                                onSelectLangGroup("none")
+                                                onSelectNoneTrack()
+                                            }
                                         ) {
                                             Row(
                                                 modifier = Modifier.fillMaxSize().padding(horizontal = col1PaddingH),
@@ -263,7 +267,7 @@ internal fun PlayerSubtitlePanel(
                                                     text = stringResource(R.string.player_subtitles_none),
                                                     color = Color.White,
                                                     fontSize = col1FontSize,
-                                                    fontWeight = if (isNoneSelected && selectedSubtitleTrackId == "off") FontWeight.Bold else FontWeight.Normal,
+                                                    fontWeight = if (isNoneSelected) FontWeight.Bold else FontWeight.Normal,
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis
                                                 )
@@ -737,9 +741,10 @@ internal fun PlayerSubtitlePanel(
                                                                     }
                                                                 }
                                                             } else {
+                                                                val isTranslatingThis = isDownloadingThis && isTranslatingWithGemini
                                                                 Surface(
                                                                     shape = RoundedCornerShape(6.dp),
-                                                                    color = Color(0xFF1565C0),
+                                                                    color = if (isTranslatingThis) Color(0xFF0D47A1) else Color(0xFF1565C0),
                                                                     modifier = Modifier.tvFocusableItem(cornerRadius = 6.dp, focusedScale = 1.08f),
                                                                     onClick = {
                                                                         if (!isDownloadingThis && !isTranslatingWithGemini) {
@@ -750,26 +755,41 @@ internal fun PlayerSubtitlePanel(
                                                                     Row(
                                                                         modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
                                                                         verticalAlignment = Alignment.CenterVertically,
-                                                                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                                                                     ) {
-                                                                        Icon(
-                                                                            imageVector = Icons.Default.AutoAwesome,
-                                                                            contentDescription = null,
-                                                                            tint = Color.Yellow,
-                                                                            modifier = Modifier.size(12.dp)
-                                                                        )
-                                                                        Text(
-                                                                            text = stringResource(R.string.player_subtitles_translate_ai),
-                                                                            color = Color.White,
-                                                                            fontSize = 10.5.sp,
-                                                                            fontWeight = FontWeight.Bold
-                                                                        )
+                                                                        if (isTranslatingThis) {
+                                                                            CircularProgressIndicator(
+                                                                                modifier = Modifier.size(11.dp),
+                                                                                strokeWidth = 1.5.dp,
+                                                                                color = Color.Yellow
+                                                                            )
+                                                                            val percent = (geminiTranslateProgress * 100).toInt().coerceIn(0, 100)
+                                                                            Text(
+                                                                                text = "Đang dịch $percent%",
+                                                                                color = Color.White,
+                                                                                fontSize = 10.5.sp,
+                                                                                fontWeight = FontWeight.Bold
+                                                                            )
+                                                                        } else {
+                                                                            Icon(
+                                                                                imageVector = Icons.Default.AutoAwesome,
+                                                                                contentDescription = null,
+                                                                                tint = Color.Yellow,
+                                                                                modifier = Modifier.size(12.dp)
+                                                                            )
+                                                                            Text(
+                                                                                text = stringResource(R.string.player_subtitles_translate_ai),
+                                                                                color = Color.White,
+                                                                                fontSize = 10.5.sp,
+                                                                                fontWeight = FontWeight.Bold
+                                                                            )
+                                                                        }
                                                                     }
                                                                 }
                                                             }
                                                         }
 
-                                                        if (isDownloadingThis) {
+                                                        if (isDownloadingThis && !isTranslatingWithGemini) {
                                                             CircularProgressIndicator(
                                                                 modifier = Modifier.size(18.dp),
                                                                 strokeWidth = 2.dp,
@@ -1124,7 +1144,7 @@ internal fun PlayerSubtitlePanel(
                                                         .tvFocusableItem(cornerRadius = 6.dp, focusedScale = 1.08f),
                                                     shape = RoundedCornerShape(6.dp),
                                                     color = if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFF262A34),
-                                                    onClick = { settingsManager.setTtsSpeechRate(rate) }
+                                                    onClick = { settingsManager.setTtsMovieSpeechRate(rate) }
                                                 ) {
                                                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                                         Text(

@@ -137,9 +137,17 @@ fun PlayerWebViewPlayer(
                         cleanPath.endsWith(".mov") ||
                         cleanPath.endsWith(".avi")
 
-                    val hasQueryUrlParam = parsedCurrentUri?.queryParameterNames?.any { q ->
-                        q.equals("url", true) || q.equals("link", true) || q.equals("src", true) || q.equals("file", true)
-                    } == true
+                    val hasQueryUrlParam = if (parsedCurrentUri != null && parsedCurrentUri.isHierarchical) {
+                        try {
+                            parsedCurrentUri.queryParameterNames.any { q ->
+                                q.equals("url", true) || q.equals("link", true) || q.equals("src", true) || q.equals("file", true)
+                            }
+                        } catch (_: Exception) {
+                            false
+                        }
+                    } else {
+                        false
+                    }
 
                     val isExplicitEmbed = (currentUrl == resolvedStream?.url && resolvedStream?.type.equals("embed", ignoreCase = true)) ||
                         hasQueryUrlParam ||

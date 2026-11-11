@@ -609,15 +609,35 @@ class SettingsManager(context: Context) {
         _ttsVoice.value = clean
     }
 
-    private val _ttsSpeechRate = MutableStateFlow(
-        prefs.getFloat(KEY_TTS_SPEECH_RATE, 1.0f).coerceIn(0.95f, 1.25f)
+    // Tốc độ đọc thuyết minh phim (Movie TTS)
+    private val _ttsMovieSpeechRate = MutableStateFlow(
+        prefs.getFloat(KEY_TTS_MOVIE_SPEECH_RATE, prefs.getFloat(KEY_TTS_SPEECH_RATE, 1.0f)).coerceIn(0.8f, 1.5f)
     )
-    val ttsSpeechRate: StateFlow<Float> = _ttsSpeechRate.asStateFlow()
+    val ttsMovieSpeechRate: StateFlow<Float> = _ttsMovieSpeechRate.asStateFlow()
+
+    fun setTtsMovieSpeechRate(rate: Float) {
+        val clamped = rate.coerceIn(0.8f, 1.5f)
+        prefs.edit().putFloat(KEY_TTS_MOVIE_SPEECH_RATE, clamped).apply()
+        _ttsMovieSpeechRate.value = clamped
+    }
+
+    // Tốc độ đọc tiểu thuyết (Novel TTS)
+    private val _ttsNovelSpeechRate = MutableStateFlow(
+        prefs.getFloat(KEY_TTS_NOVEL_SPEECH_RATE, prefs.getFloat(KEY_TTS_SPEECH_RATE, 1.0f)).coerceIn(0.8f, 1.5f)
+    )
+    val ttsNovelSpeechRate: StateFlow<Float> = _ttsNovelSpeechRate.asStateFlow()
+
+    fun setTtsNovelSpeechRate(rate: Float) {
+        val clamped = rate.coerceIn(0.8f, 1.5f)
+        prefs.edit().putFloat(KEY_TTS_NOVEL_SPEECH_RATE, clamped).apply()
+        _ttsNovelSpeechRate.value = clamped
+    }
+
+    // Tương thích ngược: ttsSpeechRate đại diện cho tốc độ thuyết minh phim
+    val ttsSpeechRate: StateFlow<Float> get() = ttsMovieSpeechRate
 
     fun setTtsSpeechRate(rate: Float) {
-        val clamped = rate.coerceIn(0.95f, 1.25f)
-        prefs.edit().putFloat(KEY_TTS_SPEECH_RATE, clamped).apply()
-        _ttsSpeechRate.value = clamped
+        setTtsMovieSpeechRate(rate)
     }
 
     private val _ttsDuckingVolume = MutableStateFlow(
@@ -739,6 +759,8 @@ class SettingsManager(context: Context) {
         private const val KEY_TTS_ENABLED = "pref_tts_enabled"
         private const val KEY_TTS_ENGINE = "pref_tts_engine"
         private const val KEY_TTS_VOICE = "pref_tts_voice"
+        private const val KEY_TTS_MOVIE_SPEECH_RATE = "pref_tts_movie_speech_rate"
+        private const val KEY_TTS_NOVEL_SPEECH_RATE = "pref_tts_novel_speech_rate"
         private const val KEY_TTS_SPEECH_RATE = "pref_tts_speech_rate"
         private const val KEY_TTS_DUCKING_VOLUME = "pref_tts_ducking_volume"
         private const val KEY_TTS_API_ENDPOINT = "pref_tts_api_endpoint"
