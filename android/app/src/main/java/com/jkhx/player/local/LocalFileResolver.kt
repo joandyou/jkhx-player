@@ -284,6 +284,75 @@ object LocalFileResolver {
     }
 
     /**
+     * Regex nhận diện các mẫu tập phim phổ biến (S01E01, EP01, Tập 01, Part 1...)
+     */
+    private val seriesEpisodeRegex = Regex(
+        "(?:[sS](\\d{1,2})[eE](\\d{1,3}))|" +
+        "(?:(?:^|[\\s._\\-\\[(])(?:ep|e|tap|tập)[\\s._\\-]*(\\d{1,3})(?:[\\s._\\-\\])]|$))|" +
+        "(?:(?:^|[\\s._\\-\\[(])(?:part|vol|chương)[\\s._\\-]*(\\d{1,3})(?:[\\s._\\-\\])]|$))",
+        RegexOption.IGNORE_CASE
+    )
+
+    fun isSeriesEpisodePattern(fileName: String): Boolean {
+        val base = fileName.substringBeforeLast('.')
+        return seriesEpisodeRegex.containsMatchIn(base)
+    }
+
+    /**
+     * Kiểm tra xem danh sách file video trong thư mục là một bộ phim dài tập (series) hay là tập hợp phim lẻ độc lập (movies).
+     */
+    fun isSeriesFolder(episodes: List<EpisodeData>): Boolean {
+        if (episodes.size <= 1) return false
+
+        // 1. Nếu trên 40% số file khớp mẫu đánh số tập chuẩn mực -> Series
+        val episodePatternCount = episodes.count { isSeriesEpisodePattern(it.name) }
+        if (episodePatternCount.toDouble() / episodes.size >= 0.4) {
+            return true
+        }
+
+        // 2. Nếu tên các file có chung tiền tố dài và hậu tố là số thứ tự
+        val names = episodes.map { it.name.trim() }
+        val commonPrefix = getCommonPrefix(names)
+        if (commonPrefix.length >= 4 && commonPrefix.length.toDouble() / names.first().length >= 0.35) {
+            val allHaveNumberSuffix = episodes.all { ep ->
+                val remainder = ep.name.removePrefix(commonPrefix).trim()
+                remainder.matches(Regex("^[0-9]+.*")) || remainder.matches(Regex("^[IVXLCDM]+.*", RegexOption.IGNORE_CASE))
+            }
+            if (allHaveNumberSuffix) return true
+        }
+
+        return false
+    }
+
+    private fun getCommonPrefix(strings: List<String>): String {
+        if (strings.isEmpty()) return ""
+        var prefix = strings[0]
+        for (i in 1 until strings.size) {
+            while (!strings[i].startsWith(prefix, ignoreCase = true)) {
+                prefix = prefix.substring(0, prefix.length - 1)
+                if (prefix.isEmpty()) return ""
+            }
+        }
+        return prefix
+    }
+
+    /**
+     * Làm sạch tên phim từ tên file (loại bỏ tag độ phân giải, năm, nhóm encode...)
+     */
+    fun cleanMovieTitle(rawName: String): String {
+        var name = rawName.substringBeforeLast('.')
+        name = name.replace('.', ' ').replace('_', ' ')
+        val tags = listOf(
+            "1080p", "720p", "2160p", "4k", "bluray", "webrip", "web-dl", "remux", "hdr", "dovi",
+            "x264", "x265", "hevc", "avc", "aac", "dts", "ac3", "yify", "yts", "rarbg", "galaxyrg"
+        )
+        for (t in tags) {
+            name = name.replace(Regex("(?i)\\b$t\\b"), "")
+        }
+        return name.trim().replace(Regex("\\s+"), " ")
+    }
+
+    /**
      * Tạo 1 tập đơn từ file video lẻ
      */
     fun createSingleVideoEpisode(fileName: String, videoUri: Uri, subtitleUri: Uri? = null): EpisodeData {

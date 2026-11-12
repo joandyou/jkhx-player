@@ -89,6 +89,17 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
     }
 }
 
+val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `local_library` ADD COLUMN `tmdbId` INTEGER DEFAULT NULL")
+        db.execSQL("ALTER TABLE `local_library` ADD COLUMN `rating` REAL DEFAULT NULL")
+        db.execSQL("ALTER TABLE `local_library` ADD COLUMN `year` TEXT DEFAULT NULL")
+        db.execSQL("ALTER TABLE `local_library` ADD COLUMN `backdropUrl` TEXT DEFAULT NULL")
+        db.execSQL("ALTER TABLE `local_library` ADD COLUMN `originalTitle` TEXT DEFAULT NULL")
+        db.execSQL("ALTER TABLE `local_library` ADD COLUMN `genres` TEXT DEFAULT NULL")
+    }
+}
+
 @Database(
     entities = [
         HistoryEntity::class,
@@ -100,7 +111,7 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
         LocalLibraryEntity::class,
         RemoteServerEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -124,7 +135,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "jkhx_player.db"
                 )
-                    .addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                    .addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance

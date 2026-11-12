@@ -189,8 +189,40 @@ interface LocalLibraryDao {
     @Query("UPDATE local_library SET subtitleUri = :subtitleUri WHERE id = :id")
     suspend fun updateSubtitleUri(id: String, subtitleUri: String?)
 
+    @Query("""
+        UPDATE local_library 
+        SET title = :title, 
+            coverUrl = :coverUrl, 
+            description = :description, 
+            tmdbId = :tmdbId, 
+            rating = :rating, 
+            year = :year, 
+            backdropUrl = :backdropUrl, 
+            originalTitle = :originalTitle, 
+            genres = :genres 
+        WHERE id = :id
+    """)
+    suspend fun updateMetadata(
+        id: String,
+        title: String,
+        coverUrl: String?,
+        description: String?,
+        tmdbId: Long?,
+        rating: Double?,
+        year: String?,
+        backdropUrl: String?,
+        originalTitle: String?,
+        genres: String?
+    )
+
     @Query("DELETE FROM local_library WHERE id = :id")
     suspend fun delete(id: String)
+
+    @Query("DELETE FROM local_library WHERE type = 'movie' OR type = 'series'")
+    suspend fun deleteAllVideos()
+
+    @Query("DELETE FROM local_library WHERE type = :type")
+    suspend fun deleteByType(type: String)
 
     @Query("DELETE FROM local_library")
     suspend fun clearAll()

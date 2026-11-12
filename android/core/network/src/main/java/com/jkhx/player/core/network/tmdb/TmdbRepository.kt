@@ -469,17 +469,44 @@ class TmdbRepository(
     }
 
     /**
-     * Kiểm tra tính hợp lệ của API Key TMDB thông qua CF Worker Proxy
+     * Tìm kiếm TMDB trả về danh sách kết quả phong phú (phục vụ Fix Match & Auto Scraper)
+     */
+    suspend fun searchTmdb(
+        query: String,
+        type: String? = null,
+        language: String = TmdbConfig.getAppLanguage()
+    ): List<TmdbItemResult> = withContext(Dispatchers.IO) {
+        val clean = query.trim()
+        if (clean.isBlank()) return@withContext emptyList()
+        val endpoint = when (type?.lowercase()) {
+            "movie" -> "search/movie"
+            "series", "tv" -> "search/tv"
+            else -> "search/multi"
+        }
+        val params = mapOf(
+            "query" to clean,
+            "language" to language
+        )
+        val bodyStr = fetchTmdbApi(endpoint, params) ?: return@withContext emptyList()
+        try {
+            val paged = json.decodeFromString<TmdbPagedResponse>(bodyStr)
+            paged.results.filter { it.mediaType != "person" }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    /**
+     * Kiểm tra tính hợp lệ của API Key TMDB trực tiếp
      */
     suspend fun testApiKey(apiKey: String): Pair<Boolean, String> = withContext(Dispatchers.IO) {
         val key = apiKey.trim()
         if (key.isBlank()) return@withContext false to "API Key không được để trống"
         val target = "https://api.themoviedb.org/3/configuration?api_key=$key"
-        val proxyUrl = "${TmdbConfig.CF_PROXY_BASE}${java.net.URLEncoder.encode(target, "UTF-8")}"
         val start = System.currentTimeMillis()
         try {
             val req = Request.Builder()
-                .url(proxyUrl)
+                .url(target)
                 .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) JkhxPlayer/1.0")
                 .get()
                 .build()
@@ -499,7 +526,7 @@ class TmdbRepository(
             }
         } catch (e: Exception) {
             val latency = System.currentTimeMillis() - start
-            false to (e.message?.take(40) ?: "Không thể kết nối tới proxy (${latency}ms)")
+            false to (e.message?.take(50) ?: "Không thể kết nối đến TMDB (${latency}ms)")
         }
     }
 
@@ -519,23 +546,13 @@ class TmdbRepository(
     }
 
     /**
-     * Gọi API TMDB với Dual Fallback: thử Cloudflare Worker Proxy trước,
-     * nếu thất bại tự động fallback gọi trực tiếp TMDB API.
+     * Gọi API TMDB trực tiếp (tự động qua SOCKS5 / HTTP Proxy nếu được cấu hình trong Cài đặt)
      */
     fun fetchTmdbApi(endpoint: String, params: Map<String, String>): String? {
         val activeKey = TmdbConfig.apiKey.trim().ifBlank { TmdbConfig.DEFAULT_API_KEY }
         if (activeKey.isBlank()) return null
-        val proxyUrl = TmdbConfig.proxiedApiUrl(endpoint, params)
-        var bodyStr = fetchHttpString(proxyUrl)
-        if (bodyStr.isNullOrBlank()) {
-            val directQuery = StringBuilder("api_key=$activeKey")
-            params.forEach { (k, v) ->
-                directQuery.append("&").append(k).append("=").append(java.net.URLEncoder.encode(v, "UTF-8"))
-            }
-            val directUrl = "${TmdbConfig.TMDB_API_BASE}/$endpoint?$directQuery"
-            bodyStr = fetchHttpString(directUrl)
-        }
-        return bodyStr
+        val directUrl = TmdbConfig.buildApiUrl(endpoint, params)
+        return fetchHttpString(directUrl)
     }
 
     private fun parseMoviesFromJson(bodyStr: String, defaultType: String? = null): List<MovieItem> {

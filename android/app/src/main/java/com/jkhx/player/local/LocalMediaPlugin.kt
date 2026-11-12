@@ -75,14 +75,21 @@ class LocalMediaPlugin(
             episodes = episodes
         )
 
+        val genreList = item.genres?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
+        val yearInt = item.year?.take(4)?.toIntOrNull()
+
         MovieDetail(
             slug = item.id,
             name = item.title,
-            originName = item.author ?: item.title,
+            originName = item.originalTitle ?: item.author ?: item.title,
             type = item.type,
             posterUrl = item.coverUrl,
-            backdropUrl = item.coverUrl,
+            backdropUrl = item.backdropUrl ?: item.coverUrl,
             description = item.description ?: "Tập tin trên thiết bị",
+            year = yearInt,
+            rating = item.rating,
+            genres = genreList,
+            tmdbId = item.tmdbId?.toString(),
             episodes = listOf(server)
         )
     }
@@ -254,13 +261,17 @@ class LocalMediaPlugin(
     override fun close() {}
 
     private fun com.jkhx.player.core.database.entity.LocalLibraryEntity.toMovieItem(): MovieItem {
+        val yearInt = year?.take(4)?.toIntOrNull()
         return MovieItem(
             slug = id,
             name = title,
-            originName = author ?: title,
+            originName = originalTitle ?: author ?: title,
             type = type,
             posterUrl = coverUrl,
             thumbUrl = coverUrl,
+            year = yearInt,
+            rating = rating,
+            tmdbId = tmdbId?.toString(),
             providerId = "local"
         )
     }

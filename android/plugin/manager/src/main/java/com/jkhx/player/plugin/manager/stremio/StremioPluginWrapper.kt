@@ -91,28 +91,32 @@ class StremioPluginWrapper(
             return@coroutineScope HomeResult()
         }
 
-        // Chỉ lấy các catalog duyệt phim tự do (không bắt buộc tham số search hoặc genre)
+        // Lấy tất cả các catalog duyệt phim tự do (không bắt buộc tham số search hoặc genre)
         val browseableCatalogs = manifest.catalogs.filter { cat ->
             cat.extra.none { it.isRequired }
-        }.take(5)
+        }
 
-        val targetCatalogs = if (browseableCatalogs.isNotEmpty()) browseableCatalogs else manifest.catalogs.take(3)
+        val targetCatalogs = if (browseableCatalogs.isNotEmpty()) browseableCatalogs else manifest.catalogs
         val deferredSections = targetCatalogs.map { catalog ->
             async {
-                val metas = client.fetchCatalog(
-                    manifestUrl = manifestUrl,
-                    type = catalog.type,
-                    id = catalog.id,
-                    skip = 0
-                )
-                if (metas.isNotEmpty()) {
-                    HomeSection(
-                        title = cleanCatalogTitle(catalog.displayName),
-                        items = metas.map { it.toMovieItem() },
+                try {
+                    val metas = client.fetchCatalog(
+                        manifestUrl = manifestUrl,
                         type = catalog.type,
-                        slug = catalog.id
+                        id = catalog.id,
+                        skip = 0
                     )
-                } else null
+                    if (metas.isNotEmpty()) {
+                        HomeSection(
+                            title = cleanCatalogTitle(catalog.displayName),
+                            items = metas.map { it.toMovieItem() },
+                            type = catalog.type,
+                            slug = catalog.id
+                        )
+                    } else null
+                } catch (_: Exception) {
+                    null
+                }
             }
         }
 

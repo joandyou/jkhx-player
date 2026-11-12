@@ -868,7 +868,10 @@
     <string name="local_library_novel_txt_epub">Truyện chữ (.txt, .epub)</string>
     <string name="local_library_comic_cbz_zip">Truyện tranh nén (.cbz, .zip)</string>
     <string name="local_library_video_single">File video (.mp4, .mkv, .avi…)</string>
-    <string name="local_library_video_folder">Thư mục phim nhiều tập</string>
+    <string name="local_library_video_folder">Thư mục phim bộ (Nhiều tập)</string>
+    <string name="local_library_video_folder_series">Thư mục phim bộ (Nhiều tập)</string>
+    <string name="local_library_video_folder_movies">Thư mục nhiều phim lẻ (Bóc tách riêng)</string>
+    <string name="remote_server_back_to_list">Quay lại danh sách máy chủ</string>
     <string name="local_library_parsing">Đang xử lý và nạp dữ liệu…</string>
     <string name="local_library_add_success">Đã thêm thành công: %s</string>
     <string name="local_library_no_media_found">Không tìm thấy nội dung hợp lệ (video, truyện chữ, truyện tranh) trong thư mục này.</string>
@@ -900,4 +903,28 @@
     <string name="remote_browser_scanning">Đang phân tích thư mục từ xa…</string>
     <string name="remote_browser_play_file">Phát tệp này</string>
     <string name="remote_menu_item">Máy chủ mạng (WebDAV / SMB / SFTP)</string>
+
+    <!-- TMDB Metadata & Fix Match -->
+    <string name="fix_match_title">Sửa thông tin TMDb (Fix Match)</string>
+    <string name="fix_match_search_hint">Nhập tên phim để tìm kiếm…</string>
+    <string name="fix_match_all">Tất cả</string>
+    <string name="fix_match_movie">Phim lẻ</string>
+    <string name="fix_match_tv">Phim bộ</string>
+    <string name="fix_match_searching">Đang tìm kiếm TMDb…</string>
+    <string name="fix_match_no_results">Không tìm thấy kết quả phù hợp</string>
+    <string name="fix_match_apply_success">Đã cập nhật thông tin TMDb thành công</string>
+    <string name="local_library_rescrape">Cào lại thông tin TMDb tự động</string>
+    <string name="local_library_rescrape_success">Đã cập nhật thông tin TMDb tự động</string>
+    <string name="local_library_context_menu_title">Tùy chọn phim</string>
+
+    <!-- Local Library Bulk Clear -->
+    <string name="local_library_clear_all">Dọn dẹp thư viện</string>
+    <string name="local_library_clear_confirm_title">Xác nhận dọn dẹp</string>
+    <string name="local_library_clear_movies_msg">Bạn có chắc chắn muốn xóa toàn bộ phim và video khỏi Thư viện nội bộ không?\n\n(Tệp gốc trên thiết bị và máy chủ từ xa sẽ KHÔNG bị xóa).</string>
+    <string name="local_library_clear_novels_msg">Bạn có chắc chắn muốn xóa toàn bộ truyện chữ khỏi Thư viện nội bộ không?\n\n(Tệp gốc trên thiết bị sẽ KHÔNG bị xóa).</string>
+    <string name="local_library_clear_comics_msg">Bạn có chắc chắn muốn xóa toàn bộ truyện tranh khỏi Thư viện nội bộ không?\n\n(Tệp gốc trên thiết bị sẽ KHÔNG bị xóa).</string>
+    <string name="local_library_clear_everything_msg">Bạn có chắc chắn muốn xóa toàn bộ nội dung (phim, truyện chữ, truyện tranh) khỏi Thư viện nội bộ không?\n\n(Tệp gốc trên thiết bị và máy chủ sẽ KHÔNG bị xóa).</string>
+    <string name="local_library_clear_action_movies">Xóa tất cả phim</string>
+    <string name="local_library_clear_action_all">Xóa tất cả</string>
+    <string name="local_library_clear_success">Đã xóa thành công khỏi thư viện nội bộ</string>
 </resources>

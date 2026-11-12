@@ -1,6 +1,7 @@
 package com.jkhx.player.ui.screens.local.remote
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -87,6 +88,16 @@ fun RemoteFileBrowserDialog(
         loadPath(currentPath)
     }
 
+    BackHandler {
+        if (pathHistory.size > 1) {
+            val newHistory = pathHistory.dropLast(1)
+            pathHistory = newHistory
+            currentPath = newHistory.last()
+        } else {
+            onDismiss()
+        }
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -110,32 +121,36 @@ fun RemoteFileBrowserDialog(
                         .fillMaxWidth()
                         .padding(bottom = 12.dp)
                 ) {
-                    if (pathHistory.size > 1) {
-                        IconButton(
-                            onClick = {
-                                if (pathHistory.size > 1) {
-                                    val newHistory = pathHistory.dropLast(1)
-                                    pathHistory = newHistory
-                                    currentPath = newHistory.last()
-                                }
-                            },
-                            modifier = Modifier.tvFocusableItem()
-                        ) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
-                        }
-                    } else {
+                    IconButton(
+                        onClick = {
+                            if (pathHistory.size > 1) {
+                                val newHistory = pathHistory.dropLast(1)
+                                pathHistory = newHistory
+                                currentPath = newHistory.last()
+                            } else {
+                                onDismiss()
+                            }
+                        },
+                        modifier = Modifier.tvFocusableItem()
+                    ) {
                         Icon(
-                            imageVector = when (server.protocol) {
-                                "smb" -> Icons.Default.FolderShared
-                                "sftp" -> Icons.Default.Terminal
-                                else -> Icons.Default.Cloud
-                            },
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(28.dp)
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = if (pathHistory.size > 1) stringResource(R.string.common_back) else stringResource(R.string.remote_server_back_to_list),
+                            tint = Color.White
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
                     }
+
+                    Icon(
+                        imageVector = when (server.protocol) {
+                            "smb" -> Icons.Default.FolderShared
+                            "sftp" -> Icons.Default.Terminal
+                            else -> Icons.Default.Cloud
+                        },
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
 
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
@@ -152,6 +167,18 @@ fun RemoteFileBrowserDialog(
                             color = Color.White.copy(alpha = 0.6f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    // Nút quay về danh sách máy chủ nhanh
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.tvFocusableItem()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Dns,
+                            contentDescription = stringResource(R.string.remote_server_back_to_list),
+                            tint = MaterialTheme.colorScheme.primary
                         )
                     }
 
@@ -327,22 +354,44 @@ fun RemoteFileBrowserDialog(
                                     isImporting = false
                                     if (scanResult.isSuccess) {
                                         val res = scanResult.getOrThrow()
-                                        val hashId = "remote_${server.id}_${currentPath.hashCode()}"
-                                        val entity = LocalLibraryEntity(
-                                            id = hashId,
-                                            title = res.folderName,
-                                            type = if (res.episodes.size > 1) "series" else "movie",
-                                            uri = "remote://${server.id}/$currentPath",
-                                            coverUrl = res.coverUrl,
-                                            chapterCount = res.episodes.size,
-                                            episodesJson = json.encodeToString(res.episodes)
-                                        )
-                                        onSaveEntity(entity)
-                                        Toast.makeText(
-                                            context,
-                                            "Đã nạp thành công: ${res.folderName} (${res.episodes.size} tập)",
-                                            Toast.LENGTH_LONG
-                                        ).show()
+                                        val isSeries = LocalFileResolver.isSeriesFolder(res.episodes)
+                                        if (isSeries) {
+                                            val hashId = "remote_${server.id}_${currentPath.hashCode()}"
+                                            val entity = LocalLibraryEntity(
+                                                id = hashId,
+                                                title = res.folderName,
+                                                type = "series",
+                                                uri = "remote://${server.id}/$currentPath",
+                                                coverUrl = res.coverUrl,
+                                                chapterCount = res.episodes.size,
+                                                episodesJson = json.encodeToString(res.episodes)
+                                            )
+                                            onSaveEntity(entity)
+                                            Toast.makeText(
+                                                context,
+                                                "Đã nạp thành công: ${res.folderName} (${res.episodes.size} tập)",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        } else {
+                                            for (ep in res.episodes) {
+                                                val movieHashId = "remote_${server.id}_${currentPath.hashCode()}_${ep.name.hashCode()}"
+                                                val movieEntity = LocalLibraryEntity(
+                                                    id = movieHashId,
+                                                    title = LocalFileResolver.cleanMovieTitle(ep.name),
+                                                    type = "movie",
+                                                    uri = "remote://${server.id}/$currentPath",
+                                                    coverUrl = res.coverUrl,
+                                                    chapterCount = 1,
+                                                    episodesJson = json.encodeToString(listOf(ep.copy(name = ep.name)))
+                                                )
+                                                onSaveEntity(movieEntity)
+                                            }
+                                            Toast.makeText(
+                                                context,
+                                                "Đã nạp thành công: ${res.episodes.size} phim lẻ",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }
                                         onDismiss()
                                     } else {
                                         val msg = scanResult.exceptionOrNull()?.message ?: "Lỗi quét thư mục"

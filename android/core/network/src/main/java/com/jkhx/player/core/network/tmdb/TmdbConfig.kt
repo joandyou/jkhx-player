@@ -11,7 +11,6 @@ object TmdbConfig {
 
     const val TMDB_API_BASE = "https://api.themoviedb.org/3"
     const val TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p"
-    const val CF_PROXY_BASE = "https://j-proxy-fallback.khx.workers.dev/?url="
 
     /**
      * Tự động lấy ngôn ngữ hệ thống hiện tại của App (ưu tiên vi-VN, sau này hỗ trợ en-US)
@@ -26,9 +25,9 @@ object TmdbConfig {
     }
 
     /**
-     * Tạo URL gọi TMDB API qua Cloudflare Worker Proxy
+     * Tạo URL gọi trực tiếp TMDB API (hệ thống tự điều hướng qua SOCKS5 / HTTP Proxy nếu được cấu hình trong Cài đặt)
      */
-    fun proxiedApiUrl(endpoint: String, params: Map<String, String> = emptyMap()): String {
+    fun buildApiUrl(endpoint: String, params: Map<String, String> = emptyMap()): String {
         val activeKey = apiKey.trim().ifBlank { DEFAULT_API_KEY }
         val queryBuilder = StringBuilder("api_key=$activeKey")
         params.forEach { (key, value) ->
@@ -37,18 +36,30 @@ object TmdbConfig {
                 .append("=")
                 .append(URLEncoder.encode(value, "UTF-8"))
         }
-        val targetUrl = "$TMDB_API_BASE/$endpoint?$queryBuilder"
-        return "$CF_PROXY_BASE${URLEncoder.encode(targetUrl, "UTF-8")}"
+        return "$TMDB_API_BASE/$endpoint?$queryBuilder"
     }
 
     /**
-     * Tạo URL tải ảnh từ TMDB CDN (image.tmdb.org) qua Cloudflare Worker Proxy
-     * Tránh triệt để tình trạng các nhà mạng VN chặn dải IP/domain ảnh của TMDB
+     * Tương thích ngược: chuyển hướng gọi trực tiếp
      */
-    fun proxiedImageUrl(path: String?, size: String = "original"): String? {
+    fun proxiedApiUrl(endpoint: String, params: Map<String, String> = emptyMap()): String {
+        return buildApiUrl(endpoint, params)
+    }
+
+    /**
+     * Tạo URL tải ảnh từ TMDB CDN (image.tmdb.org)
+     * Kích thước khuyến nghị: w500 (poster), w1280 hoặc original (backdrop), w185 (thumbnail)
+     */
+    fun imageUrl(path: String?, size: String = "w500"): String? {
         if (path.isNullOrBlank()) return null
         val cleanPath = if (path.startsWith("/")) path else "/$path"
-        val targetUrl = "$TMDB_IMAGE_BASE/$size$cleanPath"
-        return "$CF_PROXY_BASE${URLEncoder.encode(targetUrl, "UTF-8")}"
+        return "$TMDB_IMAGE_BASE/$size$cleanPath"
+    }
+
+    /**
+     * Tương thích ngược: chuyển hướng gọi trực tiếp
+     */
+    fun proxiedImageUrl(path: String?, size: String = "original"): String? {
+        return imageUrl(path, size)
     }
 }

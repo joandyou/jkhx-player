@@ -100,7 +100,13 @@ data class LocalLibraryEntity(
     val chapterCount: Int = 1,
     val episodesJson: String = "[]",
     val addedAt: Long = System.currentTimeMillis(),
-    val lastOpenedAt: Long = 0L
+    val lastOpenedAt: Long = 0L,
+    val tmdbId: Long? = null,
+    val rating: Double? = null,
+    val year: String? = null,
+    val backdropUrl: String? = null,
+    val originalTitle: String? = null,
+    val genres: String? = null
 )
 
 @Entity(

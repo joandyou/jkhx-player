@@ -868,7 +868,10 @@
     <string name="local_library_novel_txt_epub">Novel (.txt, .epub)</string>
     <string name="local_library_comic_cbz_zip">Comic archive (.cbz, .zip)</string>
     <string name="local_library_video_single">Video file (.mp4, .mkv, .avi…)</string>
-    <string name="local_library_video_folder">Series folder</string>
+    <string name="local_library_video_folder">Series folder (Multiple episodes)</string>
+    <string name="local_library_video_folder_series">Series folder (Multiple episodes)</string>
+    <string name="local_library_video_folder_movies">Movies folder (Split individual movies)</string>
+    <string name="remote_server_back_to_list">Back to Server List</string>
     <string name="local_library_parsing">Processing and loading media…</string>
     <string name="local_library_add_success">Added successfully: %s</string>
     <string name="local_library_no_media_found">No supported media found (video, novel, comic) in this folder.</string>
@@ -900,4 +903,28 @@
     <string name="remote_browser_scanning">Scanning remote folder…</string>
     <string name="remote_browser_play_file">Play this file</string>
     <string name="remote_menu_item">Remote Server (WebDAV / SMB / SFTP)</string>
+
+    <!-- TMDB Metadata & Fix Match -->
+    <string name="fix_match_title">Fix TMDb Match</string>
+    <string name="fix_match_search_hint">Enter movie title to search…</string>
+    <string name="fix_match_all">All</string>
+    <string name="fix_match_movie">Movie</string>
+    <string name="fix_match_tv">TV Series</string>
+    <string name="fix_match_searching">Searching TMDb…</string>
+    <string name="fix_match_no_results">No matching results found</string>
+    <string name="fix_match_apply_success">TMDb match applied successfully</string>
+    <string name="local_library_rescrape">Auto Re-scrape TMDb</string>
+    <string name="local_library_rescrape_success">TMDb metadata refreshed successfully</string>
+    <string name="local_library_context_menu_title">Movie Options</string>
+
+    <!-- Local Library Bulk Clear -->
+    <string name="local_library_clear_all">Clear Library</string>
+    <string name="local_library_clear_confirm_title">Clear Confirmation</string>
+    <string name="local_library_clear_movies_msg">Are you sure you want to delete all movies and series from your Local Library?\n\n(Original files on your device and remote servers will NOT be deleted).</string>
+    <string name="local_library_clear_novels_msg">Are you sure you want to delete all novels from your Local Library?\n\n(Original files on your device will NOT be deleted).</string>
+    <string name="local_library_clear_comics_msg">Are you sure you want to delete all comics from your Local Library?\n\n(Original files on your device will NOT be deleted).</string>
+    <string name="local_library_clear_everything_msg">Are you sure you want to delete all content (movies, novels, comics) from your Local Library?\n\n(Original files on your device and remote servers will NOT be deleted).</string>
+    <string name="local_library_clear_action_movies">Delete all movies</string>
+    <string name="local_library_clear_action_all">Clear all</string>
+    <string name="local_library_clear_success">Deleted successfully from local library</string>
 </resources>

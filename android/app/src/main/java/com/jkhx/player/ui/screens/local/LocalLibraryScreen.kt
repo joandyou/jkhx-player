@@ -6,9 +6,11 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -40,6 +42,7 @@ import com.jkhx.player.core.model.EpisodeData
 import com.jkhx.player.local.LocalComicParser
 import com.jkhx.player.local.LocalFileResolver
 import com.jkhx.player.local.LocalNovelParser
+import com.jkhx.player.local.TmdbLocalScraper
 import com.jkhx.player.ui.theme.AppTheme
 import com.jkhx.player.ui.theme.ShapeTokens
 import com.jkhx.player.ui.theme.tvFocusableItem
@@ -68,6 +71,9 @@ fun LocalLibraryScreen(
     var processingMessage by remember { mutableStateOf("") }
 
     var itemToDelete by remember { mutableStateOf<LocalLibraryEntity?>(null) }
+    var selectedItemForMenu by remember { mutableStateOf<LocalLibraryEntity?>(null) }
+    var itemForFixMatch by remember { mutableStateOf<LocalLibraryEntity?>(null) }
+    var showClearDialog by remember { mutableStateOf(false) }
     var showAddMenu by remember { mutableStateOf(false) }
     var showRemoteServersDialog by remember { mutableStateOf(false) }
 
@@ -76,6 +82,9 @@ fun LocalLibraryScreen(
     fun saveLocalEntity(entity: LocalLibraryEntity) {
         scope.launch(Dispatchers.IO) {
             localLibraryDao.insert(entity)
+            if (entity.type == "movie" || entity.type == "series") {
+                TmdbLocalScraper.scrapeAndEnrich(context, entity.id, entity.title, entity.type)
+            }
             withContext(Dispatchers.Main) {
                 isProcessing = false
                 Toast.makeText(
@@ -112,7 +121,7 @@ fun LocalLibraryScreen(
         }
     }
 
-    fun importFolder(uri: Uri) {
+    fun importFolder(uri: Uri, forceSplitMovies: Boolean = false) {
         isProcessing = true
         processingMessage = context.getString(R.string.local_library_parsing)
         scope.launch(Dispatchers.IO) {
@@ -124,20 +133,44 @@ fun LocalLibraryScreen(
 
             // 1. Phim / Video
             if (analysis.videoEpisodes.isNotEmpty()) {
-                val isSeries = analysis.videoEpisodes.size > 1
-                val videoEntity = LocalLibraryEntity(
-                    id = hashId,
-                    title = analysis.folderName,
-                    type = if (isSeries) "series" else "movie",
-                    uri = uri.toString(),
-                    coverUrl = analysis.coverUrl,
-                    chapterCount = analysis.videoEpisodes.size,
-                    episodesJson = json.encodeToString(analysis.videoEpisodes)
-                )
-                localLibraryDao.insert(videoEntity)
-                importedAny = true
-                val epCountStr = context.getString(R.string.local_library_episodes_count, analysis.videoEpisodes.size)
-                addedTitles.add("${analysis.folderName} ($epCountStr)")
+                val isSeries = !forceSplitMovies && LocalFileResolver.isSeriesFolder(analysis.videoEpisodes)
+                if (isSeries) {
+                    val videoEntity = LocalLibraryEntity(
+                        id = hashId,
+                        title = analysis.folderName,
+                        type = "series",
+                        uri = uri.toString(),
+                        coverUrl = analysis.coverUrl,
+                        chapterCount = analysis.videoEpisodes.size,
+                        episodesJson = json.encodeToString(analysis.videoEpisodes)
+                    )
+                    localLibraryDao.insert(videoEntity)
+                    scope.launch(Dispatchers.IO) {
+                        TmdbLocalScraper.scrapeAndEnrich(context, videoEntity.id, videoEntity.title, "series")
+                    }
+                    importedAny = true
+                    val epCountStr = context.getString(R.string.local_library_episodes_count, analysis.videoEpisodes.size)
+                    addedTitles.add("${analysis.folderName} ($epCountStr)")
+                } else {
+                    for (ep in analysis.videoEpisodes) {
+                        val itemHash = "mov_${hashId}_${ep.name.hashCode()}"
+                        val movieEntity = LocalLibraryEntity(
+                            id = itemHash,
+                            title = LocalFileResolver.cleanMovieTitle(ep.name),
+                            type = "movie",
+                            uri = uri.toString(),
+                            coverUrl = analysis.coverUrl,
+                            chapterCount = 1,
+                            episodesJson = json.encodeToString(listOf(ep.copy(name = ep.name)))
+                        )
+                        localLibraryDao.insert(movieEntity)
+                        scope.launch(Dispatchers.IO) {
+                            TmdbLocalScraper.scrapeAndEnrich(context, movieEntity.id, movieEntity.title, "movie")
+                        }
+                        importedAny = true
+                        addedTitles.add(movieEntity.title)
+                    }
+                }
             }
 
             // 2. Truyện tranh (ảnh)
@@ -208,12 +241,21 @@ fun LocalLibraryScreen(
         }
     }
 
-    // 2. Video folder launcher
+    // 2. Video folder launcher (Phim bộ / Series)
     val videoFolderLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
     ) { uri: Uri? ->
         if (uri != null) {
-            importFolder(uri)
+            importFolder(uri, forceSplitMovies = false)
+        }
+    }
+
+    // 2b. Video movies folder launcher (Phim lẻ bóc tách riêng)
+    val videoMoviesFolderLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            importFolder(uri, forceSplitMovies = true)
         }
     }
 
@@ -321,6 +363,8 @@ fun LocalLibraryScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
             // Header Bar
@@ -353,6 +397,19 @@ fun LocalLibraryScreen(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (allItems.isNotEmpty()) {
+                        IconButton(
+                            onClick = { showClearDialog = true },
+                            modifier = Modifier.tvFocusableItem()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DeleteSweep,
+                                contentDescription = stringResource(R.string.local_library_clear_all),
+                                tint = MaterialTheme.colorScheme.error.copy(alpha = 0.9f)
+                            )
+                        }
+                    }
+
                     IconButton(
                         onClick = { isSearching = !isSearching },
                         modifier = Modifier.tvFocusableItem()
@@ -393,11 +450,19 @@ fun LocalLibraryScreen(
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text(stringResource(R.string.local_library_video_folder)) },
-                                leadingIcon = { Icon(Icons.Default.Folder, contentDescription = null) },
+                                text = { Text(stringResource(R.string.local_library_video_folder_series)) },
+                                leadingIcon = { Icon(Icons.Default.VideoLibrary, contentDescription = null) },
                                 onClick = {
                                     showAddMenu = false
                                     videoFolderLauncher.launch(null)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.local_library_video_folder_movies)) },
+                                leadingIcon = { Icon(Icons.Default.Folder, contentDescription = null) },
+                                onClick = {
+                                    showAddMenu = false
+                                    videoMoviesFolderLauncher.launch(null)
                                 }
                             )
                             Divider()
@@ -541,6 +606,9 @@ fun LocalLibraryScreen(
                             onClick = {
                                 onMovieClick("local", item.id)
                             },
+                            onLongClick = {
+                                selectedItemForMenu = item
+                            },
                             onDelete = {
                                 itemToDelete = item
                             }
@@ -575,6 +643,163 @@ fun LocalLibraryScreen(
             }
         }
 
+        // Context Action Menu Dialog (khi nhấn giữ vào phim)
+        selectedItemForMenu?.let { item ->
+            AlertDialog(
+                onDismissRequest = { selectedItemForMenu = null },
+                title = {
+                    Text(
+                        text = item.title,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
+                text = {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (item.type == "movie" || item.type == "series") {
+                            // Fix Match
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.surface,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        val target = item
+                                        selectedItemForMenu = null
+                                        itemForFixMatch = target
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text(
+                                        text = stringResource(R.string.fix_match_title),
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+
+                            // Auto Re-scrape
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.surface,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        val target = item
+                                        selectedItemForMenu = null
+                                        scope.launch(Dispatchers.IO) {
+                                            val ok = TmdbLocalScraper.scrapeAndEnrich(context, target.id, target.title, target.type)
+                                            withContext(Dispatchers.Main) {
+                                                val msg = if (ok) {
+                                                    context.getString(R.string.local_library_rescrape_success)
+                                                } else {
+                                                    context.getString(R.string.fix_match_no_results)
+                                                }
+                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text(
+                                        text = stringResource(R.string.local_library_rescrape),
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                        }
+
+                        // Xóa
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.error.copy(alpha = 0.15f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val target = item
+                                    selectedItemForMenu = null
+                                    itemToDelete = target
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.DeleteOutline,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = stringResource(R.string.common_delete),
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = { selectedItemForMenu = null }) {
+                        Text(stringResource(R.string.common_cancel), color = Color.White.copy(alpha = 0.7f))
+                    }
+                }
+            )
+        }
+
+        // Fix Match TMDb Dialog
+        itemForFixMatch?.let { targetItem ->
+            FixMatchDialog(
+                initialTitle = targetItem.title,
+                currentType = targetItem.type,
+                onDismiss = { itemForFixMatch = null },
+                onMatchSelected = { matchResult ->
+                    scope.launch(Dispatchers.IO) {
+                        val success = TmdbLocalScraper.applyTmdbMatch(
+                            context = context,
+                            entityId = targetItem.id,
+                            result = matchResult,
+                            type = targetItem.type
+                        )
+                        withContext(Dispatchers.Main) {
+                            if (success) {
+                                Toast.makeText(context, R.string.fix_match_apply_success, Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                    itemForFixMatch = null
+                }
+            )
+        }
+
         // Delete Confirmation Dialog
         itemToDelete?.let { item ->
             AlertDialog(
@@ -605,6 +830,90 @@ fun LocalLibraryScreen(
             )
         }
 
+        // Bulk Clear Dialog
+        if (showClearDialog) {
+            val hasMovies = allItems.any { it.type == "movie" || it.type == "series" }
+            val hasNovels = allItems.any { it.type == "novel" }
+            val hasComics = allItems.any { it.type == "comic" }
+
+            val message = when (selectedTab) {
+                "movie" -> stringResource(R.string.local_library_clear_movies_msg)
+                "novel" -> stringResource(R.string.local_library_clear_novels_msg)
+                "comic" -> stringResource(R.string.local_library_clear_comics_msg)
+                else -> {
+                    if (hasMovies && !hasNovels && !hasComics) {
+                        stringResource(R.string.local_library_clear_movies_msg)
+                    } else {
+                        stringResource(R.string.local_library_clear_everything_msg)
+                    }
+                }
+            }
+
+            AlertDialog(
+                onDismissRequest = { showClearDialog = false },
+                title = { Text(stringResource(R.string.local_library_clear_confirm_title)) },
+                text = {
+                    Text(text = message)
+                },
+                confirmButton = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        // Nếu đang ở tab All và có cả phim lẫn truyện, cho phép tùy chọn xóa riêng phim
+                        if (selectedTab == "all" && hasMovies && (hasNovels || hasComics)) {
+                            TextButton(
+                                onClick = {
+                                    showClearDialog = false
+                                    scope.launch(Dispatchers.IO) {
+                                        localLibraryDao.deleteAllVideos()
+                                        withContext(Dispatchers.Main) {
+                                            Toast.makeText(context, R.string.local_library_clear_success, Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.local_library_clear_action_movies),
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+
+                        TextButton(
+                            onClick = {
+                                showClearDialog = false
+                                scope.launch(Dispatchers.IO) {
+                                    when (selectedTab) {
+                                        "movie" -> localLibraryDao.deleteAllVideos()
+                                        "novel" -> localLibraryDao.deleteByType("novel")
+                                        "comic" -> localLibraryDao.deleteByType("comic")
+                                        else -> localLibraryDao.clearAll()
+                                    }
+                                    withContext(Dispatchers.Main) {
+                                        Toast.makeText(context, R.string.local_library_clear_success, Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                        ) {
+                            val btnText = if (selectedTab == "movie") {
+                                stringResource(R.string.local_library_clear_action_movies)
+                            } else {
+                                stringResource(R.string.local_library_clear_action_all)
+                            }
+                            Text(
+                                text = btnText,
+                                color = MaterialTheme.colorScheme.error,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showClearDialog = false }) {
+                        Text(stringResource(R.string.common_cancel), color = Color.White)
+                    }
+                }
+            )
+        }
+
         // Remote Servers Dialog
         if (showRemoteServersDialog) {
             com.jkhx.player.ui.screens.local.remote.RemoteServersDialog(
@@ -615,6 +924,9 @@ fun LocalLibraryScreen(
                 onSaveEntity = { entity ->
                     scope.launch(Dispatchers.IO) {
                         localLibraryDao.insert(entity)
+                        if (entity.type == "movie" || entity.type == "series") {
+                            TmdbLocalScraper.scrapeAndEnrich(context, entity.id, entity.title, entity.type)
+                        }
                     }
                 }
             )
@@ -622,10 +934,12 @@ fun LocalLibraryScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LocalMediaCard(
     item: LocalLibraryEntity,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     onDelete: () -> Unit
 ) {
     val typeIcon = when (item.type) {
@@ -644,7 +958,10 @@ fun LocalMediaCard(
         modifier = Modifier
             .fillMaxWidth()
             .tvFocusableItem(cornerRadius = 12.dp, focusedScale = 1.05f)
-            .clickable { onClick() }
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
     ) {
         Box(
             modifier = Modifier
@@ -712,6 +1029,35 @@ fun LocalMediaCard(
                 )
             }
 
+            // Rating Badge Bottom-Left (từ TMDb)
+            val itemRating = item.rating
+            if (itemRating != null && itemRating > 0.0) {
+                Surface(
+                    shape = RoundedCornerShape(topEnd = 8.dp),
+                    color = Color.Black.copy(alpha = 0.8f),
+                    modifier = Modifier.align(Alignment.BottomStart)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Star,
+                            contentDescription = null,
+                            tint = Color(0xFFFFC107),
+                            modifier = Modifier.size(11.dp)
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = String.format(java.util.Locale.US, "%.1f", itemRating),
+                            color = Color(0xFFFFC107),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
             // Episode / Chapter Count Bottom-Right
             if (item.chapterCount > 1) {
                 Surface(
@@ -744,5 +1090,13 @@ fun LocalMediaCard(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
+        val itemYear = item.year
+        if (!itemYear.isNullOrBlank()) {
+            Text(
+                text = itemYear,
+                color = Color.White.copy(alpha = 0.6f),
+                fontSize = 11.sp
+            )
+        }
     }
 }
