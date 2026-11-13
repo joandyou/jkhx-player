@@ -1,6 +1,7 @@
 package com.jkhx.player.ui.screens.local.remote
 
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -24,6 +25,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.jkhx.player.R
 import com.jkhx.player.core.database.entity.RemoteServerEntity
 import com.jkhx.player.core.remote.client.RemoteClientFactory
@@ -153,24 +155,28 @@ fun RemoteServerDialog(
         }
     }
 
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
         Surface(
-            shape = ShapeTokens.Card,
+            shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 6.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxWidth(0.92f)
                 .wrapContentHeight()
-                .padding(vertical = 16.dp)
+                .padding(vertical = 24.dp)
         ) {
             Column(
                 modifier = Modifier
-                    .padding(20.dp)
+                    .padding(22.dp)
                     .verticalScroll(rememberScrollState())
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(bottom = 16.dp)
+                    modifier = Modifier.padding(bottom = 14.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Dns,
@@ -181,16 +187,17 @@ fun RemoteServerDialog(
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
                         text = if (initialServer == null) stringResource(R.string.remote_server_add) else stringResource(R.string.remote_server_edit),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
 
                 // Chọn giao thức (Protocol)
                 Text(
                     text = stringResource(R.string.remote_server_protocol),
-                    fontSize = 12.sp,
-                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 12.5.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 6.dp)
                 )
                 Row(
@@ -206,18 +213,18 @@ fun RemoteServerDialog(
                     ).forEach { (pKey, pLabel) ->
                         val isSelected = protocol == pKey
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(10.dp),
                             color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                             modifier = Modifier
                                 .weight(1f)
-                                .tvFocusableItem(cornerRadius = 12.dp)
+                                .tvFocusableItem(cornerRadius = 10.dp)
                                 .clickable { updateProtocol(pKey) }
                         ) {
                             Text(
                                 text = pLabel,
-                                color = Color.White,
+                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 12.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                 modifier = Modifier.padding(vertical = 10.dp)
                             )
@@ -345,92 +352,120 @@ fun RemoteServerDialog(
                     )
                 }
 
+                // Nút Kiểm tra kết nối (full-width theo chuẩn BaseServiceDialog)
+                OutlinedButton(
+                    onClick = {
+                        val port = portText.toIntOrNull() ?: when (protocol) {
+                            "smb" -> 445
+                            "sftp" -> 22
+                            else -> if (useSsl) 443 else 80
+                        }
+                        val tempServer = RemoteServerEntity(
+                            id = "test_server",
+                            name = name.ifBlank { "Test" },
+                            protocol = protocol,
+                            host = host.trim(),
+                            port = port,
+                            useSsl = useSsl,
+                            basePath = basePath.trim(),
+                            username = username.trim().ifBlank { null },
+                            password = password.ifBlank { null },
+                            isAnonymous = isAnonymous
+                        )
+                        isTesting = true
+                        testResult = null
+                        scope.launch(Dispatchers.IO) {
+                            val client = RemoteClientFactory.createClient(tempServer)
+                            try {
+                                val result = client.testConnection()
+                                withContext(Dispatchers.Main) {
+                                    isTesting = false
+                                    if (result.isSuccess) {
+                                        testResult = true to context.getString(R.string.remote_server_test_success)
+                                    } else {
+                                        val err = result.exceptionOrNull()?.message ?: "Unknown error"
+                                        testResult = false to context.getString(R.string.remote_server_test_failed, err)
+                                    }
+                                }
+                            } finally {
+                                client.close()
+                            }
+                        }
+                    },
+                    enabled = !isTesting && host.isNotBlank(),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                        .tvFocusableItem()
+                ) {
+                    if (isTesting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircleOutline,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                    }
+                    Text(
+                        text = stringResource(R.string.remote_server_test_btn),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+
                 // Hiển thị kết quả kiểm tra kết nối
                 if (testResult != null) {
                     val (success, msg) = testResult!!
+                    Spacer(modifier = Modifier.height(10.dp))
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = if (success) Color(0xFF1B5E20).copy(alpha = 0.5f) else Color(0xFFB71C1C).copy(alpha = 0.5f),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 12.dp)
+                        color = if (success) Color(0xFF1B5E20).copy(alpha = 0.2f) else Color(0xFFB71C1C).copy(alpha = 0.2f),
+                        border = BorderStroke(
+                            1.dp,
+                            if (success) Color(0xFF4CAF50).copy(alpha = 0.4f) else Color(0xFFEF5350).copy(alpha = 0.4f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
                             text = msg,
-                            color = Color.White,
+                            color = if (success) Color(0xFF81C784) else Color(0xFFE57373),
                             fontSize = 12.sp,
                             modifier = Modifier.padding(10.dp)
                         )
                     }
                 }
 
-                // Nút hành động
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Nút hành động đáy (Hủy / Lưu)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Nút Kiểm tra kết nối
-                    OutlinedButton(
-                        onClick = {
-                            val port = portText.toIntOrNull() ?: when (protocol) {
-                                "smb" -> 445
-                                "sftp" -> 22
-                                else -> if (useSsl) 443 else 80
-                            }
-                            val tempServer = RemoteServerEntity(
-                                id = "test_server",
-                                name = name.ifBlank { "Test" },
-                                protocol = protocol,
-                                host = host.trim(),
-                                port = port,
-                                useSsl = useSsl,
-                                basePath = basePath.trim(),
-                                username = username.trim().ifBlank { null },
-                                password = password.ifBlank { null },
-                                isAnonymous = isAnonymous
-                            )
-                            isTesting = true
-                            testResult = null
-                            scope.launch(Dispatchers.IO) {
-                                val client = RemoteClientFactory.createClient(tempServer)
-                                try {
-                                    val result = client.testConnection()
-                                    withContext(Dispatchers.Main) {
-                                        isTesting = false
-                                        if (result.isSuccess) {
-                                            testResult = true to context.getString(R.string.remote_server_test_success)
-                                        } else {
-                                            val err = result.exceptionOrNull()?.message ?: "Unknown error"
-                                            testResult = false to context.getString(R.string.remote_server_test_failed, err)
-                                        }
-                                    }
-                                } finally {
-                                    client.close()
-                                }
-                            }
-                        },
-                        enabled = !isTesting && host.isNotBlank(),
-                        modifier = Modifier
-                            .weight(1.2f)
-                            .tvFocusableItem()
-                    ) {
-                        if (isTesting) {
-                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        } else {
-                            Text(stringResource(R.string.remote_server_test_btn), fontSize = 12.sp)
-                        }
-                    }
-
-                    // Nút Hủy
                     TextButton(
                         onClick = onDismiss,
                         modifier = Modifier.tvFocusableItem()
                     ) {
-                        Text(stringResource(R.string.common_cancel))
+                        Text(
+                            text = stringResource(R.string.common_cancel),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
 
-                    // Nút Lưu
+                    Spacer(modifier = Modifier.width(8.dp))
+
                     Button(
                         onClick = {
                             if (host.isBlank()) {
@@ -460,11 +495,13 @@ fun RemoteServerDialog(
                             onSave(server)
                         },
                         enabled = host.isNotBlank(),
-                        modifier = Modifier
-                            .weight(1f)
-                            .tvFocusableItem()
+                        shape = RoundedCornerShape(20.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        ),
+                        modifier = Modifier.tvFocusableItem()
                     ) {
-                        Text(stringResource(R.string.common_save))
+                        Text(stringResource(R.string.common_save), fontWeight = FontWeight.Bold)
                     }
                 }
             }

@@ -1263,119 +1263,140 @@ fun AuxServicesSettingsScreen(
         val currentLangs by settingsManager.subtitleSearchLanguages.collectAsState()
         var tempSelectedLangs by remember { mutableStateOf(currentLangs) }
 
-        AlertDialog(
-            shape = ShapeTokens.Card,
+        Dialog(
             onDismissRequest = { activeDialog = null },
-            icon = {
-                Icon(
-                    Icons.Default.Translate,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(28.dp)
-                )
-            },
-            title = {
-                Text(
-                    stringResource(R.string.settings_subtitle_languages_title),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 17.sp
-                )
-            },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 380.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .padding(vertical = 24.dp),
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 6.dp,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+            ) {
+                Column(modifier = Modifier.padding(22.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Translate,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = stringResource(R.string.settings_subtitle_languages_title),
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        stringResource(R.string.settings_subtitle_languages_desc),
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 17.sp,
-                        modifier = Modifier.padding(bottom = 10.dp)
+                        text = stringResource(R.string.settings_subtitle_languages_desc),
+                        fontSize = 12.5.sp,
+                        lineHeight = 18.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
-                    com.jkhx.player.core.player.subtitle.model.SubtitleSupportedLanguages.ALL.forEach { langOpt ->
-                        val isChecked = tempSelectedLangs.contains(langOpt.code)
-                        val isEn = langOpt.code == "en"
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 360.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        com.jkhx.player.core.player.subtitle.model.SubtitleSupportedLanguages.ALL.forEach { langOpt ->
+                            val isChecked = tempSelectedLangs.contains(langOpt.code)
+                            val isEn = langOpt.code == "en"
 
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable(enabled = !isEn) {
-                                    tempSelectedLangs = if (isChecked) {
-                                        tempSelectedLangs - langOpt.code
-                                    } else {
-                                        tempSelectedLangs + langOpt.code
-                                    }
-                                }
-                                .padding(vertical = 4.dp, horizontal = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Checkbox(
-                                checked = isChecked,
-                                onCheckedChange = { checked ->
-                                    if (!isEn) {
-                                        tempSelectedLangs = if (checked) {
-                                            tempSelectedLangs + langOpt.code
-                                        } else {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable(enabled = !isEn) {
+                                        tempSelectedLangs = if (isChecked) {
                                             tempSelectedLangs - langOpt.code
+                                        } else {
+                                            tempSelectedLangs + langOpt.code
                                         }
                                     }
-                                },
-                                enabled = !isEn
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = langOpt.nameVi,
-                                        fontSize = 13.5.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = "(${langOpt.nativeName})",
-                                        fontSize = 11.5.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                if (isEn) {
-                                    Text(
-                                        text = stringResource(R.string.settings_subtitle_languages_mandatory),
-                                        fontSize = 10.5.sp,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
+                                    .padding(vertical = 4.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = isChecked,
+                                    onCheckedChange = { checked ->
+                                        if (!isEn) {
+                                            tempSelectedLangs = if (checked) {
+                                                tempSelectedLangs + langOpt.code
+                                            } else {
+                                                tempSelectedLangs - langOpt.code
+                                            }
+                                        }
+                                    },
+                                    enabled = !isEn
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = langOpt.nameVi,
+                                            fontSize = 13.5.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "(${langOpt.nativeName})",
+                                            fontSize = 11.5.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    if (isEn) {
+                                        Text(
+                                            text = stringResource(R.string.settings_subtitle_languages_mandatory),
+                                            fontSize = 10.5.sp,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
-                }
-            },
-            confirmButton = {
-                Button(
-                    shape = ShapeTokens.Button,
-                    onClick = {
-                        settingsManager.setSubtitleSearchLanguages(tempSelectedLangs)
-                        Toast.makeText(context, context.getString(R.string.settings_subtitle_languages_saved), Toast.LENGTH_SHORT).show()
-                        activeDialog = null
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(onClick = { activeDialog = null }) {
+                            Text(
+                                text = stringResource(R.string.common_cancel),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = {
+                                settingsManager.setSubtitleSearchLanguages(tempSelectedLangs)
+                                Toast.makeText(context, context.getString(R.string.settings_subtitle_languages_saved), Toast.LENGTH_SHORT).show()
+                                activeDialog = null
+                            },
+                            shape = RoundedCornerShape(20.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            )
+                        ) {
+                            Text(stringResource(R.string.common_save), fontWeight = FontWeight.Bold)
+                        }
                     }
-                ) {
-                    Text(stringResource(R.string.common_save))
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    shape = ShapeTokens.Button,
-                    onClick = { activeDialog = null }
-                ) {
-                    Text(stringResource(R.string.common_cancel))
                 }
             }
-        )
+        }
     }
 
     // Dialogs cho Kiểu Fusion
@@ -1394,23 +1415,45 @@ fun AuxServicesSettingsScreen(
         var inputUrl by remember { mutableStateOf("") }
         var errorMsg by remember { mutableStateOf<String?>(null) }
 
-        AlertDialog(
+        Dialog(
             onDismissRequest = { showAddStremioServerDialog = false },
-            title = {
-                Text(
-                    text = stringResource(R.string.stremio_server_dialog_add_title),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 17.sp
-                )
-            },
-            text = {
-                Column {
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .padding(vertical = 24.dp),
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 6.dp,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+            ) {
+                Column(modifier = Modifier.padding(22.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Dns,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = stringResource(R.string.stremio_server_dialog_add_title),
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
                     Text(
                         text = stringResource(R.string.stremio_server_dialog_url_label),
-                        fontSize = 13.sp,
+                        fontSize = 12.5.sp,
+                        lineHeight = 18.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Spacer(modifier = Modifier.height(14.dp))
                     OutlinedTextField(
                         value = inputUrl,
                         onValueChange = {
@@ -1423,41 +1466,58 @@ fun AuxServicesSettingsScreen(
                         isError = errorMsg != null,
                         supportingText = errorMsg?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
                         singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
+                        ),
                         modifier = Modifier.fillMaxWidth()
                     )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val clean = inputUrl.trim()
-                        if (clean.isBlank()) {
-                            errorMsg = context.getString(R.string.stremio_server_dialog_error_empty)
-                            return@TextButton
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(onClick = { showAddStremioServerDialog = false }) {
+                            Text(
+                                text = stringResource(R.string.common_cancel),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
-                        val normalized = if (!clean.startsWith("http://", ignoreCase = true) && !clean.startsWith("https://", ignoreCase = true)) {
-                            "http://$clean"
-                        } else clean
-                        val finalUrl = if (!normalized.endsWith("/")) "$normalized/" else normalized
-                        if (stremioCandidates.any { it.trimEnd('/').equals(finalUrl.trimEnd('/'), ignoreCase = true) }) {
-                            errorMsg = context.getString(R.string.stremio_server_dialog_error_duplicate)
-                            return@TextButton
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = {
+                                val clean = inputUrl.trim()
+                                if (clean.isBlank()) {
+                                    errorMsg = context.getString(R.string.stremio_server_dialog_error_empty)
+                                    return@Button
+                                }
+                                val normalized = if (!clean.startsWith("http://", ignoreCase = true) && !clean.startsWith("https://", ignoreCase = true)) {
+                                    "http://$clean"
+                                } else clean
+                                val finalUrl = if (!normalized.endsWith("/")) "$normalized/" else normalized
+                                if (stremioCandidates.any { it.trimEnd('/').equals(finalUrl.trimEnd('/'), ignoreCase = true) }) {
+                                    errorMsg = context.getString(R.string.stremio_server_dialog_error_duplicate)
+                                    return@Button
+                                }
+                                settingsManager.addStremioServerCandidate(finalUrl)
+                                settingsManager.setStremioActiveServerUrl(finalUrl)
+                                showAddStremioServerDialog = false
+                                reloadStremioHealth()
+                            },
+                            shape = RoundedCornerShape(20.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            )
+                        ) {
+                            Text(stringResource(R.string.common_save), fontWeight = FontWeight.Bold)
                         }
-                        settingsManager.addStremioServerCandidate(finalUrl)
-                        settingsManager.setStremioActiveServerUrl(finalUrl)
-                        showAddStremioServerDialog = false
-                        reloadStremioHealth()
                     }
-                ) {
-                    Text(stringResource(R.string.common_save), fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showAddStremioServerDialog = false }) {
-                    Text(stringResource(R.string.common_cancel))
                 }
             }
-        )
+        }
     }
 
     if (showBadgeImportDialog) {

@@ -159,7 +159,7 @@ fun MovieDetailContent(
 
     val currentSeasonEpisodes = activeSeasonGroup?.episodes ?: allEpisodes
     val displayedEpisodes = remember(currentSeasonEpisodes, episodeSearchQuery, isEpisodeSortDescending) {
-        val filtered = if (episodeSearchQuery.isBlank()) {
+        val filtered = if (currentSeasonEpisodes.size <= 1 || episodeSearchQuery.isBlank()) {
             currentSeasonEpisodes
         } else {
             currentSeasonEpisodes.filterIndexed { index, ep ->
@@ -839,50 +839,52 @@ fun MovieDetailContent(
                 }
             }
 
-            // Thanh điều hướng & tìm kiếm tập phim chuẩn Nuvio
-            item(key = "movie_episodes_control_bar") {
-                val currentSortOrder = if (isEpisodeSortDescending) EpisodeSortOrder.LastToFirst else EpisodeSortOrder.FirstToLast
-                EpisodeNavigatorBar(
-                    query = episodeSearchQuery,
-                    onQueryChange = { episodeSearchQuery = it },
-                    sortOrder = currentSortOrder,
-                    onSortOrderChange = { newOrder ->
-                        if (newOrder != currentSortOrder) {
-                            onToggleEpisodeSort()
-                        }
-                    },
-                    shownCount = displayedEpisodes.size,
-                    totalCount = currentSeasonEpisodes.size,
-                    seasonLabel = activeSeasonGroup?.seasonLabel ?: stringResource(R.string.detail_season_n, 1),
-                    episodes = currentSeasonEpisodes,
-                    isWatched = { ep ->
-                        watchHistory?.let { h ->
-                            h.lastEpisodeId == ep.id || h.lastEpisodeName == ep.name
-                        } ?: false
-                    },
-                    upNextEpisodeId = resumeEpisode?.id ?: firstEpisode?.id,
-                    onGoToEpisode = { targetEp ->
-                        coroutineScope.launch {
-                            val epIndex = displayedEpisodes.indexOf(targetEp)
-                            if (epIndex >= 0) {
-                                val baseIndex = 5 + (if (castList.isNotEmpty()) 1 else 0) + (if (isSeries && seasonGroups.isNotEmpty()) 1 else 0) + 1
-                                listState.animateScrollToItem((baseIndex + epIndex).coerceAtLeast(0))
-                                highlightedEpisodeId = targetEp.id
-                                kotlinx.coroutines.delay(1600L)
-                                if (highlightedEpisodeId == targetEp.id) highlightedEpisodeId = null
+            // Thanh điều hướng & tìm kiếm tập phim chuẩn Nuvio (chỉ hiển thị khi có nhiều hơn 1 tập)
+            if (currentSeasonEpisodes.size > 1) {
+                item(key = "movie_episodes_control_bar") {
+                    val currentSortOrder = if (isEpisodeSortDescending) EpisodeSortOrder.LastToFirst else EpisodeSortOrder.FirstToLast
+                    EpisodeNavigatorBar(
+                        query = episodeSearchQuery,
+                        onQueryChange = { episodeSearchQuery = it },
+                        sortOrder = currentSortOrder,
+                        onSortOrderChange = { newOrder ->
+                            if (newOrder != currentSortOrder) {
+                                onToggleEpisodeSort()
+                            }
+                        },
+                        shownCount = displayedEpisodes.size,
+                        totalCount = currentSeasonEpisodes.size,
+                        seasonLabel = activeSeasonGroup?.seasonLabel ?: stringResource(R.string.detail_season_n, 1),
+                        episodes = currentSeasonEpisodes,
+                        isWatched = { ep ->
+                            watchHistory?.let { h ->
+                                h.lastEpisodeId == ep.id || h.lastEpisodeName == ep.name
+                            } ?: false
+                        },
+                        upNextEpisodeId = resumeEpisode?.id ?: firstEpisode?.id,
+                        onGoToEpisode = { targetEp ->
+                            coroutineScope.launch {
+                                val epIndex = displayedEpisodes.indexOf(targetEp)
+                                if (epIndex >= 0) {
+                                    val baseIndex = 5 + (if (castList.isNotEmpty()) 1 else 0) + (if (isSeries && seasonGroups.isNotEmpty()) 1 else 0) + 1
+                                    listState.animateScrollToItem((baseIndex + epIndex).coerceAtLeast(0))
+                                    highlightedEpisodeId = targetEp.id
+                                    kotlinx.coroutines.delay(1600L)
+                                    if (highlightedEpisodeId == targetEp.id) highlightedEpisodeId = null
+                                }
                             }
                         }
-                    }
-                )
-            }
-
-            // Giao diện khi tìm kiếm không có tập nào khớp
-            if (displayedEpisodes.isEmpty() && episodeSearchQuery.isNotBlank()) {
-                item(key = "movie_episodes_empty_state") {
-                    EpisodeNavigatorEmptyState(
-                        query = episodeSearchQuery,
-                        onClear = { episodeSearchQuery = "" }
                     )
+                }
+
+                // Giao diện khi tìm kiếm không có tập nào khớp
+                if (displayedEpisodes.isEmpty() && episodeSearchQuery.isNotBlank()) {
+                    item(key = "movie_episodes_empty_state") {
+                        EpisodeNavigatorEmptyState(
+                            query = episodeSearchQuery,
+                            onClear = { episodeSearchQuery = "" }
+                        )
+                    }
                 }
             }
 

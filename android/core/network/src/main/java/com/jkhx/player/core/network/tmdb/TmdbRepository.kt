@@ -15,14 +15,29 @@ import kotlinx.serialization.json.longOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import com.jkhx.player.core.network.HttpBridgeClient
+import com.jkhx.player.core.network.SmartProxyDns
 import java.net.Proxy
 import java.net.ProxySelector
 import java.net.SocketAddress
 import java.net.URI
 import java.util.concurrent.TimeUnit
 
+sealed class TmdbError {
+    object MissingApiKey : TmdbError()
+    object InvalidApiKey : TmdbError()
+    data class HttpError(val code: Int, val message: String? = null) : TmdbError()
+    data class NetworkError(val detail: String) : TmdbError()
+    object ParseError : TmdbError()
+}
+
+data class TmdbSearchResult(
+    val items: List<TmdbItemResult> = emptyList(),
+    val error: TmdbError? = null
+)
+
 class TmdbRepository(
     private val client: OkHttpClient = OkHttpClient.Builder()
+        .dns(SmartProxyDns)
         .connectTimeout(12, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .proxySelector(object : ProxySelector() {
@@ -34,6 +49,11 @@ class TmdbRepository(
         })
         .build()
 ) {
+    init {
+        HttpBridgeClient.registerProxyChangeListener {
+            client.connectionPool.evictAll()
+        }
+    }
     private val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
@@ -469,15 +489,24 @@ class TmdbRepository(
     }
 
     /**
-     * Tìm kiếm TMDB trả về danh sách kết quả phong phú (phục vụ Fix Match & Auto Scraper)
+     * Tìm kiếm TMDB trả về danh sách kết quả phong phú (phục vụ Auto Scraper)
      */
     suspend fun searchTmdb(
         query: String,
         type: String? = null,
         language: String = TmdbConfig.getAppLanguage()
-    ): List<TmdbItemResult> = withContext(Dispatchers.IO) {
+    ): List<TmdbItemResult> = searchTmdbDetailed(query, type, language).items
+
+    /**
+     * Tìm kiếm TMDB kèm trạng thái lỗi chi tiết (phục vụ Fix Match Dialog)
+     */
+    suspend fun searchTmdbDetailed(
+        query: String,
+        type: String? = null,
+        language: String = TmdbConfig.getAppLanguage()
+    ): TmdbSearchResult = withContext(Dispatchers.IO) {
         val clean = query.trim()
-        if (clean.isBlank()) return@withContext emptyList()
+        if (clean.isBlank()) return@withContext TmdbSearchResult()
         val endpoint = when (type?.lowercase()) {
             "movie" -> "search/movie"
             "series", "tv" -> "search/tv"
@@ -487,12 +516,16 @@ class TmdbRepository(
             "query" to clean,
             "language" to language
         )
-        val bodyStr = fetchTmdbApi(endpoint, params) ?: return@withContext emptyList()
+        val (bodyStr, error) = fetchTmdbApiDetailed(endpoint, params)
+        if (error != null || bodyStr == null) {
+            return@withContext TmdbSearchResult(emptyList(), error)
+        }
         try {
             val paged = json.decodeFromString<TmdbPagedResponse>(bodyStr)
-            paged.results.filter { it.mediaType != "person" }
-        } catch (_: Exception) {
-            emptyList()
+            TmdbSearchResult(paged.results.filter { it.mediaType != "person" }, null)
+        } catch (e: Exception) {
+            System.err.println("TmdbRepository: JSON parse error: ${e.message}")
+            TmdbSearchResult(emptyList(), TmdbError.ParseError)
         }
     }
 
@@ -530,7 +563,7 @@ class TmdbRepository(
         }
     }
 
-    private fun fetchHttpString(url: String): String? {
+    private fun fetchHttpStringDetailed(url: String): Pair<String?, TmdbError?> {
         return try {
             val req = Request.Builder()
                 .url(url)
@@ -538,21 +571,40 @@ class TmdbRepository(
                 .get()
                 .build()
             client.newCall(req).execute().use { resp ->
-                if (resp.isSuccessful) resp.body?.string() else null
+                val body = resp.body?.string()
+                when {
+                    resp.isSuccessful -> body to null
+                    resp.code == 401 -> {
+                        System.err.println("TmdbRepository: TMDB HTTP 401 Invalid API Key")
+                        null to TmdbError.InvalidApiKey
+                    }
+                    else -> {
+                        System.err.println("TmdbRepository: TMDB HTTP ${resp.code}: ${resp.message}")
+                        null to TmdbError.HttpError(resp.code, resp.message)
+                    }
+                }
             }
-        } catch (_: Exception) {
-            null
+        } catch (e: Exception) {
+            System.err.println("TmdbRepository: TMDB network/proxy error: ${e.javaClass.simpleName}: ${e.message}")
+            null to TmdbError.NetworkError("${e.javaClass.simpleName}: ${e.message ?: "Connection failed"}")
         }
     }
 
     /**
      * Gọi API TMDB trực tiếp (tự động qua SOCKS5 / HTTP Proxy nếu được cấu hình trong Cài đặt)
      */
-    fun fetchTmdbApi(endpoint: String, params: Map<String, String>): String? {
+    fun fetchTmdbApiDetailed(endpoint: String, params: Map<String, String>): Pair<String?, TmdbError?> {
         val activeKey = TmdbConfig.apiKey.trim().ifBlank { TmdbConfig.DEFAULT_API_KEY }
-        if (activeKey.isBlank()) return null
+        if (activeKey.isBlank()) {
+            System.err.println("TmdbRepository: TMDB API Key is missing")
+            return null to TmdbError.MissingApiKey
+        }
         val directUrl = TmdbConfig.buildApiUrl(endpoint, params)
-        return fetchHttpString(directUrl)
+        return fetchHttpStringDetailed(directUrl)
+    }
+
+    fun fetchTmdbApi(endpoint: String, params: Map<String, String>): String? {
+        return fetchTmdbApiDetailed(endpoint, params).first
     }
 
     private fun parseMoviesFromJson(bodyStr: String, defaultType: String? = null): List<MovieItem> {

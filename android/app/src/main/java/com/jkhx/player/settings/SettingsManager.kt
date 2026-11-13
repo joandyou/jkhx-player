@@ -489,6 +489,7 @@ class SettingsManager(context: Context) {
     fun setCustomProxyEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_CUSTOM_PROXY_ENABLED, enabled).apply()
         _isCustomProxyEnabled.value = enabled
+        com.jkhx.player.core.network.HttpBridgeClient.notifyProxyChanged()
     }
 
     private val _customProxyType = MutableStateFlow(
@@ -499,6 +500,7 @@ class SettingsManager(context: Context) {
     fun setCustomProxyType(type: ProxyType) {
         prefs.edit().putString(KEY_CUSTOM_PROXY_TYPE, type.key).apply()
         _customProxyType.value = type
+        com.jkhx.player.core.network.HttpBridgeClient.notifyProxyChanged()
     }
 
     private val _customProxyHost = MutableStateFlow(
@@ -510,6 +512,7 @@ class SettingsManager(context: Context) {
         val clean = host.trim()
         prefs.edit().putString(KEY_CUSTOM_PROXY_HOST, clean).apply()
         _customProxyHost.value = clean
+        com.jkhx.player.core.network.HttpBridgeClient.notifyProxyChanged()
     }
 
     private val _customProxyPort = MutableStateFlow(
@@ -520,6 +523,7 @@ class SettingsManager(context: Context) {
     fun setCustomProxyPort(port: Int) {
         prefs.edit().putInt(KEY_CUSTOM_PROXY_PORT, port).apply()
         _customProxyPort.value = port
+        com.jkhx.player.core.network.HttpBridgeClient.notifyProxyChanged()
     }
 
     fun getProxy(): Proxy? {

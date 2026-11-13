@@ -2,6 +2,7 @@ package com.jkhx.player.ui.screens.local.remote
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -103,8 +104,10 @@ fun RemoteFileBrowserDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.background,
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
             modifier = Modifier
                 .fillMaxSize(0.92f)
                 .padding(12.dp)
@@ -112,7 +115,7 @@ fun RemoteFileBrowserDialog(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp)
+                    .padding(20.dp)
             ) {
                 // Header: Tên server và Breadcrumb
                 Row(
@@ -229,10 +232,14 @@ fun RemoteFileBrowserDialog(
                                 val isVideo = !item.isDirectory && LocalFileResolver.isVideoFile(item.name)
                                 val isImage = !item.isDirectory && LocalComicParser.isImageFile(item.name)
                                 val isSub = !item.isDirectory && LocalFileResolver.isSubtitleFile(item.name)
+                                val isComicArchive = !item.isDirectory && RemoteFolderScanner.isComicArchive(item.name)
+                                val isNovel = !item.isDirectory && RemoteFolderScanner.isNovelFile(item.name)
 
                                 val itemIcon = when {
                                     item.isDirectory -> Icons.Default.Folder
                                     isVideo -> Icons.Default.Movie
+                                    isComicArchive -> Icons.Default.MenuBook
+                                    isNovel -> Icons.Default.Book
                                     isImage -> Icons.Default.Image
                                     isSub -> Icons.Default.Subtitles
                                     else -> Icons.Default.InsertDriveFile
@@ -241,6 +248,8 @@ fun RemoteFileBrowserDialog(
                                 val iconTint = when {
                                     item.isDirectory -> Color(0xFFFFCA28)
                                     isVideo -> MaterialTheme.colorScheme.primary
+                                    isComicArchive -> Color(0xFFFF7043)
+                                    isNovel -> Color(0xFF42A5F5)
                                     isImage -> Color(0xFF26A69A)
                                     isSub -> Color(0xFFAB47BC)
                                     else -> Color.White.copy(alpha = 0.5f)
@@ -253,6 +262,7 @@ fun RemoteFileBrowserDialog(
                                         .fillMaxWidth()
                                         .tvFocusableItem(cornerRadius = 8.dp)
                                         .clickable {
+                                            if (isImporting) return@clickable
                                             if (item.isDirectory) {
                                                 pathHistory = pathHistory + item.path
                                                 currentPath = item.path
@@ -283,6 +293,27 @@ fun RemoteFileBrowserDialog(
                                                 onSaveEntity(entity)
                                                 onDismiss()
                                                 onPlayEpisode("local", hashId)
+                                            } else if (isComicArchive || isNovel) {
+                                                isImporting = true
+                                                scope.launch(Dispatchers.IO) {
+                                                    val importResult = RemoteFolderScanner.importSingleRemoteFile(
+                                                        context = context,
+                                                        server = server,
+                                                        item = item
+                                                    )
+                                                    withContext(Dispatchers.Main) {
+                                                        isImporting = false
+                                                        if (importResult.isSuccess) {
+                                                            val entity = importResult.getOrThrow()
+                                                            onSaveEntity(entity)
+                                                            onDismiss()
+                                                            onPlayEpisode("local", entity.id)
+                                                        } else {
+                                                            val msg = importResult.exceptionOrNull()?.message ?: "Không thể mở tệp"
+                                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                 ) {
@@ -349,49 +380,65 @@ fun RemoteFileBrowserDialog(
                         onClick = {
                             isImporting = true
                             scope.launch(Dispatchers.IO) {
-                                val scanResult = RemoteFolderScanner.scanRemoteFolder(server, currentPath)
+                                val scanResult = RemoteFolderScanner.scanRemoteFolder(context, server, currentPath)
                                 withContext(Dispatchers.Main) {
                                     isImporting = false
                                     if (scanResult.isSuccess) {
                                         val res = scanResult.getOrThrow()
-                                        val isSeries = LocalFileResolver.isSeriesFolder(res.episodes)
-                                        if (isSeries) {
-                                            val hashId = "remote_${server.id}_${currentPath.hashCode()}"
-                                            val entity = LocalLibraryEntity(
-                                                id = hashId,
-                                                title = res.folderName,
-                                                type = "series",
-                                                uri = "remote://${server.id}/$currentPath",
-                                                coverUrl = res.coverUrl,
-                                                chapterCount = res.episodes.size,
-                                                episodesJson = json.encodeToString(res.episodes)
-                                            )
-                                            onSaveEntity(entity)
-                                            Toast.makeText(
-                                                context,
-                                                "Đã nạp thành công: ${res.folderName} (${res.episodes.size} tập)",
-                                                Toast.LENGTH_LONG
-                                            ).show()
-                                        } else {
-                                            for (ep in res.episodes) {
-                                                val movieHashId = "remote_${server.id}_${currentPath.hashCode()}_${ep.name.hashCode()}"
-                                                val movieEntity = LocalLibraryEntity(
-                                                    id = movieHashId,
-                                                    title = LocalFileResolver.cleanMovieTitle(ep.name),
-                                                    type = "movie",
+                                        val summaryParts = mutableListOf<String>()
+
+                                        if (res.episodes.isNotEmpty()) {
+                                            val isSeries = LocalFileResolver.isSeriesFolder(res.episodes)
+                                            if (isSeries) {
+                                                val hashId = "remote_${server.id}_${currentPath.hashCode()}"
+                                                val entity = LocalLibraryEntity(
+                                                    id = hashId,
+                                                    title = res.folderName,
+                                                    type = "series",
                                                     uri = "remote://${server.id}/$currentPath",
                                                     coverUrl = res.coverUrl,
-                                                    chapterCount = 1,
-                                                    episodesJson = json.encodeToString(listOf(ep.copy(name = ep.name)))
+                                                    chapterCount = res.episodes.size,
+                                                    episodesJson = json.encodeToString(res.episodes)
                                                 )
-                                                onSaveEntity(movieEntity)
+                                                onSaveEntity(entity)
+                                                summaryParts.add("${res.folderName} (${res.episodes.size} tập)")
+                                            } else {
+                                                for (ep in res.episodes) {
+                                                    val movieHashId = "remote_${server.id}_${currentPath.hashCode()}_${ep.name.hashCode()}"
+                                                    val movieEntity = LocalLibraryEntity(
+                                                        id = movieHashId,
+                                                        title = LocalFileResolver.cleanMovieTitle(ep.name),
+                                                        type = "movie",
+                                                        uri = "remote://${server.id}/$currentPath",
+                                                        coverUrl = res.coverUrl,
+                                                        chapterCount = 1,
+                                                        episodesJson = json.encodeToString(listOf(ep.copy(name = ep.name)))
+                                                    )
+                                                    onSaveEntity(movieEntity)
+                                                }
+                                                summaryParts.add("${res.episodes.size} phim lẻ")
                                             }
-                                            Toast.makeText(
-                                                context,
-                                                "Đã nạp thành công: ${res.episodes.size} phim lẻ",
-                                                Toast.LENGTH_LONG
-                                            ).show()
                                         }
+
+                                        for (comic in res.comics) {
+                                            onSaveEntity(comic)
+                                        }
+                                        if (res.comics.isNotEmpty()) {
+                                            summaryParts.add("${res.comics.size} truyện tranh")
+                                        }
+
+                                        for (novel in res.novels) {
+                                            onSaveEntity(novel)
+                                        }
+                                        if (res.novels.isNotEmpty()) {
+                                            summaryParts.add("${res.novels.size} tiểu thuyết")
+                                        }
+
+                                        Toast.makeText(
+                                            context,
+                                            "Đã nạp thành công: ${summaryParts.joinToString(", ")}",
+                                            Toast.LENGTH_LONG
+                                        ).show()
                                         onDismiss()
                                     } else {
                                         val msg = scanResult.exceptionOrNull()?.message ?: "Lỗi quét thư mục"

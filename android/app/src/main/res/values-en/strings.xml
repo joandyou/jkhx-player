@@ -709,7 +709,7 @@
     <string name="detail_info_genres">Genres</string>
     <string name="detail_info_status">Status</string>
     <string name="settings_subtitle_languages_title">Subtitle Search Languages</string>
-    <string name="settings_subtitle_languages_desc">Select languages to search for online subtitles. English is always mandatory to support Gemini AI translation.</string>
+    <string name="settings_subtitle_languages_desc">Select languages to search on built-in subtitle services (does not limit subtitles from Stremio Addons). English is always mandatory to support Gemini AI translation.</string>
     <string name="settings_subtitle_languages_mandatory">Mandatory (Required for Gemini AI translation)</string>
     <string name="settings_subtitle_languages_saved">Subtitle search languages saved successfully!</string>
     <string name="plugins_stremio_added_success">Added Addon %s successfully</string>
@@ -927,4 +927,17 @@
     <string name="local_library_clear_action_movies">Delete all movies</string>
     <string name="local_library_clear_action_all">Clear all</string>
     <string name="local_library_clear_success">Deleted successfully from local library</string>
+    <string name="fix_match_error_missing_key">TMDB API Key is not configured.\nPlease go to Settings > Auxiliary Services > TMDB to enter your API Key.</string>
+    <string name="fix_match_error_invalid_key">Invalid TMDB API Key (HTTP 401).\nPlease check your API Key in Settings > Auxiliary Services.</string>
+    <string name="fix_match_error_http">TMDB server error (HTTP %d). Please try again later.</string>
+    <string name="fix_match_error_network">Network / Proxy connection error to TMDB:\n%s</string>
+    <string name="fix_match_error_parse">Unable to parse TMDB response (invalid data returned).</string>
+    <string name="local_library_genre_all">All Genres</string>
+    <string name="local_library_rescrape_btn">Update TMDB</string>
+    <string name="local_library_rescrape_title">Update TMDB Metadata</string>
+    <string name="local_library_rescrape_desc">Choose how to update movie/series metadata from TMDB:\n\n• Unmatched items: %1$d\n• Total movies/series: %2$d</string>
+    <string name="local_library_rescrape_unmatched">Unmatched (%1$d)</string>
+    <string name="local_library_rescrape_all">Rescrape All (%1$d)</string>
+    <string name="local_library_rescrape_hide">Hide (Run in background)</string>
+    <string name="local_library_rescrape_done">Updated TMDB metadata for %1$d/%2$d items</string>
 </resources>

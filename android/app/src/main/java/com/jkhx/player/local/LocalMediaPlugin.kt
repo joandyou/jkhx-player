@@ -2,9 +2,12 @@ package com.jkhx.player.local
 
 import android.content.Context
 import android.net.Uri
+import com.jkhx.player.core.database.AppDatabase
 import com.jkhx.player.core.database.dao.LocalLibraryDao
 import com.jkhx.player.core.model.*
+import com.jkhx.player.core.remote.client.RemoteClientFactory
 import com.jkhx.player.plugin.api.LoadedPlugin
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -251,6 +254,59 @@ class LocalMediaPlugin(
                 EpisodeStream(
                     type = "image_list",
                     images = imageList
+                )
+            }
+
+            "remote_comic_folder" -> {
+                val serverId = obj["serverId"]?.jsonPrimitive?.content ?: throw Exception("Thiếu serverId")
+                val remotePath = obj["path"]?.jsonPrimitive?.content ?: throw Exception("Thiếu đường dẫn thư mục ảnh")
+
+                val server = AppDatabase.getInstance(context).remoteServerDao().getById(serverId)
+                    ?: throw Exception("Không tìm thấy cấu hình máy chủ")
+
+                val client = RemoteClientFactory.getClient(server)
+                val filesResult = client.listFiles(remotePath)
+                if (filesResult.isFailure) {
+                    throw filesResult.exceptionOrNull() ?: Exception("Không thể đọc thư mục ảnh từ xa")
+                }
+
+                val imageItems = filesResult.getOrDefault(emptyList())
+                    .filter { !it.isDirectory && LocalComicParser.isImageFile(it.name) }
+                    .sortedWith { a, b -> LocalFileResolver.naturalOrderComparator.compare(a.name, b.name) }
+
+                if (imageItems.isEmpty()) {
+                    throw Exception("Không tìm thấy trang ảnh nào trong chương này")
+                }
+
+                val pageCacheDir = File(
+                    context.cacheDir,
+                    "remote_comic_pages/${serverId}_${remotePath.hashCode().toUInt()}"
+                ).apply { mkdirs() }
+
+                val imageUris = mutableListOf<String>()
+                for ((idx, imgItem) in imageItems.withIndex()) {
+                    val ext = imgItem.name.substringAfterLast('.', "jpg").lowercase()
+                    val pageFile = File(pageCacheDir, String.format("%04d.%s", idx, ext))
+                    if (!pageFile.exists() || pageFile.length() == 0L) {
+                        val tmpFile = File(pageCacheDir, "${pageFile.name}.tmp")
+                        client.openInputStream(imgItem.path).use { input ->
+                            tmpFile.outputStream().use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                        if (!tmpFile.renameTo(pageFile)) {
+                            tmpFile.copyTo(pageFile, overwrite = true)
+                            tmpFile.delete()
+                        }
+                    }
+                    if (pageFile.exists() && pageFile.length() > 0L) {
+                        imageUris.add(Uri.fromFile(pageFile).toString())
+                    }
+                }
+
+                EpisodeStream(
+                    type = "image_list",
+                    images = imageUris
                 )
             }
 

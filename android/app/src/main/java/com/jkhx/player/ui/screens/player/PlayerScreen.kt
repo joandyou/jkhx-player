@@ -709,7 +709,6 @@ fun PlayerScreen(
                         println("[PlayerScreen] Stremio subtitles: No videoId available to fetch subtitles")
                         emptyMap()
                     } else {
-                        val allowedLangs = configuredSubLanguages.ifEmpty { setOf("vi", "en") }
                         val allAddonSubs = subtitleAddons.map { (addonUrl, sManifest) ->
                             async {
                                 try {
@@ -717,8 +716,6 @@ fun PlayerScreen(
                                     val cleanAddonName = sManifest.name.replace(Regex("""\[.*?\]"""), "").trim().ifBlank { sManifest.name }
                                     subs.mapIndexedNotNull { idx, s ->
                                         val normLang = com.jkhx.player.core.player.subtitle.model.SubtitleSupportedLanguages.normalizeLanguageCode(s.lang)
-                                        // Quy tắc người dùng: Áp dụng Cài đặt Ngôn ngữ tìm kiếm phụ đề cho Addon, chỉ tìm và tải phụ đề theo ngôn ngữ được bật
-                                        if (!allowedLangs.contains(normLang.lowercase())) return@mapIndexedNotNull null
                                         val langDisplay = com.jkhx.player.core.player.subtitle.model.SubtitleSupportedLanguages.getDisplayName(normLang)
                                         val rawTitle = s.displayTitle?.trim().takeIf { !it.isNullOrBlank() } ?: "$cleanAddonName ($langDisplay)"
                                         val format = if (s.url.lowercase().contains(".vtt")) "vtt" else "srt"

@@ -3,8 +3,10 @@ package com.jkhx.player.ui.components
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.ContentCopy
@@ -15,8 +17,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -26,6 +28,13 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.jkhx.player.R
 import com.jkhx.player.ui.theme.tvFocusableItem
+
+private data class DownloadOptionEntry(
+    val icon: ImageVector,
+    val title: String,
+    val description: String,
+    val onClick: () -> Unit
+)
 
 @Composable
 fun DownloadOptionsModal(
@@ -41,23 +50,79 @@ fun DownloadOptionsModal(
 ) {
     if (!visible) return
 
+    val configuration = LocalConfiguration.current
+    val isCompactLandscape = configuration.screenWidthDp > configuration.screenHeightDp &&
+        configuration.screenHeightDp < 540
+    val maxDialogHeight = (configuration.screenHeightDp * 0.90f).dp
+
+    val options = buildList {
+        if (onPlayExternal != null) {
+            add(
+                DownloadOptionEntry(
+                    icon = Icons.Default.PlayArrow,
+                    title = stringResource(R.string.stream_action_play_external),
+                    description = stringResource(R.string.stream_action_play_external_desc),
+                    onClick = {
+                        onDismiss()
+                        onPlayExternal()
+                    }
+                )
+            )
+        }
+        add(
+            DownloadOptionEntry(
+                icon = Icons.Default.Download,
+                title = stringResource(R.string.stream_download_in_app),
+                description = stringResource(R.string.stream_download_in_app_desc),
+                onClick = {
+                    onDismiss()
+                    onDownloadInApp()
+                }
+            )
+        )
+        add(
+            DownloadOptionEntry(
+                icon = Icons.AutoMirrored.Filled.OpenInNew,
+                title = stringResource(R.string.stream_download_external),
+                description = stringResource(R.string.stream_download_external_desc),
+                onClick = {
+                    onDismiss()
+                    onDownloadExternal()
+                }
+            )
+        )
+        add(
+            DownloadOptionEntry(
+                icon = Icons.Default.ContentCopy,
+                title = stringResource(R.string.stream_download_copy_link),
+                description = stringResource(R.string.stream_download_copy_link_desc),
+                onClick = {
+                    onDismiss()
+                    onCopyLink()
+                }
+            )
+        )
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
             shape = RoundedCornerShape(24.dp),
-            color = Color(0xFF141715),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
             modifier = Modifier
-                .widthIn(max = 440.dp)
+                .widthIn(max = if (isCompactLandscape) 600.dp else 440.dp)
                 .fillMaxWidth(0.92f)
-                .padding(16.dp)
+                .heightIn(max = maxDialogHeight)
+                .padding(vertical = if (isCompactLandscape) 8.dp else 20.dp)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(20.dp)
+                    .padding(if (isCompactLandscape) 18.dp else 22.dp)
             ) {
                 // 1. Header: Icon + Title + Quality Badge
                 Row(
@@ -65,33 +130,25 @@ fun DownloadOptionsModal(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Download,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.Default.Download,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
 
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = stringResource(R.string.stream_download_title),
-                            fontSize = 16.sp,
+                            fontSize = 17.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
                             text = title,
                             fontSize = 12.5.sp,
                             fontWeight = FontWeight.Medium,
-                            color = Color.White.copy(alpha = 0.7f),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -100,100 +157,92 @@ fun DownloadOptionsModal(
                     if (!qualityBadge.isNullOrBlank()) {
                         Surface(
                             shape = RoundedCornerShape(6.dp),
-                            color = Color.White.copy(alpha = 0.12f),
-                            border = BorderStroke(0.6.dp, Color.White.copy(alpha = 0.25f))
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                            border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f))
                         ) {
                             Text(
                                 text = qualityBadge,
-                                fontSize = 9.sp,
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
                             )
                         }
                     }
                 }
 
                 if (!subtitle.isNullOrBlank()) {
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = subtitle,
                         fontSize = 11.5.sp,
                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(start = 48.dp)
+                        modifier = Modifier.padding(start = 34.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.height(18.dp))
+                Spacer(modifier = Modifier.height(if (isCompactLandscape) 12.dp else 16.dp))
 
-                // 2. Action Option 0: External Player (VLC, MPV, MX Player)
-                if (onPlayExternal != null) {
-                    DownloadOptionItem(
-                        icon = Icons.Default.PlayArrow,
-                        title = stringResource(R.string.stream_action_play_external),
-                        description = stringResource(R.string.stream_action_play_external_desc),
-                        onClick = {
-                            onDismiss()
-                            onPlayExternal()
+                // 2. Danh sách tùy chọn (tự chuyển lưới 2 cột ở màn ngang + hỗ trợ cuộn dọc chống tràn)
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(if (isCompactLandscape) 8.dp else 10.dp),
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    if (isCompactLandscape) {
+                        options.chunked(2).forEach { rowItems ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                rowItems.forEach { option ->
+                                    DownloadOptionItem(
+                                        icon = option.icon,
+                                        title = option.title,
+                                        description = option.description,
+                                        compact = true,
+                                        onClick = option.onClick,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                                if (rowItems.size == 1) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
+                            }
                         }
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
+                    } else {
+                        options.forEach { option ->
+                            DownloadOptionItem(
+                                icon = option.icon,
+                                title = option.title,
+                                description = option.description,
+                                compact = false,
+                                onClick = option.onClick,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
                 }
 
-                // Action Option 1: In-app Downloader
-                DownloadOptionItem(
-                    icon = Icons.Default.Download,
-                    title = stringResource(R.string.stream_download_in_app),
-                    description = stringResource(R.string.stream_download_in_app_desc),
-                    onClick = {
-                        onDismiss()
-                        onDownloadInApp()
-                    }
-                )
+                Spacer(modifier = Modifier.height(if (isCompactLandscape) 10.dp else 14.dp))
 
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // 3. Action Option 2: External Downloader (1DM, ADM)
-                DownloadOptionItem(
-                    icon = Icons.AutoMirrored.Filled.OpenInNew,
-                    title = stringResource(R.string.stream_download_external),
-                    description = stringResource(R.string.stream_download_external_desc),
-                    onClick = {
-                        onDismiss()
-                        onDownloadExternal()
-                    }
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // 4. Action Option 3: Copy Link
-                DownloadOptionItem(
-                    icon = Icons.Default.ContentCopy,
-                    title = stringResource(R.string.stream_download_copy_link),
-                    description = stringResource(R.string.stream_download_copy_link_desc),
-                    onClick = {
-                        onDismiss()
-                        onCopyLink()
-                    }
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // 5. Nút Đóng
+                // 3. Nút Đóng
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(
                         onClick = onDismiss,
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.tvFocusableItem(cornerRadius = 12.dp, focusedScale = 1.05f)
+                        shape = RoundedCornerShape(20.dp),
+                        modifier = Modifier.tvFocusableItem(cornerRadius = 20.dp, focusedScale = 1.05f)
                     ) {
                         Text(
                             text = stringResource(R.string.common_close),
-                            color = Color.White.copy(alpha = 0.75f),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -209,27 +258,30 @@ private fun DownloadOptionItem(
     icon: ImageVector,
     title: String,
     description: String,
-    onClick: () -> Unit
+    compact: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(14.dp),
-        color = Color.White.copy(alpha = 0.06f),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
-        modifier = Modifier
-            .fillMaxWidth()
-            .tvFocusableItem(cornerRadius = 14.dp, focusedScale = 1.02f)
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
+        modifier = modifier.tvFocusableItem(cornerRadius = 14.dp, focusedScale = 1.02f)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+                .padding(
+                    horizontal = if (compact) 12.dp else 14.dp,
+                    vertical = if (compact) 10.dp else 12.dp
+                ),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 12.dp)
         ) {
             Box(
                 modifier = Modifier
-                    .size(36.dp)
+                    .size(if (compact) 32.dp else 36.dp)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
                 contentAlignment = Alignment.Center
@@ -238,22 +290,24 @@ private fun DownloadOptionItem(
                     imageVector = icon,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(if (compact) 16.dp else 18.dp)
                 )
             }
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
-                    fontSize = 13.5.sp,
+                    fontSize = if (compact) 13.sp else 13.5.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = description,
                     fontSize = 11.sp,
-                    color = Color.White.copy(alpha = 0.60f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )

@@ -262,15 +262,21 @@ internal fun PlayerSubtitlePanel(
                                     modifier = Modifier.padding(bottom = if (isLandscape) 10.dp else 6.dp)
                                 )
 
-                                val allActiveLangCodes = remember(configuredSubLanguages, subtitleTracks) {
+                                val allActiveLangCodes = remember(configuredSubLanguages, subtitleTracks, stremioAddonSubsMap.keys.toSet()) {
                                     val list = mutableListOf<String>()
                                     if (configuredSubLanguages.contains("vi")) list.add("vi")
                                     if (configuredSubLanguages.contains("en")) list.add("en")
                                     configuredSubLanguages.filter { it != "vi" && it != "en" }.sorted().forEach { list.add(it) }
-                                    // Chỉ bổ sung thêm các ngôn ngữ nhúng sẵn trong track stream của video đang phát
+                                    // Bổ sung các ngôn ngữ nhúng sẵn trong track stream của video đang phát
                                     subtitleTracks.mapNotNull { it.language?.lowercase()?.trim() }
                                         .filter { it.isNotBlank() && !list.contains(it) && it != "und" }
                                         .distinct()
+                                        .forEach { list.add(it) }
+                                    // Bổ sung các ngôn ngữ trả về từ Stremio Addon (không bị giới hạn bởi cấu hình App Core)
+                                    stremioAddonSubsMap.keys
+                                        .map { it.lowercase().trim() }
+                                        .filter { it.isNotBlank() && !list.contains(it) && it != "und" }
+                                        .sorted()
                                         .forEach { list.add(it) }
                                     list
                                 }

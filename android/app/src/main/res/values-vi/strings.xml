@@ -709,7 +709,7 @@
     <string name="detail_info_genres">Thể loại</string>
     <string name="detail_info_status">Trạng thái</string>
     <string name="settings_subtitle_languages_title">Ngôn ngữ tìm kiếm phụ đề</string>
-    <string name="settings_subtitle_languages_desc">Chọn các ngôn ngữ muốn tìm kiếm phụ đề trực tuyến. Tiếng Anh luôn được bật cố định để hỗ trợ tính năng dịch phụ đề bằng Gemini AI.</string>
+    <string name="settings_subtitle_languages_desc">Chọn các ngôn ngữ muốn tìm kiếm trên các dịch vụ phụ đề tích hợp của ứng dụng (không giới hạn phụ đề từ Stremio Addon). Tiếng Anh luôn được bật cố định để hỗ trợ dịch phụ đề bằng Gemini AI.</string>
     <string name="settings_subtitle_languages_mandatory">Bắt buộc (Dùng cho dịch Gemini AI)</string>
     <string name="settings_subtitle_languages_saved">Đã lưu cấu hình ngôn ngữ phụ đề thành công!</string>
     <string name="plugins_stremio_added_success">Đã thêm Addon %s thành công</string>
@@ -927,4 +927,17 @@
     <string name="local_library_clear_action_movies">Xóa tất cả phim</string>
     <string name="local_library_clear_action_all">Xóa tất cả</string>
     <string name="local_library_clear_success">Đã xóa thành công khỏi thư viện nội bộ</string>
+    <string name="fix_match_error_missing_key">Chưa cấu hình TMDB API Key.\nVui lòng vào Cài đặt > Tùy chỉnh nâng  > TMDB để nhập API Key của bạn.</string>
+    <string name="fix_match_error_invalid_key">TMDB API Key không hợp lệ (HTTP 401).\nVui lòng kiểm tra lại API Key trong Cài đặt > Dịch vụ phụ trợ.</string>
+    <string name="fix_match_error_http">Lỗi máy chủ TMDB (HTTP %d). Vui lòng thử lại sau.</string>
+    <string name="fix_match_error_network">Lỗi kết nối mạng / Proxy tới TMDB:\n%s</string>
+    <string name="fix_match_error_parse">Không thể đọc phản hồi từ TMDB (dữ liệu trả về không hợp lệ).</string>
+    <string name="local_library_genre_all">Tất cả thể loại</string>
+    <string name="local_library_rescrape_btn">Cập nhật TMDB</string>
+    <string name="local_library_rescrape_title">Cập nhật metadata TMDB</string>
+    <string name="local_library_rescrape_desc">Chọn cách cập nhật thông tin phim/series từ TMDB:\n\n• Chưa có TMDB: %1$d mục\n• Tổng số phim/series: %2$d mục</string>
+    <string name="local_library_rescrape_unmatched">Chưa có TMDB (%1$d)</string>
+    <string name="local_library_rescrape_all">Cào lại tất cả (%1$d)</string>
+    <string name="local_library_rescrape_hide">Ẩn (chạy nền)</string>
+    <string name="local_library_rescrape_done">Đã cập nhật metadata TMDB cho %1$d/%2$d phim</string>
 </resources>

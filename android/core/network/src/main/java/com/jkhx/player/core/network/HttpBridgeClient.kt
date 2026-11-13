@@ -53,6 +53,19 @@ class HttpBridgeClient(
     companion object {
         @Volatile
         var globalProxyProvider: (() -> Proxy?)? = null
+
+        private val proxyChangeListeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
+
+        fun registerProxyChangeListener(listener: () -> Unit) {
+            proxyChangeListeners.add(listener)
+        }
+
+        fun notifyProxyChanged() {
+            SmartProxyDns.clearCache()
+            proxyChangeListeners.forEach {
+                try { it() } catch (_: Exception) {}
+            }
+        }
     }
 
     private val activeCalls = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.ConcurrentHashMap.KeySetView<Call, Boolean>>()

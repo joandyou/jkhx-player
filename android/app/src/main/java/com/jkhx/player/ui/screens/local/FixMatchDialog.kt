@@ -27,9 +27,12 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import com.jkhx.player.JkhxApplication
 import com.jkhx.player.R
 import com.jkhx.player.core.network.tmdb.TmdbConfig
+import com.jkhx.player.core.network.tmdb.TmdbError
 import com.jkhx.player.core.network.tmdb.TmdbItemResult
 import com.jkhx.player.local.TmdbLocalScraper
 import kotlinx.coroutines.launch
@@ -42,6 +45,7 @@ fun FixMatchDialog(
     onDismiss: () -> Unit,
     onMatchSelected: (TmdbItemResult) -> Unit
 ) {
+    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
 
@@ -61,6 +65,7 @@ fun FixMatchDialog(
     }
     var isSearching by remember { mutableStateOf(false) }
     var results by remember { mutableStateOf<List<TmdbItemResult>>(emptyList()) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
     var hasSearched by remember { mutableStateOf(false) }
 
     fun doSearch() {
@@ -69,11 +74,20 @@ fun FixMatchDialog(
         focusManager.clearFocus()
         isSearching = true
         hasSearched = true
+        errorMessage = null
         coroutineScope.launch {
             val tmdbRepo = JkhxApplication.instance.tmdbRepository
             val language = TmdbConfig.getAppLanguage()
-            val res = tmdbRepo.searchTmdb(query, type = selectedFilter, language = language)
-            results = res
+            val res = tmdbRepo.searchTmdbDetailed(query, type = selectedFilter, language = language)
+            results = res.items
+            errorMessage = when (val err = res.error) {
+                is TmdbError.MissingApiKey -> context.getString(R.string.fix_match_error_missing_key)
+                is TmdbError.InvalidApiKey -> context.getString(R.string.fix_match_error_invalid_key)
+                is TmdbError.HttpError -> context.getString(R.string.fix_match_error_http, err.code)
+                is TmdbError.NetworkError -> context.getString(R.string.fix_match_error_network, err.detail)
+                is TmdbError.ParseError -> context.getString(R.string.fix_match_error_parse)
+                null -> null
+            }
             isSearching = false
         }
     }
@@ -250,6 +264,28 @@ fun FixMatchDialog(
                                 text = stringResource(R.string.fix_match_searching),
                                 color = Color.White.copy(alpha = 0.7f),
                                 fontSize = 13.sp
+                            )
+                        }
+                    } else if (errorMessage != null) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 16.dp),
+                            verticalArrangement = Arrangement.Center,
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.WarningAmber,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error.copy(alpha = 0.85f),
+                                modifier = Modifier.size(48.dp)
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = errorMessage ?: "",
+                                color = MaterialTheme.colorScheme.error,
+                                fontSize = 13.sp,
+                                textAlign = TextAlign.Center
                             )
                         }
                     } else if (results.isEmpty() && hasSearched) {

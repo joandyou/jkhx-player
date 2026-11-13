@@ -24,6 +24,7 @@ class JkhxApplication : Application(), ImageLoaderFactory {
     override fun newImageLoader(): ImageLoader {
         val settings = com.jkhx.player.settings.SettingsManager.getInstance(this)
         val okHttpClient = okhttp3.OkHttpClient.Builder()
+            .dns(com.jkhx.player.core.network.SmartProxyDns)
             .proxySelector(object : java.net.ProxySelector() {
                 override fun select(uri: java.net.URI?): List<java.net.Proxy> {
                     val proxy = settings.getProxy()
@@ -162,6 +163,7 @@ class JkhxApplication : Application(), ImageLoaderFactory {
 
     val okHttpClient: okhttp3.OkHttpClient by lazy {
         okhttp3.OkHttpClient.Builder()
+            .dns(com.jkhx.player.core.network.SmartProxyDns)
             .proxySelector(object : java.net.ProxySelector() {
                 override fun select(uri: java.net.URI?): List<java.net.Proxy> {
                     val proxy = settingsManager.getProxy()
@@ -171,7 +173,11 @@ class JkhxApplication : Application(), ImageLoaderFactory {
             })
             .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
             .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-            .build()
+            .build().also { c ->
+                com.jkhx.player.core.network.HttpBridgeClient.registerProxyChangeListener {
+                    c.connectionPool.evictAll()
+                }
+            }
     }
 
     val subtitleManager: com.jkhx.player.core.player.subtitle.SubtitleManager by lazy {

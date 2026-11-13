@@ -12,15 +12,18 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -63,9 +66,9 @@ fun LocalLibraryScreen(
     val localLibraryDao = remember { JkhxApplication.instance.database.localLibraryDao() }
 
     val allItems by localLibraryDao.getAll().collectAsState(initial = emptyList())
-    var selectedTab by remember { mutableStateOf("all") }
-    var searchQuery by remember { mutableStateOf("") }
-    var isSearching by remember { mutableStateOf(false) }
+    var selectedTab by rememberSaveable { mutableStateOf("all") }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var isSearching by rememberSaveable { mutableStateOf(false) }
 
     var isProcessing by remember { mutableStateOf(false) }
     var processingMessage by remember { mutableStateOf("") }
@@ -76,6 +79,12 @@ fun LocalLibraryScreen(
     var showClearDialog by remember { mutableStateOf(false) }
     var showAddMenu by remember { mutableStateOf(false) }
     var showRemoteServersDialog by remember { mutableStateOf(false) }
+    var selectedGenre by rememberSaveable { mutableStateOf<String?>(null) }
+    var showRescrapeDialog by remember { mutableStateOf(false) }
+    var isRescraping by remember { mutableStateOf(false) }
+    var rescrapeDoneCount by remember { mutableIntStateOf(0) }
+    var rescrapeTotalCount by remember { mutableIntStateOf(0) }
+    var rescrapeCurrentTitle by remember { mutableStateOf("") }
 
     val json = remember { Json { ignoreUnknownKeys = true } }
 
@@ -339,12 +348,38 @@ fun LocalLibraryScreen(
         }
     }
 
-    val filteredItems = remember(allItems, selectedTab, searchQuery) {
+    val movieItems = remember(allItems) {
+        allItems.filter { it.type == "movie" || it.type == "series" }
+    }
+
+    val availableGenres = remember(movieItems) {
+        movieItems
+            .mapNotNull { it.genres }
+            .flatMap { it.split(",") }
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .sorted()
+    }
+
+    LaunchedEffect(availableGenres, movieItems) {
+        if (movieItems.isNotEmpty() && selectedGenre != null && selectedGenre !in availableGenres) {
+            selectedGenre = null
+        }
+    }
+
+    val filteredItems = remember(allItems, selectedTab, selectedGenre, searchQuery) {
         var list = when (selectedTab) {
             "movie" -> allItems.filter { it.type == "movie" || it.type == "series" }
             "novel" -> allItems.filter { it.type == "novel" }
             "comic" -> allItems.filter { it.type == "comic" }
             else -> allItems
+        }
+        if (selectedTab == "movie" && selectedGenre != null) {
+            val targetGenre = selectedGenre!!
+            list = list.filter { entity ->
+                entity.genres?.split(",")?.any { it.trim().equals(targetGenre, ignoreCase = true) } == true
+            }
         }
         if (searchQuery.isNotBlank()) {
             val q = searchQuery.trim().lowercase()
@@ -420,21 +455,36 @@ fun LocalLibraryScreen(
                             tint = Color.White
                         )
                     }
+                }
+            }
 
-                    Box {
-                        FilledTonalButton(
-                            onClick = { showAddMenu = true },
-                            shape = RoundedCornerShape(20.dp),
-                            colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = Color.White
-                            ),
-                            modifier = Modifier.tvFocusableItem()
-                        ) {
-                            Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(text = stringResource(R.string.common_add), fontWeight = FontWeight.Bold)
-                        }
+            // Hàng nút thao tác riêng bên dưới Tiêu đề (tránh ép chữ "+ Thêm" bị xuống dòng)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box {
+                    FilledTonalButton(
+                        onClick = { showAddMenu = true },
+                        shape = RoundedCornerShape(20.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = Color.White
+                        ),
+                        modifier = Modifier.tvFocusableItem()
+                    ) {
+                        Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(R.string.common_add),
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
 
                         DropdownMenu(
                             expanded = showAddMenu,
@@ -511,6 +561,37 @@ fun LocalLibraryScreen(
                             )
                         }
                     }
+                if (movieItems.isNotEmpty() && (selectedTab == "movie" || selectedTab == "all")) {
+                    OutlinedButton(
+                        onClick = { showRescrapeDialog = true },
+                        shape = RoundedCornerShape(20.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.65f)),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary
+                        ),
+                        modifier = Modifier.tvFocusableItem()
+                    ) {
+                        if (isRescraping) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Sync,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(R.string.local_library_rescrape_btn),
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
                 }
             }
 
@@ -564,6 +645,64 @@ fun LocalLibraryScreen(
                             fontSize = 13.sp,
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
                         )
+                    }
+                }
+            }
+
+            // TMDB Genre Filter Chips (chỉ hiển thị ở tab Movie/TV khi có dữ liệu thể loại)
+            if (selectedTab == "movie" && availableGenres.isNotEmpty()) {
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    item(key = "__all_genres__") {
+                        val isAllSelected = selectedGenre == null
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (isAllSelected) {
+                                MaterialTheme.colorScheme.secondary
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                            },
+                            modifier = Modifier
+                                .tvFocusableItem(cornerRadius = 16.dp, focusedScale = 1.05f)
+                                .clickable { selectedGenre = null }
+                        ) {
+                            Text(
+                                text = stringResource(R.string.local_library_genre_all),
+                                color = Color.White,
+                                fontWeight = if (isAllSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+                            )
+                        }
+                    }
+
+                    items(availableGenres, key = { it }) { genre ->
+                        val isSelected = selectedGenre == genre
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (isSelected) {
+                                MaterialTheme.colorScheme.secondary
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                            },
+                            modifier = Modifier
+                                .tvFocusableItem(cornerRadius = 16.dp, focusedScale = 1.05f)
+                                .clickable {
+                                    selectedGenre = if (isSelected) null else genre
+                                }
+                        ) {
+                            Text(
+                                text = genre,
+                                color = Color.White,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -825,6 +964,120 @@ fun LocalLibraryScreen(
                 dismissButton = {
                     TextButton(onClick = { itemToDelete = null }) {
                         Text(stringResource(R.string.common_cancel), color = Color.White)
+                    }
+                }
+            )
+        }
+
+        // Bulk TMDB Rescrape Dialog
+        if (showRescrapeDialog) {
+            val unmatchedMovies = remember(movieItems) { movieItems.filter { it.tmdbId == null } }
+
+            fun startRescrape(targets: List<LocalLibraryEntity>) {
+                if (targets.isEmpty() || isRescraping) return
+                isRescraping = true
+                rescrapeDoneCount = 0
+                rescrapeTotalCount = targets.size
+                rescrapeCurrentTitle = ""
+                scope.launch(Dispatchers.IO) {
+                    var successCount = 0
+                    for (item in targets) {
+                        withContext(Dispatchers.Main) {
+                            rescrapeCurrentTitle = item.title
+                        }
+                        val queryTitle = item.originalTitle?.takeIf { it.isNotBlank() } ?: item.title
+                        val ok = TmdbLocalScraper.scrapeAndEnrich(
+                            context = context,
+                            entityId = item.id,
+                            rawTitle = queryTitle,
+                            type = item.type
+                        )
+                        if (ok) successCount++
+                        withContext(Dispatchers.Main) {
+                            rescrapeDoneCount++
+                        }
+                    }
+                    withContext(Dispatchers.Main) {
+                        isRescraping = false
+                        showRescrapeDialog = false
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.local_library_rescrape_done, successCount, targets.size),
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+            }
+
+            AlertDialog(
+                onDismissRequest = { showRescrapeDialog = false },
+                title = { Text(stringResource(R.string.local_library_rescrape_title)) },
+                text = {
+                    if (isRescraping) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            LinearProgressIndicator(
+                                progress = {
+                                    if (rescrapeTotalCount > 0) rescrapeDoneCount.toFloat() / rescrapeTotalCount else 0f
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Text(
+                                text = "$rescrapeDoneCount / $rescrapeTotalCount • $rescrapeCurrentTitle",
+                                fontSize = 13.sp,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = stringResource(
+                                R.string.local_library_rescrape_desc,
+                                unmatchedMovies.size,
+                                movieItems.size
+                            )
+                        )
+                    }
+                },
+                confirmButton = {
+                    if (isRescraping) {
+                        TextButton(onClick = { showRescrapeDialog = false }) {
+                            Text(stringResource(R.string.local_library_rescrape_hide))
+                        }
+                    } else {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = { startRescrape(movieItems) },
+                                enabled = movieItems.isNotEmpty(),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.local_library_rescrape_all, movieItems.size),
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            }
+                            if (unmatchedMovies.isNotEmpty()) {
+                                OutlinedButton(
+                                    onClick = { startRescrape(unmatchedMovies) },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.local_library_rescrape_unmatched, unmatchedMovies.size),
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
+                            }
+                            TextButton(
+                                onClick = { showRescrapeDialog = false },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(stringResource(R.string.common_cancel))
+                            }
+                        }
                     }
                 }
             )

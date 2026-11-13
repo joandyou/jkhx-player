@@ -310,23 +310,27 @@ fun DetailScreen(
             movieDetail = baseDetail
             isLoading = false
 
-            // Tự động làm giàu metadata từ TMDB (tự động tìm kiếm TMDB ID nếu plugin chưa cung cấp)
-            launch {
-                try {
-                    var enriched = tmdbRepo.enrichMovieDetail(baseDetail)
-                    // Nếu sau khi enrich, castMembers vẫn rỗng nhưng có danh sách tên diễn viên, tra cứu avatar cho top 12 diễn viên
-                    if (enriched.castMembers.isEmpty() && enriched.actors.isNotEmpty()) {
-                        val fetchedCast = enriched.actors.take(12).map { name ->
-                            val (personId, profileUrl) = tmdbRepo.getActorProfile(name)
-                            CastMember(id = personId, name = name, profileUrl = profileUrl)
+            // Tự động làm giàu metadata từ TMDB (bỏ qua truyện tranh / tiểu thuyết)
+            val isBookOrComic = baseDetail.type.equals("comic", ignoreCase = true) ||
+                baseDetail.type.equals("novel", ignoreCase = true)
+            if (!isBookOrComic) {
+                launch {
+                    try {
+                        var enriched = tmdbRepo.enrichMovieDetail(baseDetail)
+                        // Nếu sau khi enrich, castMembers vẫn rỗng nhưng có danh sách tên diễn viên, tra cứu avatar cho top 12 diễn viên
+                        if (enriched.castMembers.isEmpty() && enriched.actors.isNotEmpty()) {
+                            val fetchedCast = enriched.actors.take(12).map { name ->
+                                val (personId, profileUrl) = tmdbRepo.getActorProfile(name)
+                                CastMember(id = personId, name = name, profileUrl = profileUrl)
+                            }
+                            if (fetchedCast.isNotEmpty()) {
+                                enriched = enriched.copy(castMembers = fetchedCast)
+                            }
                         }
-                        if (fetchedCast.isNotEmpty()) {
-                            enriched = enriched.copy(castMembers = fetchedCast)
-                        }
+                        movieDetail = enriched
+                    } catch (_: Exception) {
+                        // Giữ nguyên dữ liệu gốc từ plugin nếu TMDB gặp lỗi
                     }
-                    movieDetail = enriched
-                } catch (_: Exception) {
-                    // Giữ nguyên dữ liệu gốc từ plugin nếu TMDB gặp lỗi
                 }
             }
         } catch (e: Exception) {
@@ -338,6 +342,9 @@ fun DetailScreen(
     // Tự động tải 4 row phim gợi ý từ TMDB sau khi có thông tin phim
     LaunchedEffect(movieDetail?.name, movieDetail?.tmdbId) {
         val detail = movieDetail ?: return@LaunchedEffect
+        if (detail.type.equals("comic", ignoreCase = true) || detail.type.equals("novel", ignoreCase = true)) {
+            return@LaunchedEffect
+        }
         val isTv = detail.type.equals("series", ignoreCase = true) ||
                    detail.type.equals("tv", ignoreCase = true) ||
                    detail.type.equals("tvshows", ignoreCase = true) ||
