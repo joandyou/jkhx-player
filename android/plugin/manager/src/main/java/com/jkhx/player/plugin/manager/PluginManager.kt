@@ -1023,10 +1023,22 @@ class PluginManager(
 
     fun getStremioClient(): StremioBridgeClient = stremioClient
 
-    suspend fun installStremioAddon(rawUrl: String, addedAt: Long? = null): StremioAddonEntity = withContext(Dispatchers.IO) {
+    suspend fun installStremioAddon(
+        rawUrl: String,
+        addedAt: Long? = null,
+        cachedManifestJson: String? = null
+    ): StremioAddonEntity = withContext(Dispatchers.IO) {
         mutex.withLock {
             val normalizedUrl = StremioBridgeClient.normalizeManifestUrl(rawUrl)
-            val (manifest, rawManifestJson) = stremioClient.fetchManifestWithRaw(normalizedUrl)
+            val (manifest, rawManifestJson) = if (!cachedManifestJson.isNullOrBlank()) {
+                try {
+                    json.decodeFromString<StremioManifest>(cachedManifestJson) to cachedManifestJson
+                } catch (_: Exception) {
+                    stremioClient.fetchManifestWithRaw(normalizedUrl)
+                }
+            } else {
+                stremioClient.fetchManifestWithRaw(normalizedUrl)
+            }
             val pluginId = StremioPluginWrapper.makePluginId(manifest.id)
 
             val existingAddon = stremioAddonDao?.getAddonByUrl(normalizedUrl)

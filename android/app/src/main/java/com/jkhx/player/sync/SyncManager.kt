@@ -861,9 +861,13 @@ class SyncManager private constructor(private val context: Context) {
                 effectiveDeletedStremioAddons[cloudAddon.url] ?: 0L
             ).takeIf { it > 0L }
 
+            val localDeletedTs = maxOf(
+                localDeletedStremioAddons[normCloudUrl] ?: 0L,
+                localDeletedStremioAddons[cloudAddon.url] ?: 0L
+            )
             val wasDeletedLocally = normCloudUrl in pendingLocalDeletedStremioAddons ||
                 cloudAddon.url in pendingLocalDeletedStremioAddons ||
-                ((normCloudUrl in localDeletedStremioAddons || cloudAddon.url in localDeletedStremioAddons) && normCloudUrl !in currentLocalAddons)
+                (localDeletedTs > 0L && localDeletedTs >= cloudAddon.addedAt && normCloudUrl !in currentLocalAddons)
 
             if (wasDeletedLocally && (deletedAt == null || deletedAt < cloudAddon.addedAt)) {
                 val bumpedTs = maxOf(System.currentTimeMillis(), cloudAddon.addedAt + 1L)
@@ -878,7 +882,11 @@ class SyncManager private constructor(private val context: Context) {
             if (!isDeleted && normCloudUrl !in currentLocalAddons) {
                 try {
                     val effectiveAddedAt = if (cloudAddon.addedAt > 0L) cloudAddon.addedAt else System.currentTimeMillis()
-                    pluginManager.installStremioAddon(normCloudUrl, addedAt = effectiveAddedAt)
+                    pluginManager.installStremioAddon(
+                        rawUrl = normCloudUrl,
+                        addedAt = effectiveAddedAt,
+                        cachedManifestJson = cloudAddon.manifestJson.takeIf { it.isNotBlank() }
+                    )
                     if (!cloudAddon.isEnabled) {
                         pluginManager.toggleStremioAddon(normCloudUrl, false)
                     }
@@ -900,9 +908,7 @@ class SyncManager private constructor(private val context: Context) {
                             addedAt = if (cloudAddon.addedAt > 0L) cloudAddon.addedAt else System.currentTimeMillis()
                         )
                         stremioAddonDao.insert(entity)
-                        if (cloudAddon.isEnabled) {
-                            pluginManager.toggleStremioAddon(normCloudUrl, true)
-                        }
+                        pluginManager.toggleStremioAddon(normCloudUrl, cloudAddon.isEnabled)
                         val effectiveUpdatedAt = maxOf(entity.addedAt, cloudAddon.updatedAt)
                         saveLocalStremioToggledAt(normCloudUrl, effectiveUpdatedAt)
                     } catch (inner: Exception) {

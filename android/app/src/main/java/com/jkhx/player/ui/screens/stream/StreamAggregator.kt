@@ -37,9 +37,17 @@ class StreamAggregator(
         suspend fun emitItem(item: UnifiedStreamItem) {
             val snapshot = mutex.withLock {
                 val isDuplicate = collectedStreams.any {
-                    it.id == item.id ||
-                        (it.streamUrl.isNotBlank() && it.streamUrl.equals(item.streamUrl, ignoreCase = true)) ||
-                        (it.providerId == item.providerId && it.serverName.equals(item.serverName, ignoreCase = true) && it.title.equals(item.title, ignoreCase = true))
+                    if (it.id == item.id) return@any true
+                    val sameProviderAndName = it.providerId == item.providerId &&
+                        it.providerName.equals(item.providerName, ignoreCase = true)
+                    val sameUrl = it.streamUrl.isNotBlank() && item.streamUrl.isNotBlank() &&
+                        it.streamUrl.equals(item.streamUrl, ignoreCase = true)
+                    if (sameUrl && (!it.isAddon || sameProviderAndName)) return@any true
+                    sameProviderAndName &&
+                        it.serverName.equals(item.serverName, ignoreCase = true) &&
+                        it.title.equals(item.title, ignoreCase = true) &&
+                        it.streamUrl.equals(item.streamUrl, ignoreCase = true) &&
+                        it.torrentInfoHash.equals(item.torrentInfoHash, ignoreCase = true)
                 }
                 if (!isDuplicate) {
                     collectedStreams.add(item)
