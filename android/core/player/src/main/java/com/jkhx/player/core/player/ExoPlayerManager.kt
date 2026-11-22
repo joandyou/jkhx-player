@@ -249,7 +249,11 @@ class ExoPlayerManager(
                 .setPrioritizeTimeOverSizeThresholds(true)
                 .build()
 
-            exoPlayer = ExoPlayer.Builder(context)
+            val renderersFactory = androidx.media3.exoplayer.DefaultRenderersFactory(context)
+                .setEnableDecoderFallback(true)
+                .setExtensionRendererMode(androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+
+            exoPlayer = ExoPlayer.Builder(context, renderersFactory)
                 .setTrackSelector(trackSelector!!)
                 .setLoadControl(loadControl)
                 .setBandwidthMeter(bandwidthMeter)

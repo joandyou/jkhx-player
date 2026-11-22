@@ -30,6 +30,8 @@ keystore.properties
 backups/
 .backupignore
 PROJECT_RULES.md
+AGENTS.md
+GEMINI.md
 CHANGE.md
 README_DEV.md
 GITHUB_WORKFLOW_GUIDE.md

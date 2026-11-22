@@ -5,6 +5,13 @@ import com.jkhx.player.core.network.HttpBridgeClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -38,6 +45,14 @@ class StremioBridgeClient(
 
     companion object {
         const val OFFICIAL_CINEMETA_URL = "https://v3-cinemeta.strem.io/manifest.json"
+
+        fun buildTorrServerStreamUrl(rawServerUrl: String, infoHash: String, fileIndex1Based: Int): String {
+            val baseUrl = rawServerUrl.trim().trimEnd('/')
+            val cleanHash = infoHash.trim().lowercase()
+            val magnet = URLEncoder.encode("magnet:?xt=urn:btih:$cleanHash", StandardCharsets.UTF_8.name())
+            val safeIdx = fileIndex1Based.coerceAtLeast(1)
+            return "$baseUrl/stream?link=$magnet&index=$safeIdx&play"
+        }
 
         /**
          * Chuẩn hóa URL Stremio:
@@ -441,6 +456,176 @@ class StremioBridgeClient(
             kotlinx.coroutines.delay(500)
         }
         0
+    }
+
+    /**
+     * Kiểm tra trạng thái TorrServer: GET /echo (hỗ trợ Basic Auth).
+     */
+    suspend fun checkTorrServerHealth(rawServerUrl: String, authHeader: String?): StremioServerHealth = withContext(Dispatchers.IO) {
+        val baseUrl = normalizeServerUrl(rawServerUrl)
+        val fastClient = client.newBuilder()
+            .connectTimeout(3500, TimeUnit.MILLISECONDS)
+            .readTimeout(3500, TimeUnit.MILLISECONDS)
+            .build()
+
+        val reqBuilder = Request.Builder().url("$baseUrl/echo")
+        if (!authHeader.isNullOrBlank()) {
+            reqBuilder.header("Authorization", authHeader)
+        }
+
+        try {
+            val start = System.currentTimeMillis()
+            val resp = fastClient.newCall(reqBuilder.build()).execute()
+            val latency = System.currentTimeMillis() - start
+            if (resp.isSuccessful) {
+                val ver = resp.body?.string()?.trim()?.take(32).orEmpty().ifBlank { "TorrServer" }
+                StremioServerHealth(isOnline = true, latencyMs = latency, version = ver)
+            } else if (resp.code == 401) {
+                StremioServerHealth(isOnline = false, version = "Auth 401")
+            } else {
+                StremioServerHealth(isOnline = false)
+            }
+        } catch (_: Exception) {
+            StremioServerHealth(isOnline = false)
+        }
+    }
+
+    /**
+     * Lấy thống kê torrent từ TorrServer: POST /torrents {"action":"get","hash":"..."}
+     */
+    suspend fun fetchTorrServerStats(
+        rawServerUrl: String,
+        authHeader: String?,
+        infoHash: String
+    ): StremioTorrentStats? = withContext(Dispatchers.IO) {
+        val baseUrl = normalizeServerUrl(rawServerUrl)
+        val cleanHash = infoHash.trim().lowercase()
+        val payload = """{"action":"get","hash":"$cleanHash"}"""
+        val body = payload.toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+
+        val fastClient = client.newBuilder()
+            .connectTimeout(3000, TimeUnit.MILLISECONDS)
+            .readTimeout(3000, TimeUnit.MILLISECONDS)
+            .build()
+
+        val reqBuilder = Request.Builder()
+            .url("$baseUrl/torrents")
+            .post(body)
+            .header("Accept", "application/json")
+        if (!authHeader.isNullOrBlank()) {
+            reqBuilder.header("Authorization", authHeader)
+        }
+
+        try {
+            val resp = fastClient.newCall(reqBuilder.build()).execute()
+            if (!resp.isSuccessful) return@withContext null
+            val text = resp.body?.string() ?: return@withContext null
+            val obj = json.parseToJsonElement(text).jsonObject
+            val torrentSize = obj["torrent_size"]?.jsonPrimitive?.longOrNull ?: 0L
+            val loadedSize = obj["loaded_size"]?.jsonPrimitive?.longOrNull
+                ?: obj["bytes_read"]?.jsonPrimitive?.longOrNull
+                ?: 0L
+            val progress = if (torrentSize > 0L) (loadedSize.toDouble() / torrentSize.toDouble()).coerceIn(0.0, 1.0) else 0.0
+
+            val fileStatsArr = obj["file_stats"]?.jsonArray
+            val files = mutableListOf<StremioTorrentFile>()
+            if (fileStatsArr != null) {
+                for (el in fileStatsArr) {
+                    val fObj = el.jsonObject
+                    val path = fObj["path"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                    files.add(
+                        StremioTorrentFile(
+                            name = path.substringAfterLast('/'),
+                            length = fObj["length"]?.jsonPrimitive?.longOrNull ?: 0L,
+                            path = path
+                        )
+                    )
+                }
+            }
+
+            val titleVal = obj["title"]?.jsonPrimitive?.contentOrNull
+                ?: obj["name"]?.jsonPrimitive?.contentOrNull
+
+            StremioTorrentStats(
+                infoHash = obj["hash"]?.jsonPrimitive?.contentOrNull ?: cleanHash,
+                name = titleVal?.ifBlank { null },
+                peers = obj["active_peers"]?.jsonPrimitive?.intOrNull ?: 0,
+                downloadSpeed = obj["download_speed"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+                uploadSpeed = obj["upload_speed"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+                downloaded = loadedSize,
+                streamProgress = progress,
+                streamLen = torrentSize,
+                swarmConnections = obj["connected_seeders"]?.jsonPrimitive?.intOrNull ?: 0,
+                swarmSize = obj["total_peers"]?.jsonPrimitive?.intOrNull ?: 0,
+                files = files
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Xác định chỉ số file (1-based) cho TorrServer:
+     * - Nếu addon đã cung cấp fileIdx (0-based), trả về fileIdx + 1.
+     * - Nếu chưa có, gọi POST /torrents (action="add") và chọn file video lớn nhất trong file_stats.
+     */
+    suspend fun resolveTorrServerFileIndex(
+        rawServerUrl: String,
+        authHeader: String?,
+        infoHash: String,
+        preferredFileIdx: Int? = null
+    ): Int = withContext(Dispatchers.IO) {
+        val baseUrl = normalizeServerUrl(rawServerUrl)
+        val cleanHash = infoHash.trim().lowercase()
+        val payload = """{"action":"add","link":"magnet:?xt=urn:btih:$cleanHash","save_to_db":false}"""
+        val body = payload.toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+        val reqBuilder = Request.Builder()
+            .url("$baseUrl/torrents")
+            .post(body)
+            .header("Accept", "application/json")
+        if (!authHeader.isNullOrBlank()) {
+            reqBuilder.header("Authorization", authHeader)
+        }
+
+        try {
+            val resp = client.newCall(reqBuilder.build()).execute()
+            if (preferredFileIdx != null && preferredFileIdx >= 0) {
+                resp.close()
+                return@withContext preferredFileIdx + 1
+            }
+            if (resp.isSuccessful) {
+                val text = resp.body?.string()
+                if (!text.isNullOrBlank()) {
+                    val obj = json.parseToJsonElement(text).jsonObject
+                    val fileStatsArr = obj["file_stats"]?.jsonArray
+                    if (fileStatsArr != null && fileStatsArr.isNotEmpty()) {
+                        val videoExts = listOf(".mp4", ".mkv", ".avi", ".webm", ".ts", ".mov", ".m4v", ".flv")
+                        var bestVideoId = -1
+                        var bestVideoLen = -1L
+                        var largestId = 1
+                        var largestLen = -1L
+                        fileStatsArr.forEachIndexed { idx, el ->
+                            val fObj = el.jsonObject
+                            val id = fObj["id"]?.jsonPrimitive?.intOrNull ?: (idx + 1)
+                            val path = fObj["path"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                            val len = fObj["length"]?.jsonPrimitive?.longOrNull ?: 0L
+                            if (len > largestLen) {
+                                largestLen = len
+                                largestId = id
+                            }
+                            if (videoExts.any { path.endsWith(it, ignoreCase = true) } && len > bestVideoLen) {
+                                bestVideoLen = len
+                                bestVideoId = id
+                            }
+                        }
+                        if (bestVideoId > 0) return@withContext bestVideoId
+                        if (largestId > 0) return@withContext largestId
+                    }
+                }
+            }
+        } catch (_: Exception) {
+        }
+        1
     }
 }
 

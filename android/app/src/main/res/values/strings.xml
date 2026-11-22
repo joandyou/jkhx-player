@@ -940,4 +940,12 @@
     <string name="local_library_rescrape_all">Cào lại tất cả (%1$d)</string>
     <string name="local_library_rescrape_hide">Ẩn (chạy nền)</string>
     <string name="local_library_rescrape_done">Đã cập nhật metadata TMDB cho %1$d/%2$d phim</string>
+    <string name="streaming_server_mode_stremio">Stremio Server</string>
+    <string name="streaming_server_mode_torrserver">TorrServer</string>
+    <string name="torr_server_empty">Chưa có URL máy chủ TorrServer nào.\nNhấn \"+ Thêm URL\" bên dưới để nhập địa chỉ máy chủ của bạn.</string>
+    <string name="torr_server_health_updated">Đã cập nhật trạng thái máy chủ TorrServer</string>
+    <string name="torr_server_dialog_add_title">Thêm máy chủ TorrServer</string>
+    <string name="torr_server_dialog_desc">Nhập địa chỉ TorrServer (VD: https://torrserver) và tài khoản Basic Auth nếu máy chủ có bật xác thực.</string>
+    <string name="torr_server_dialog_username">Tên đăng nhập (tùy chọn)</string>
+    <string name="torr_server_dialog_password">Mật khẩu (tùy chọn)</string>
 </resources>

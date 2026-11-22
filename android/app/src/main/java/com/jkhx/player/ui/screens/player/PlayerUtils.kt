@@ -512,12 +512,42 @@ suspend fun resolveTorrentStreamUrl(
 ): com.jkhx.player.core.model.EpisodeStream {
     val torrentHash = stream.torrentInfoHash ?: activeUnifiedStream?.torrentInfoHash
     if (torrentHash.isNullOrBlank()) return stream
-    val srv = stream.stremioServerUrl ?: activeUnifiedStream?.stremioServerUrl
-        ?: settingsManager.stremioActiveServerUrl.value.trim().trimEnd('/')
+
+    val isTorrServer = settingsManager.streamingServerType.value == com.jkhx.player.settings.SettingsManager.STREAMING_SERVER_TORRSERVER
+    if (isTorrServer) {
+        val torrConfig = settingsManager.getActiveTorrServer()
+        val srv = torrConfig?.url?.trim()?.trimEnd('/')?.takeIf { it.isNotBlank() }
+            ?: stream.stremioServerUrl?.takeIf { it.isNotBlank() }
+            ?: activeUnifiedStream?.stremioServerUrl?.takeIf { it.isNotBlank() }
+            ?: ""
+        if (srv.isBlank()) return stream
+
+        val authHeader = torrConfig?.basicAuthHeader()
+        val existingOneBased = stream.url?.let { Regex("[?&]index=(\\d+)").find(it)?.groupValues?.getOrNull(1)?.toIntOrNull() }
+        val preferredZeroBased = existingOneBased?.let { (it - 1).coerceAtLeast(0) }
+        val realIdx = stremioClient.resolveTorrServerFileIndex(srv, authHeader, torrentHash, preferredZeroBased)
+        val mergedHeaders = (stream.headers ?: emptyMap()).toMutableMap()
+        if (!authHeader.isNullOrBlank()) {
+            mergedHeaders["Authorization"] = authHeader
+        }
+        return stream.copy(
+            url = com.jkhx.player.core.network.stremio.StremioBridgeClient.buildTorrServerStreamUrl(srv, torrentHash, realIdx),
+            headers = mergedHeaders,
+            stremioServerUrl = srv,
+            torrentInfoHash = torrentHash
+        )
+    }
+
+    val srv = settingsManager.stremioActiveServerUrl.value.trim().trimEnd('/').takeIf { it.isNotBlank() }
+        ?: stream.stremioServerUrl?.takeIf { it.isNotBlank() }
+        ?: activeUnifiedStream?.stremioServerUrl?.takeIf { it.isNotBlank() }
+        ?: ""
     if (srv.isBlank()) return stream
     val realIdx = stremioClient.resolveTorrentFileIdx(srv, torrentHash)
+    val cleanHeaders = (stream.headers ?: emptyMap()).filterKeys { !it.equals("Authorization", ignoreCase = true) }
     return stream.copy(
         url = "$srv/$torrentHash/$realIdx",
+        headers = cleanHeaders,
         stremioServerUrl = srv,
         torrentInfoHash = torrentHash
     )

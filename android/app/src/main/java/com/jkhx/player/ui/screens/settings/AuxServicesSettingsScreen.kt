@@ -43,6 +43,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.jkhx.player.JkhxApplication
 import com.jkhx.player.R
 import com.jkhx.player.core.model.stremio.StremioServerHealth
+import com.jkhx.player.settings.SettingsManager
 import com.jkhx.player.ui.screens.stream.badge.*
 import com.jkhx.player.ui.theme.AppTheme
 import com.jkhx.player.ui.theme.ShapeTokens
@@ -97,7 +98,8 @@ fun AuxServicesSettingsScreen(
     var showBadgePositionDialog by remember { mutableStateOf(false) }
     var previewImportItem by remember { mutableStateOf<StreamBadgeImport?>(null) }
 
-    // Stremio Streaming Server states
+    // Stremio Streaming Server & TorrServer states
+    val streamingServerType by settingsManager.streamingServerType.collectAsState()
     val stremioCandidates by settingsManager.stremioServerCandidates.collectAsState()
     val stremioActiveUrl by settingsManager.stremioActiveServerUrl.collectAsState()
     val stremioCacheSize by settingsManager.stremioCacheSize.collectAsState()
@@ -107,6 +109,12 @@ fun AuxServicesSettingsScreen(
     var showAddStremioServerDialog by remember { mutableStateOf(false) }
     var isCacheDropdownExpanded by remember { mutableStateOf(false) }
     var isProfileDropdownExpanded by remember { mutableStateOf(false) }
+
+    val torrCandidates by settingsManager.torrServerCandidates.collectAsState()
+    val torrActiveUrl by settingsManager.torrActiveServerUrl.collectAsState()
+    var torrServerHealthMap by remember { mutableStateOf<Map<String, StremioServerHealth>>(emptyMap()) }
+    var isCheckingTorrServers by remember { mutableStateOf(false) }
+    var showAddTorrServerDialog by remember { mutableStateOf(false) }
 
     val infiniteTransition = rememberInfiniteTransition(label = "stremio_reload_spin")
     val reloadSpinAngle by infiniteTransition.animateFloat(
@@ -143,6 +151,30 @@ fun AuxServicesSettingsScreen(
             if (showToastOnComplete) {
                 Toast.makeText(context, "Đã cập nhật trạng thái máy chủ phát trực tuyến", Toast.LENGTH_SHORT).show()
             }
+        }
+    }
+
+    fun reloadTorrHealth(showToastOnComplete: Boolean = false) {
+        coroutineScope.launch {
+            isCheckingTorrServers = true
+            val stremioClient = JkhxApplication.instance.pluginManager.getStremioClient()
+            val newResults = mutableMapOf<String, StremioServerHealth>()
+            for (cfg in torrCandidates) {
+                val health = stremioClient.checkTorrServerHealth(cfg.url, cfg.basicAuthHeader())
+                newResults[cfg.url] = health
+                torrServerHealthMap = torrServerHealthMap + (cfg.url to health)
+            }
+            torrServerHealthMap = newResults
+            isCheckingTorrServers = false
+            if (showToastOnComplete) {
+                Toast.makeText(context, context.getString(R.string.torr_server_health_updated), Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    LaunchedEffect(streamingServerType, torrCandidates.size) {
+        if (streamingServerType == SettingsManager.STREAMING_SERVER_TORRSERVER && torrCandidates.isNotEmpty()) {
+            reloadTorrHealth()
         }
     }
 
@@ -218,6 +250,49 @@ fun AuxServicesSettingsScreen(
                         .fillMaxWidth()
                         .padding(16.dp)
                 ) {
+                    // Bộ chọn loại máy chủ: Stremio Server | TorrServer
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val serverModes = listOf(
+                            SettingsManager.STREAMING_SERVER_STREMIO to stringResource(R.string.streaming_server_mode_stremio),
+                            SettingsManager.STREAMING_SERVER_TORRSERVER to stringResource(R.string.streaming_server_mode_torrserver)
+                        )
+                        serverModes.forEach { (modeKey, modeLabel) ->
+                            val isModeSelected = streamingServerType == modeKey
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable { settingsManager.setStreamingServerType(modeKey) },
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isModeSelected) {
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                                } else {
+                                    MaterialTheme.colorScheme.surface.copy(alpha = 0.45f)
+                                },
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isModeSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)
+                                )
+                            ) {
+                                Text(
+                                    text = modeLabel,
+                                    fontSize = 13.sp,
+                                    fontWeight = if (isModeSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isModeSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 1,
+                                    modifier = Modifier.padding(vertical = 9.dp, horizontal = 10.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    if (streamingServerType == SettingsManager.STREAMING_SERVER_STREMIO) {
                     // Table Header: URL | Trạng thái
                     Row(
                         modifier = Modifier
@@ -615,6 +690,196 @@ fun AuxServicesSettingsScreen(
                                         }
                                     )
                                 }
+                            }
+                        }
+                    }
+                    } else {
+                        // ====================================================
+                        // CHẾ ĐỘ TORRSERVER (HỖ TRỢ BASIC AUTH)
+                        // ====================================================
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 4.dp, vertical = 2.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = stringResource(R.string.stremio_server_url_header),
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = stringResource(R.string.stremio_server_status_header),
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        if (torrCandidates.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 18.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.torr_server_empty),
+                                    fontSize = 12.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                    textAlign = TextAlign.Center,
+                                    lineHeight = 18.sp
+                                )
+                            }
+                        } else {
+                            torrCandidates.forEach { cfg ->
+                                val isSelected = cfg.url.trimEnd('/').equals(torrActiveUrl.trimEnd('/'), ignoreCase = true)
+                                val health = torrServerHealthMap[cfg.url]
+
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .clickable {
+                                            settingsManager.setTorrActiveServerUrl(cfg.url)
+                                            reloadTorrHealth()
+                                        },
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                                    else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
+                                    border = BorderStroke(
+                                        1.dp,
+                                        if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                                        else MaterialTheme.colorScheme.outline.copy(alpha = 0.08f)
+                                    )
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        RadioButton(
+                                            selected = isSelected,
+                                            onClick = {
+                                                settingsManager.setTorrActiveServerUrl(cfg.url)
+                                                reloadTorrHealth()
+                                            },
+                                            colors = RadioButtonDefaults.colors(
+                                                selectedColor = MaterialTheme.colorScheme.primary
+                                            ),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = cfg.url,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            if (cfg.username.isNotBlank()) {
+                                                Text(
+                                                    text = "Auth: ${cfg.username}",
+                                                    fontSize = 11.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                                                    maxLines = 1
+                                                )
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+
+                                        if (isCheckingTorrServers && health == null) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(16.dp),
+                                                strokeWidth = 2.dp
+                                            )
+                                        } else {
+                                            val isOnline = health?.isOnline == true
+                                            val isAuthErr = health?.version == "Auth 401"
+                                            val pillColor = when {
+                                                isOnline -> Color(0xFF4CAF50)
+                                                isAuthErr -> Color(0xFFFF9800)
+                                                else -> MaterialTheme.colorScheme.error
+                                            }
+                                            val pillText = when {
+                                                isOnline -> "${health?.version ?: "Online"} (${health?.latencyMs ?: 0}ms)"
+                                                isAuthErr -> "Auth 401"
+                                                else -> "Offline"
+                                            }
+                                            Surface(
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = pillColor.copy(alpha = 0.16f)
+                                            ) {
+                                                Text(
+                                                    text = pillText,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = pillColor,
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                )
+                                            }
+                                        }
+
+                                        IconButton(
+                                            onClick = { settingsManager.removeTorrServerCandidate(cfg.url) },
+                                            modifier = Modifier.size(30.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.DeleteOutline,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Button(
+                                onClick = { showAddTorrServerDialog = true },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary
+                                ),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(stringResource(R.string.stremio_server_btn_add), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            }
+
+                            OutlinedButton(
+                                onClick = { reloadTorrHealth(showToastOnComplete = true) },
+                                enabled = !isCheckingTorrServers,
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    Icons.Default.Refresh,
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .size(18.dp)
+                                        .rotate(if (isCheckingTorrServers) reloadSpinAngle else 0f)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(stringResource(R.string.stremio_server_btn_reload), fontSize = 13.sp, fontWeight = FontWeight.Medium)
                             }
                         }
                     }
@@ -1506,6 +1771,147 @@ fun AuxServicesSettingsScreen(
                                 settingsManager.setStremioActiveServerUrl(finalUrl)
                                 showAddStremioServerDialog = false
                                 reloadStremioHealth()
+                            },
+                            shape = RoundedCornerShape(20.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            )
+                        ) {
+                            Text(stringResource(R.string.common_save), fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showAddTorrServerDialog) {
+        var inputUrl by remember { mutableStateOf("") }
+        var inputUser by remember { mutableStateOf("") }
+        var inputPass by remember { mutableStateOf("") }
+        var errorMsg by remember { mutableStateOf<String?>(null) }
+
+        Dialog(
+            onDismissRequest = { showAddTorrServerDialog = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .padding(vertical = 24.dp),
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 6.dp,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+            ) {
+                Column(modifier = Modifier.padding(22.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Dns,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = stringResource(R.string.torr_server_dialog_add_title),
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = stringResource(R.string.torr_server_dialog_desc),
+                        fontSize = 12.5.sp,
+                        lineHeight = 18.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    OutlinedTextField(
+                        value = inputUrl,
+                        onValueChange = {
+                            inputUrl = it
+                            errorMsg = null
+                        },
+                        label = { Text("URL") },
+                        placeholder = { Text("https://torrserver.com", fontSize = 12.sp) },
+                        isError = errorMsg != null,
+                        supportingText = errorMsg?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = inputUser,
+                        onValueChange = { inputUser = it },
+                        label = { Text(stringResource(R.string.torr_server_dialog_username)) },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = inputPass,
+                        onValueChange = { inputPass = it },
+                        label = { Text(stringResource(R.string.torr_server_dialog_password)) },
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(onClick = { showAddTorrServerDialog = false }) {
+                            Text(
+                                text = stringResource(R.string.common_cancel),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = {
+                                val clean = inputUrl.trim()
+                                if (clean.isBlank()) {
+                                    errorMsg = context.getString(R.string.stremio_server_dialog_error_empty)
+                                    return@Button
+                                }
+                                val normalized = if (!clean.startsWith("http://", ignoreCase = true) && !clean.startsWith("https://", ignoreCase = true)) {
+                                    "https://$clean"
+                                } else clean
+                                val finalUrl = normalized.trimEnd('/')
+                                settingsManager.addTorrServerCandidate(
+                                    SettingsManager.TorrServerConfig(
+                                        url = finalUrl,
+                                        username = inputUser.trim(),
+                                        password = inputPass
+                                    )
+                                )
+                                settingsManager.setTorrActiveServerUrl(finalUrl)
+                                showAddTorrServerDialog = false
+                                reloadTorrHealth()
                             },
                             shape = RoundedCornerShape(20.dp),
                             colors = ButtonDefaults.buttonColors(

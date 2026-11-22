@@ -1306,6 +1306,9 @@ fun PlayerScreen(
                     return
                 }
 
+                val isDecoderError = error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_DECODING_FAILED ||
+                    error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_DECODER_INIT_FAILED ||
+                    error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED
                 val isTorrent = resolvedStream?.torrentInfoHash != null || activeUnifiedStream?.torrentInfoHash != null
                 if (!hasReaggregatedAddonStream && activeProviderId.startsWith("stremio_") && !isTorrent && isCustomStreamActive) {
                     hasReaggregatedAddonStream = true
@@ -1314,7 +1317,7 @@ fun PlayerScreen(
                     reloadStreamTrigger++
                     return
                 }
-                val maxRetries = if (isTorrent) 25 else 5
+                val maxRetries = if (isDecoderError) 0 else if (isTorrent) 25 else 5
                 if (exoPlayerRetryCount < maxRetries) {
                     exoPlayerRetryCount++
                     val retryDelayMs = if (isTorrent) 3500L else (exoPlayerRetryCount + 1) * 1000L
@@ -1352,8 +1355,14 @@ fun PlayerScreen(
     // Coroutine đo tốc độ tải về và tiến độ bộ đệm real-time khi phim đang buffer
     LaunchedEffect(exoPlayerManager, isLoading, isPlayerBuffering, isSeeking, isPlaybackStartedEffective, resolvedStream, activeUnifiedStream) {
         val torrentHash = resolvedStream?.torrentInfoHash ?: activeUnifiedStream?.torrentInfoHash
-        val stremioServer = resolvedStream?.stremioServerUrl ?: activeUnifiedStream?.stremioServerUrl
-            ?: JkhxApplication.instance.settingsManager.stremioActiveServerUrl.value.trim().trimEnd('/')
+        val settingsMgr = JkhxApplication.instance.settingsManager
+        val activeConfigServer = if (settingsMgr.streamingServerType.value == com.jkhx.player.settings.SettingsManager.STREAMING_SERVER_TORRSERVER) {
+            settingsMgr.getActiveTorrServer()?.url?.trim()?.trimEnd('/').orEmpty()
+        } else {
+            settingsMgr.stremioActiveServerUrl.value.trim().trimEnd('/')
+        }
+        val stremioServer = activeConfigServer.takeIf { it.isNotBlank() }
+            ?: (resolvedStream?.stremioServerUrl ?: activeUnifiedStream?.stremioServerUrl).orEmpty()
 
         if (isLoading || isPlayerBuffering || isSeeking || !isPlaybackStartedEffective) {
             val stremioClient = if (!torrentHash.isNullOrBlank() && stremioServer.isNotBlank()) {
@@ -1362,7 +1371,16 @@ fun PlayerScreen(
 
             while (isActive) {
                 if (stremioClient != null && !torrentHash.isNullOrBlank()) {
-                    val p2pStats = stremioClient.fetchTorrentStats(stremioServer, torrentHash)
+                    val settingsMgr = JkhxApplication.instance.settingsManager
+                    val p2pStats = if (settingsMgr.streamingServerType.value == com.jkhx.player.settings.SettingsManager.STREAMING_SERVER_TORRSERVER) {
+                        stremioClient.fetchTorrServerStats(
+                            rawServerUrl = stremioServer,
+                            authHeader = settingsMgr.getActiveTorrServer()?.basicAuthHeader(),
+                            infoHash = torrentHash
+                        )
+                    } else {
+                        stremioClient.fetchTorrentStats(stremioServer, torrentHash)
+                    }
                     if (p2pStats != null) {
                         downloadSpeedText = p2pStats.downloadSpeedFormatted
                         val initProg = computeP2pInitialProgress(p2pStats.downloaded)
@@ -2105,6 +2123,16 @@ fun PlayerScreen(
             .pointerInput(isLocked) {
                 // Nhận diện chạm đơn, chạm đúp và nhấn giữ tăng tốc 2X
                 detectTapGestures(
+                    onPress = {
+                        try {
+                            tryAwaitRelease()
+                        } finally {
+                            if (isLongPressing2x) {
+                                isLongPressing2x = false
+                                exoPlayerManager.setPlaybackSpeed(currentSpeed)
+                            }
+                        }
+                    },
                     onTap = {
                         if (isLocked) {
                             showControls = !showControls

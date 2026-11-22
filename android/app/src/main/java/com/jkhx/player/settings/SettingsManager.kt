@@ -778,6 +778,12 @@ class SettingsManager(context: Context) {
         private const val KEY_STREMIO_ACTIVE_SERVER_URL = "pref_stremio_active_server_url"
         private const val KEY_STREMIO_CACHE_SIZE = "pref_stremio_cache_size"
         private const val KEY_STREMIO_TORRENT_PROFILE = "pref_stremio_torrent_profile"
+        private const val KEY_STREAMING_SERVER_TYPE = "pref_streaming_server_type"
+        private const val KEY_TORR_SERVER_CANDIDATES = "pref_torr_server_candidates"
+        private const val KEY_TORR_ACTIVE_SERVER_URL = "pref_torr_active_server_url"
+
+        const val STREAMING_SERVER_STREMIO = "stremio"
+        const val STREAMING_SERVER_TORRSERVER = "torrserver"
 
         val DEFAULT_STREMIO_CANDIDATES = emptyList<String>()
         const val DEFAULT_STREMIO_ACTIVE_SERVER = ""
@@ -994,6 +1000,122 @@ class SettingsManager(context: Context) {
         val safeProfile = if (clean.equals("custom", ignoreCase = true)) "default" else clean
         prefs.edit().putString(KEY_STREMIO_TORRENT_PROFILE, safeProfile).apply()
         _stremioTorrentProfile.value = safeProfile
+    }
+
+    // ========================================================================
+    // CẤU HÌNH LOẠI MÁY CHỦ PHÁT TRỰC TUYẾN & TORRSERVER (HỖ TRỢ BASIC AUTH)
+    // ========================================================================
+    data class TorrServerConfig(
+        val url: String,
+        val username: String = "",
+        val password: String = ""
+    ) {
+        fun basicAuthHeader(): String? {
+            if (username.isBlank() && password.isBlank()) return null
+            val token = android.util.Base64.encodeToString(
+                "$username:$password".toByteArray(Charsets.UTF_8),
+                android.util.Base64.NO_WRAP
+            )
+            return "Basic $token"
+        }
+    }
+
+    private fun decodeTorrServerCandidates(jsonStr: String?): List<TorrServerConfig> {
+        if (jsonStr.isNullOrBlank()) return emptyList()
+        return try {
+            val array = org.json.JSONArray(jsonStr)
+            (0 until array.length()).mapNotNull { i ->
+                val obj = array.optJSONObject(i) ?: return@mapNotNull null
+                val url = obj.optString("url", "").trim()
+                if (url.isBlank()) return@mapNotNull null
+                TorrServerConfig(
+                    url = url,
+                    username = obj.optString("username", ""),
+                    password = obj.optString("password", "")
+                )
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun encodeTorrServerCandidates(list: List<TorrServerConfig>): String {
+        val array = org.json.JSONArray()
+        list.forEach { cfg ->
+            val obj = org.json.JSONObject().apply {
+                put("url", cfg.url)
+                put("username", cfg.username)
+                put("password", cfg.password)
+            }
+            array.put(obj)
+        }
+        return array.toString()
+    }
+
+    private val _streamingServerType = MutableStateFlow(
+        prefs.getString(KEY_STREAMING_SERVER_TYPE, STREAMING_SERVER_STREMIO) ?: STREAMING_SERVER_STREMIO
+    )
+    val streamingServerType: StateFlow<String> = _streamingServerType.asStateFlow()
+
+    fun setStreamingServerType(type: String) {
+        val safeType = if (type == STREAMING_SERVER_TORRSERVER) STREAMING_SERVER_TORRSERVER else STREAMING_SERVER_STREMIO
+        prefs.edit().putString(KEY_STREAMING_SERVER_TYPE, safeType).apply()
+        _streamingServerType.value = safeType
+    }
+
+    private val _torrServerCandidates = MutableStateFlow(
+        decodeTorrServerCandidates(prefs.getString(KEY_TORR_SERVER_CANDIDATES, null))
+    )
+    val torrServerCandidates: StateFlow<List<TorrServerConfig>> = _torrServerCandidates.asStateFlow()
+
+    private val _torrActiveServerUrl = MutableStateFlow(
+        prefs.getString(KEY_TORR_ACTIVE_SERVER_URL, "") ?: ""
+    )
+    val torrActiveServerUrl: StateFlow<String> = _torrActiveServerUrl.asStateFlow()
+
+    fun setTorrActiveServerUrl(url: String) {
+        val clean = url.trim()
+        prefs.edit().putString(KEY_TORR_ACTIVE_SERVER_URL, clean).apply()
+        _torrActiveServerUrl.value = clean
+    }
+
+    fun getActiveTorrServer(): TorrServerConfig? {
+        val active = _torrActiveServerUrl.value.trim().trimEnd('/')
+        val list = _torrServerCandidates.value
+        if (active.isNotBlank()) {
+            list.firstOrNull { it.url.trim().trimEnd('/').equals(active, ignoreCase = true) }?.let { return it }
+        }
+        return list.firstOrNull()
+    }
+
+    fun addTorrServerCandidate(config: TorrServerConfig) {
+        val cleanUrl = config.url.trim().trimEnd('/')
+        if (cleanUrl.isBlank()) return
+        val normalized = config.copy(url = cleanUrl)
+        val current = _torrServerCandidates.value.toMutableList()
+        val existingIdx = current.indexOfFirst { it.url.trimEnd('/').equals(cleanUrl, ignoreCase = true) }
+        if (existingIdx >= 0) {
+            current[existingIdx] = normalized
+        } else {
+            current.add(normalized)
+        }
+        prefs.edit().putString(KEY_TORR_SERVER_CANDIDATES, encodeTorrServerCandidates(current)).apply()
+        _torrServerCandidates.value = current
+        if (_torrActiveServerUrl.value.isBlank()) {
+            setTorrActiveServerUrl(cleanUrl)
+        }
+    }
+
+    fun removeTorrServerCandidate(url: String) {
+        val cleanUrl = url.trim().trimEnd('/')
+        val current = _torrServerCandidates.value.toMutableList()
+        current.removeAll { it.url.trimEnd('/').equals(cleanUrl, ignoreCase = true) }
+        prefs.edit().putString(KEY_TORR_SERVER_CANDIDATES, encodeTorrServerCandidates(current)).apply()
+        _torrServerCandidates.value = current
+
+        if (_torrActiveServerUrl.value.trim().trimEnd('/').equals(cleanUrl, ignoreCase = true)) {
+            setTorrActiveServerUrl(current.firstOrNull()?.url ?: "")
+        }
     }
 }
 

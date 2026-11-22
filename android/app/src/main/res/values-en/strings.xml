@@ -940,4 +940,12 @@
     <string name="local_library_rescrape_all">Rescrape All (%1$d)</string>
     <string name="local_library_rescrape_hide">Hide (Run in background)</string>
     <string name="local_library_rescrape_done">Updated TMDB metadata for %1$d/%2$d items</string>
+    <string name="streaming_server_mode_stremio">Stremio Server</string>
+    <string name="streaming_server_mode_torrserver">TorrServer</string>
+    <string name="torr_server_empty">No TorrServer URL added yet.\nTap \"+ Add URL\" below to enter your server address.</string>
+    <string name="torr_server_health_updated">TorrServer status updated</string>
+    <string name="torr_server_dialog_add_title">Add TorrServer</string>
+    <string name="torr_server_dialog_desc">Enter your TorrServer URL...</string>
+    <string name="torr_server_dialog_username">Username (optional)</string>
+    <string name="torr_server_dialog_password">Password (optional)</string>
 </resources>

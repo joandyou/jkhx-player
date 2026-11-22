@@ -620,9 +620,30 @@ class StreamAggregator(
         episode: EpisodeData
     ): UnifiedStreamItem {
         val isTorrentStream = str.isTorrent
-        val activeServer = JkhxApplication.instance.settingsManager.stremioActiveServerUrl.value.trim().trimEnd('/')
+        val settingsMgr = JkhxApplication.instance.settingsManager
+        val isTorrServerMode = settingsMgr.streamingServerType.value == com.jkhx.player.settings.SettingsManager.STREAMING_SERVER_TORRSERVER
+        val activeTorrConfig = if (isTorrServerMode) settingsMgr.getActiveTorrServer() else null
+        val activeServer = if (isTorrServerMode) {
+            activeTorrConfig?.url?.trim()?.trimEnd('/') ?: ""
+        } else {
+            settingsMgr.stremioActiveServerUrl.value.trim().trimEnd('/')
+        }
         val strUrl = if (isTorrentStream && activeServer.isNotBlank()) {
-            "$activeServer/${str.infoHash}/${str.fileIdx ?: 0}"
+            if (isTorrServerMode) {
+                val explicitFileIdx = str.fileIdx
+                if (explicitFileIdx != null) {
+                    com.jkhx.player.core.network.stremio.StremioBridgeClient.buildTorrServerStreamUrl(
+                        rawServerUrl = activeServer,
+                        infoHash = str.infoHash.orEmpty(),
+                        fileIndex1Based = explicitFileIdx + 1
+                    )
+                } else {
+                    val magnet = java.net.URLEncoder.encode("magnet:?xt=urn:btih:${str.infoHash.orEmpty().trim().lowercase()}", "UTF-8")
+                    "$activeServer/stream?link=$magnet&play"
+                }
+            } else {
+                "$activeServer/${str.infoHash}/${str.fileIdx ?: 0}"
+            }
         } else {
             str.effectiveUrl.orEmpty()
         }
@@ -718,6 +739,11 @@ class StreamAggregator(
         }
 
         val streamHeaders = (str.behaviorHints?.allRequestHeaders ?: emptyMap()).toMutableMap()
+        if (isTorrentStream && isTorrServerMode) {
+            activeTorrConfig?.basicAuthHeader()?.let { authHeader ->
+                streamHeaders["Authorization"] = authHeader
+            }
+        }
         val hasUserAgent = streamHeaders.keys.any { it.equals("User-Agent", ignoreCase = true) }
         if (!hasUserAgent) {
             streamHeaders["User-Agent"] = DEFAULT_ANDROID_UA
